@@ -1,0 +1,16 @@
+{
+  "name": "codeup-landing",
+  "version": "0.8.0",
+  "private": true,
+  "description": "Build script for CodeUp landing page. The IDE itself uses no Node tooling.",
+  "scripts": {
+    "build:landing": "esbuild static/landing/_entry.jsx --bundle --minify --loader:.jsx=jsx --jsx=transform --jsx-factory=React.createElement --jsx-fragment=React.Fragment --outfile=static/landing/dist/bundle.js --external:react --external:react-dom",
+    "vendor:react": "node scripts/vendor-react.js",
+    "build": "npm run vendor:react && npm run build:landing"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  }
+}

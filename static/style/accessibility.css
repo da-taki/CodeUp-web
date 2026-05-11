@@ -1,0 +1,121 @@
+/* ==========================================================
+   CodeUp — accessibility.css (paper rewrite)
+   Drop-in replacement. Color-vision modes, dyslexia, reduced
+   motion, high contrast — all kept, but retuned to feel
+   coherent with the paper aesthetic.
+   ========================================================== */
+
+/* ------- Color-vision adjustments -------
+   These swap the rust accent for a hue that's distinguishable
+   in each mode while keeping the parchment background. */
+
+body.theme-protanopia {
+  --accent:       #1d3a5f;   /* ledger blue — safe for red-blind */
+  --accent-hover: #122847;
+  --accent-soft:  rgba(29, 58, 95, 0.12);
+  --danger:       #2c1d10;
+}
+
+body.theme-deuteranopia {
+  --accent:       #2d4f8a;   /* shifted blue — safe for green-blind */
+  --accent-hover: #1a3766;
+  --accent-soft:  rgba(45, 79, 138, 0.12);
+  --success:      #6e1f0a;   /* swap success to rust */
+}
+
+body.theme-tritanopia {
+  --accent:       #8b1a05;   /* deeper rust — safe for blue-blind */
+  --accent-hover: #5a0e02;
+  --accent-soft:  rgba(139, 26, 5, 0.12);
+}
+
+/* ------- High contrast — pure black/white, no grain ------- */
+body.theme-high-contrast {
+  --bg-main:  #ffffff;
+  --bg-panel: #ffffff;
+  --bg-soft:  #f4f4f4;
+
+  --text-main: #000000;
+  --text-dim:  #1a1a1a;
+
+  --border-soft:   rgba(0, 0, 0, 0.6);
+  --border-strong: rgba(0, 0, 0, 0.95);
+
+  --accent:        #000000;
+  --accent-hover:  #1a1a1a;
+  --accent-soft:   rgba(0, 0, 0, 0.08);
+
+  --success: #003a00;
+  --danger:  #8b0000;
+  --warning: #6b3a00;
+}
+body.theme-high-contrast .cu-button-primary {
+  background: #000; color: #fff; border-color: #000;
+}
+body.theme-high-contrast .cu-output {
+  background: #000; color: #fff;
+}
+body.theme-high-contrast *:focus-visible {
+  outline: 4px solid #ff8a00 !important;
+  outline-offset: 2px !important;
+}
+
+/* ------- Dyslexia mode -------
+   Atkinson Hyperlegible is already the default; here we add
+   line-height + tracking + word-spacing per Bionic-style guidance. */
+body.theme-dyslexia {
+  font-family: "Atkinson Hyperlegible", system-ui, sans-serif;
+  letter-spacing: 0.02em;
+  word-spacing: 0.08em;
+}
+body.theme-dyslexia .cu-body,
+body.theme-dyslexia .cu-output,
+body.theme-dyslexia .cu-voice-input,
+body.theme-dyslexia .cu-button {
+  line-height: 1.85;
+}
+body.theme-dyslexia .cu-title { letter-spacing: 0; }
+body.theme-dyslexia p,
+body.theme-dyslexia .structure-info,
+body.theme-dyslexia .cu-subtitle,
+body.theme-dyslexia .cu-subtitle-info {
+  line-height: 1.85;
+  max-width: 70ch;
+}
+
+/* ------- Reduced motion ------- */
+body.theme-reduced-motion *,
+body.theme-reduced-motion *::before,
+body.theme-reduced-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* ------- Focus indicator (always strong, rust by default) ------- */
+*:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ------- Screen reader only ------- */
+.sr-only {
+  position: absolute !important;
+  width: 1px !important; height: 1px !important;
+  padding: 0 !important; margin: -1px !important;
+  overflow: hidden !important; clip: rect(0,0,0,0) !important;
+  white-space: nowrap !important; border: 0 !important;
+}
+
+/* ------- Skip-to-content link ------- */
+.skip-link {
+  position: absolute; left: -9999px; top: 0; z-index: 10000;
+  padding: 12px 20px;
+  background: var(--text-main); color: var(--bg-main);
+  font-family: var(--font-mono); font-size: 13px; font-weight: 700;
+  border-radius: 0 0 8px 0;
+  text-decoration: none;
+}
+.skip-link:focus { left: 0; outline: 3px solid var(--accent); outline-offset: 0; }
