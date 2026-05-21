@@ -183,3 +183,43 @@
 /* ------- Output diff highlights (existing classes from app.js) ------- */
 .diff-add { background: rgba(74, 99, 33, 0.18); color: var(--success); }
 .diff-rem { background: rgba(139, 26, 5, 0.18); color: var(--danger); text-decoration: line-through; }
+
+/* ------- HTML builder preview ------- */
+.cu-site-preview {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+}
+.cu-preview-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin: 8px 0;
+}
+#sitePreviewFrame {
+  width: 100%;
+  min-height: 420px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: #fff;
+}
+.cu-html-editor {
+  width: 100%;
+  min-height: 520px;
+  box-sizing: border-box;
+  padding: 16px;
+  border: 0;
+  outline: 0;
+  resize: vertical;
+  background: #101820;
+  color: #eef6ff;
+  font-family: var(--font-mono);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+.cu-html-editor:focus {
+  outline: 3px solid var(--accent);
+  outline-offset: -3px;
+}
+.cu-command-bar #voiceButton {
+  display: inline-flex !important;
+}
