@@ -65,7 +65,7 @@ def test_reset_session_clears_memory_and_local_site(client):
 
     reset = client.post("/reset-session", json={"url": published["url"]}).get_json()
     assert reset["success"] is True
-    assert reset["memory"] == {"history": [], "last_html": "", "last_url": ""}
+    assert reset["memory"] == {"history": [], "last_html": "", "last_url": "", "last_review": ""}
     assert client.get(published["url"]).status_code == 404
 
 
@@ -116,6 +116,29 @@ def test_analyze_and_fix_validate_html(client):
     assert empty_fix.status_code == 400
 
 
+def test_review_site_has_blind_first_fallback_and_memory(client):
+    html = "<!doctype html><html lang='en'><head><title>Club</title></head><body><main><h1>Robotics Club</h1><p>Welcome</p></main></body></html>"
+    response = client.post("/review-site", json={"html": html})
+    data = response.get_json()
+    assert response.status_code == 200
+    assert data["success"] is True
+    assert "Visual review" in data["review"]
+    assert "missing" in data["review"].lower()
+    assert data["memory"]["last_review"] == data["review"]
+
+
+def test_apply_review_updates_html_from_latest_review(client):
+    html = "<!doctype html><html lang='en'><head><title>Club</title></head><body><main><h1>Robotics Club</h1></main></body></html>"
+    review = client.post("/review-site", json={"html": html}).get_json()["review"]
+    response = client.post("/apply-review", json={"html": html, "instruction": "add that", "review": review})
+    data = response.get_json()
+    assert response.status_code == 200
+    assert data["success"] is True
+    assert "Next Steps" in data["code"]
+    assert "Contact the team" in data["code"]
+    assert data["memory"]["history"][-1]["note"] == "Applied review suggestions"
+
+
 def test_voice_command_is_html_or_chat_focused(client):
     assert client.post("/voice-command", json={"text": "preview website"}).get_json()["action"] == "preview_site"
     assert client.post("/voice-command", json={"text": "audit website"}).get_json()["action"] == "audit_site"
@@ -124,7 +147,8 @@ def test_voice_command_is_html_or_chat_focused(client):
     assert client.post("/voice-command", json={"text": "reset session"}).get_json()["action"] == "reset_session"
     assert client.post("/voice-command", json={"text": "explain website"}).get_json()["action"] == "explain_site"
     assert client.post("/voice-command", json={"text": "build a website for music class"}).get_json()["action"] == "build_site"
-    assert client.post("/voice-command", json={"text": "what is missing in this website?"}).get_json()["action"] == "chat"
+    assert client.post("/voice-command", json={"text": "what is missing in this website?"}).get_json()["action"] == "review_site"
+    assert client.post("/voice-command", json={"text": "add that"}).get_json()["action"] == "apply_review"
 
 
 def test_legacy_execution_routes_are_gone(client):

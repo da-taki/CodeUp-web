@@ -1,9 +1,10 @@
 # CodeUp HTML
 
-CodeUp HTML is a blind-first website builder for students who want to make real
-HTML websites through conversation, keyboard, and voice. It is intentionally
-focused on websites: students ask for a site, preview it locally, hear what it
-looks like, improve it, audit accessibility, and export the final HTML file.
+CodeUp HTML is a blind-first website builder for students who want to create
+real HTML websites through conversation, keyboard, and voice. This sister
+project is focused only on websites: build a page, preview it locally, hear a
+visual review, apply improvements, audit accessibility, and export the final
+HTML file.
 
 ## Demo Flow
 
@@ -19,17 +20,28 @@ Open:
 http://127.0.0.1:5000/
 ```
 
-Try these prompts:
+Try this full review loop:
 
 ```text
 Hello, what all can I do in here?
 Build a website for my robotics club
 Preview website
 What do you think is missing here?
+Add that
+Review website
 Audit website
-Outline website
 Export website
 ```
+
+The important loop is:
+
+1. Student asks CodeUp HTML to build a website.
+2. The app writes HTML and hosts it at `/student-site/<session-id>/`.
+3. CodeUp gives a sighted-guide style review for blind students: what the page
+   looks like, what is missing, and what to add next.
+4. Student says `add that` or `fix missing things`.
+5. CodeUp edits the HTML, republishes the local site, and reviews the new
+   version.
 
 ## No-Key Demo Mode
 
@@ -52,6 +64,8 @@ In this mode, CodeUp still:
 - answers what the tool can do,
 - builds a complete accessible HTML website,
 - hosts the preview locally,
+- gives a blind-first visual review,
+- applies the latest review suggestions,
 - explains the current site,
 - audits accessibility,
 - outlines the page structure,
@@ -60,9 +74,10 @@ In this mode, CodeUp still:
 
 ## Student Features
 
-- Conversational AI guide for questions like “what can I do here?”
-- Natural-language website generation from “Build a website for ...”
+- Conversational guide for questions like `what can I do here?`
+- Natural-language website generation from `Build a website for ...`
 - Local preview at `/student-site/<session-id>/`
+- Sighted-guide review loop for `what is missing?` and `add that`
 - Audio explanation of what the site looks like
 - Hindi/Hinglish and English voice workflows
 - `pause voice`, `resume voice`, and `stop speaking`
@@ -73,7 +88,8 @@ In this mode, CodeUp still:
 - One-click HTML export
 - Demo Mode for larger, calmer classroom presentation
 - Reset session for the next student
-- Per-session memory for recent prompts, current HTML, and preview URL
+- Per-session memory for recent prompts, current HTML, preview URL, and latest
+  visual review
 
 ## Voice Commands
 
@@ -81,6 +97,10 @@ English examples:
 
 - `build a website for a school science fair`
 - `preview website`
+- `what do you think is missing here`
+- `review website`
+- `add that`
+- `fix missing things`
 - `explain website`
 - `audit website`
 - `outline website`
@@ -102,6 +122,7 @@ Hindi/Hinglish examples:
 - `website samjhao`
 - `website kaisi dikhti hai`
 - `isme kya missing hai`
+- `woh add karo`
 - `website sonify karo`
 - `HTML polish karo`
 - `pause voice`
@@ -155,5 +176,5 @@ node --check static/codeup-html.js
 
 The original CodeUp experience taught coding through a different language and
 workflow. CodeUp HTML exists so blind and visually impaired students can build
-websites directly: the output is visual, local, explainable, exportable, and
-easy to share in a classroom pilot.
+websites directly: the output is visual, local, explainable, reviewable,
+exportable, and easy to share in a classroom pilot.

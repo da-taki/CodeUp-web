@@ -141,7 +141,7 @@ def _student_site_dir(session_id: str | None = None) -> str:
 def _load_html_memory(session_id: str | None = None) -> dict[str, Any]:
     path = _html_memory_path(session_id)
     if not os.path.exists(path):
-        return {"history": [], "last_html": "", "last_url": ""}
+        return {"history": [], "last_html": "", "last_url": "", "last_review": ""}
     try:
         with open(path, "r", encoding="utf-8") as handle:
             data = json.load(handle)
@@ -150,10 +150,11 @@ def _load_html_memory(session_id: str | None = None) -> dict[str, Any]:
                 "history": data.get("history", []) if isinstance(data.get("history"), list) else [],
                 "last_html": str(data.get("last_html", "")),
                 "last_url": str(data.get("last_url", "")),
+                "last_review": str(data.get("last_review", "")),
             }
     except Exception:
         pass
-    return {"history": [], "last_html": "", "last_url": ""}
+    return {"history": [], "last_html": "", "last_url": "", "last_review": ""}
 
 
 def _save_html_memory(data: dict[str, Any], session_id: str | None = None) -> None:
@@ -166,7 +167,13 @@ def _save_html_memory(data: dict[str, Any], session_id: str | None = None) -> No
     os.replace(temp_path, path)
 
 
-def _append_memory(prompt: str = "", note: str = "", html: str = "", url: str = "") -> dict[str, Any]:
+def _append_memory(
+    prompt: str = "",
+    note: str = "",
+    html: str = "",
+    url: str = "",
+    review: str = "",
+) -> dict[str, Any]:
     memory = _load_html_memory()
     if prompt or note or url:
         memory.setdefault("history", []).append(
@@ -176,6 +183,8 @@ def _append_memory(prompt: str = "", note: str = "", html: str = "", url: str = 
         memory["last_html"] = html
     if url:
         memory["last_url"] = url
+    if review:
+        memory["last_review"] = review
     _save_html_memory(memory)
     return memory
 
@@ -345,6 +354,58 @@ def _fallback_explanation(html: str, language: str) -> str:
         f"This website is organized around {summary}. It has a structured page, readable sections, and a local preview. "
         "Before demoing, check contrast, mobile spacing, button labels, and image alt text."
     )
+
+
+def _fallback_review(html: str, language: str) -> str:
+    audit = _audit_html(html)
+    headings = re.findall(r"<h[1-3][^>]*>(.*?)</h[1-3]>", html, flags=re.IGNORECASE | re.DOTALL)
+    clean_headings = [re.sub(r"<[^>]+>", "", heading).strip() for heading in headings if heading.strip()]
+    sections = ", ".join(clean_headings[:5]) or "the current page"
+    missing = []
+    lowered = html.lower()
+    if "contact" not in lowered:
+        missing.append("a contact or next-step section")
+    if not re.search(r"<a\b[^>]*>|<button\b", html, re.IGNORECASE):
+        missing.append("a clear call-to-action button or link")
+    if "schedule" not in lowered and "event" in lowered:
+        missing.append("event timing or schedule details")
+    if audit["score"] < 100:
+        missing.extend(audit["suggestions"][:2])
+    if not missing:
+        missing.append("real photos with alt text or more specific student details")
+
+    if language == "hi":
+        return (
+            f"Visual review: website {sections} ke around organized hai. Layout clear hai, sections readable hain, "
+            f"aur accessibility score {audit['score']}/100 hai. Missing: {', '.join(missing[:3])}. "
+            "Aap bol sakte hain: add that, fix missing things, ya make it more polished."
+        )
+    return (
+        f"Visual review: the website is organized around {sections}. It has a clear layout, readable sections, "
+        f"and an accessibility score of {audit['score']}/100. What is missing: {', '.join(missing[:3])}. "
+        "Say or type: add that, fix missing things, or make it more polished."
+    )
+
+
+def _fallback_apply_review(html: str, instruction: str, review: str) -> str:
+    wrapped = _wrap_html(html)
+    block = """
+    <section aria-labelledby="next-steps-heading">
+      <h2 id="next-steps-heading">Next Steps</h2>
+      <p>This section was added from the review loop. It gives visitors a clear action after reading the page.</p>
+      <ul>
+        <li>Add real dates, timings, or contact details for the student project.</li>
+        <li>Use descriptive button text so screen reader users understand the action.</li>
+        <li>Add images only with useful alt text.</li>
+      </ul>
+      <a class="button" href="mailto:hello@example.com">Contact the team</a>
+    </section>
+"""
+    if "Next Steps" in wrapped:
+        return wrapped
+    if re.search(r"</main\s*>", wrapped, flags=re.IGNORECASE):
+        return re.sub(r"</main\s*>", block + "\n  </main>", wrapped, count=1, flags=re.IGNORECASE)
+    return re.sub(r"</body\s*>", block + "\n</body>", wrapped, count=1, flags=re.IGNORECASE)
 
 
 def _html_text(html: str) -> str:
@@ -585,6 +646,64 @@ def html_audit():
     return jsonify({"success": True, "audit": audit})
 
 
+@app.route("/review-site", methods=["POST"])
+def review_site():
+    body = safejson()
+    html = str(body.get("html") or body.get("code") or "")
+    language = str(body.get("language") or "en")
+    if not html.strip():
+        return jsonify({"success": False, "error": "HTML cannot be empty"}), 400
+    if len(html) > MAX_HTML_SIZE:
+        return jsonify({"success": False, "error": f"HTML too large (max {MAX_HTML_SIZE} bytes)"}), 413
+
+    audit = _audit_html(html)
+    system = (
+        "You are the sighted reviewer inside CodeUp HTML for blind and visually impaired students. "
+        "Describe the current website visually, then say what is missing, then suggest exactly what to add next. "
+        "Keep it conversational, concrete, and short enough to be spoken aloud. Do not return code."
+    )
+    user = (
+        f"Accessibility audit score: {audit['score']}/100\n"
+        f"Audit suggestions: {', '.join(audit['suggestions'])}\n\n"
+        f"Current HTML:\n```html\n{html[:MAX_HTML_SIZE]}\n```"
+    )
+    review = call_ai(system, user, temperature=0.25, language=language)
+    if _is_ai_unavailable(review):
+        review = _fallback_review(html, language)
+    memory = _append_memory(note=f"Review loop score {audit['score']}", html=html, review=review)
+    return jsonify({"success": True, "review": review, "audit": audit, "memory": memory})
+
+
+@app.route("/apply-review", methods=["POST"])
+def apply_review():
+    body = safejson()
+    html = str(body.get("html") or body.get("code") or "")
+    instruction = str(body.get("instruction") or "Apply the latest review suggestions").strip()
+    review = str(body.get("review") or "")
+    language = str(body.get("language") or "en")
+    if not html.strip():
+        return jsonify({"success": False, "error": "HTML cannot be empty", "code": ""}), 400
+    if len(html) > MAX_HTML_SIZE or len(instruction) > MAX_MESSAGE_SIZE or len(review) > MAX_MESSAGE_SIZE:
+        return jsonify({"success": False, "error": "Request too large", "code": ""}), 413
+
+    memory = _load_html_memory()
+    latest_review = review or memory.get("last_review", "")
+    system = (
+        "You are CodeUp HTML's review-loop editor. Return one complete accessible single-file HTML document. "
+        "Apply the student's instruction using the latest visual review. Keep the page semantic, responsive, "
+        "high contrast, and understandable for screen reader users. Do not return markdown fences or prose."
+    )
+    user = (
+        f"Student instruction:\n{instruction}\n\n"
+        f"Latest review:\n{latest_review or 'No review yet. Add useful next steps and accessibility improvements.'}\n\n"
+        f"Current HTML:\n```html\n{html[:MAX_HTML_SIZE]}\n```"
+    )
+    raw = call_ai(system, user, temperature=0.25, language=language)
+    fixed = _fallback_apply_review(html, instruction, latest_review) if _is_ai_unavailable(raw) else _extract_html(raw)
+    memory = _append_memory(prompt=instruction, note="Applied review suggestions", html=fixed)
+    return jsonify({"success": True, "code": fixed, "language": "html", "memory": memory})
+
+
 @app.route("/html-chat", methods=["POST"])
 def html_chat():
     body = safejson()
@@ -715,6 +834,10 @@ def voice_command():
         action = "export_site"
     elif "reset session" in lower or lower == "reset":
         action = "reset_session"
+    elif "add that" in lower or "apply that" in lower or "fix missing" in lower:
+        action = "apply_review"
+    elif "missing" in lower or "review" in lower or "what do you think" in lower:
+        action = "review_site"
     elif "explain" in lower or "describe" in lower:
         action = "explain_site"
     elif "sonify" in lower or "sound" in lower:

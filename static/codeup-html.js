@@ -65,7 +65,8 @@
     demoMode: false,
     lastSpoken: '',
     lastUrl: '',
-    memory: { history: [], last_html: '', last_url: '' },
+    lastReview: '',
+    memory: { history: [], last_html: '', last_url: '', last_review: '' },
     audioCtx: null,
   };
 
@@ -192,7 +193,10 @@
         body: JSON.stringify(payload),
       });
       const data = await response.json();
-      if (data.success && data.memory) state.memory = data.memory;
+      if (data.success && data.memory) {
+        state.memory = data.memory;
+        state.lastReview = data.memory.last_review || state.lastReview;
+      }
     } catch (error) {}
   }
 
@@ -200,7 +204,10 @@
     try {
       const response = await fetch('/html-memory');
       const data = await response.json();
-      if (data.success && data.memory) state.memory = data.memory;
+      if (data.success && data.memory) {
+        state.memory = data.memory;
+        state.lastReview = data.memory.last_review || '';
+      }
     } catch (error) {}
   }
 
@@ -255,7 +262,8 @@
         body: JSON.stringify({ url: state.lastUrl || state.memory.last_url || '' }),
       });
     } catch (error) {}
-    state.memory = { history: [], last_html: '', last_url: '' };
+    state.memory = { history: [], last_html: '', last_url: '', last_review: '' };
+    state.lastReview = '';
     state.lastUrl = '';
     try { sessionStorage.removeItem('codeup_html_draft'); } catch (error) {}
     setHtml(starterHtml);
@@ -339,6 +347,58 @@
     }
   }
 
+  async function reviewWebsite(shouldSpeak = true) {
+    const html = getHtml();
+    writeOutput(t('Reviewing website like a sighted guide...', 'Website ko sighted guide ki tarah review kar raha hoon...'), shouldSpeak);
+    try {
+      const response = await fetch('/review-site', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html, language: lang() }),
+      });
+      const data = await response.json();
+      if (!data.success) throw new Error(data.error || 'Review failed.');
+      if (data.memory) state.memory = data.memory;
+      state.lastReview = data.review || '';
+      writeOutput(state.lastReview, shouldSpeak);
+      return state.lastReview;
+    } catch (error) {
+      writeOutput(error.message, true);
+      return '';
+    }
+  }
+
+  async function applyReviewSuggestion(instruction, shouldSpeak = true) {
+    const html = getHtml();
+    const review = state.lastReview || state.memory.last_review || '';
+    writeOutput(t('Applying the review suggestions...', 'Review suggestions apply ho rahe hain...'), shouldSpeak);
+    try {
+      const response = await fetch('/apply-review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          html,
+          instruction: instruction || 'Apply the latest review suggestions',
+          review,
+          language: lang(),
+        }),
+      });
+      const data = await response.json();
+      if (!data.success || !data.code) throw new Error(data.error || 'Could not apply review suggestions.');
+      setHtml(data.code);
+      if (data.memory) state.memory = data.memory;
+      const url = await publish(data.code);
+      const nextReview = await reviewWebsite(false);
+      const message = t(
+        `I added the review improvements, republished the website at ${url}, and reviewed the new version. ${nextReview}`,
+        `Review improvements add ho gaye, website ${url} par republish ho gayi, aur naya version review ho gaya. ${nextReview}`
+      );
+      if (shouldSpeak) speak(message);
+    } catch (error) {
+      writeOutput(error.message, true);
+    }
+  }
+
   async function buildWebsite(prompt, shouldSpeak = true) {
     cancelSpeech();
     if (!prompt) {
@@ -367,10 +427,10 @@
       setHtml(data.code);
       const url = await publish(data.code);
       await saveMemory({ prompt: normalized, html: data.code, url });
-      await explainWebsite(false);
+      const review = await reviewWebsite(false);
       const message = t(
-        `Website built and hosted locally at ${url}. I also wrote an explanation in the output panel.`,
-        `Website ban gayi aur local URL ${url} par host ho gayi. Explanation output panel mein hai.`
+        `Website built and hosted locally at ${url}. Here is the first review. ${review}`,
+        `Website ban gayi aur local URL ${url} par host ho gayi. Pehla review yeh hai. ${review}`
       );
       if (shouldSpeak) speak(message);
     } catch (error) {
@@ -500,8 +560,8 @@
 
   function helpText() {
     return t(
-      'You can say: build a website for robotics club, preview website, explain website, audit website, outline website, export website, reset session, sonify website, polish HTML, add heading About Us, add paragraph Welcome students, pause voice, resume voice, or stop speaking.',
-      'Aap bol sakte hain: robotics club ke liye website banao, preview website, website samjhao, audit website, outline website, export website, reset session, website sonify karo, HTML polish karo, heading add karo About Us, paragraph add karo Welcome students, pause voice, resume voice, ya stop speaking. Hindi examples: school annual day ke liye website banao. Website kaisi dikhti hai? Isme kya missing hai?'
+      'You can say: build a website for robotics club, preview website, what is missing, review website, add that, explain website, audit website, outline website, export website, reset session, sonify website, polish HTML, add heading About Us, add paragraph Welcome students, pause voice, resume voice, or stop speaking.',
+      'Aap bol sakte hain: robotics club ke liye website banao, preview website, website samjhao, audit website, outline website, export website, reset session, website sonify karo, HTML polish karo, heading add karo About Us, paragraph add karo Welcome students, pause voice, resume voice, ya stop speaking. Hindi examples: school annual day ke liye website banao. Website kaisi dikhti hai? Isme kya missing hai? Add that.'
     );
   }
 
@@ -511,6 +571,34 @@
       /\b(build|make|create|generate)\b.*\b(website|site|page|webpage)\b/i.test(text) ||
       /\b(website|site|page|webpage)\s+for\b/i.test(text) ||
       /\b(banao|bana do|banaiye|banaye|banaao)\b/i.test(lower)
+    );
+  }
+
+  function isReviewIntent(text) {
+    const lower = text.toLowerCase();
+    return (
+      lower.includes('what do you think') ||
+      lower.includes('missing') ||
+      lower.includes('review') ||
+      lower.includes('feedback') ||
+      lower.includes('kaisi dikhti') ||
+      lower.includes('kya kami') ||
+      lower.includes('kya missing')
+    );
+  }
+
+  function isApplyReviewIntent(text) {
+    const lower = text.toLowerCase();
+    return (
+      lower.includes('add that') ||
+      lower.includes('apply that') ||
+      lower.includes('do that') ||
+      lower.includes('fix missing') ||
+      lower.includes('add the missing') ||
+      lower.includes('make those changes') ||
+      lower.includes('use your suggestions') ||
+      lower.includes('jo missing hai add') ||
+      lower.includes('woh add karo')
     );
   }
 
@@ -538,6 +626,14 @@
     }
     if (lower.includes('help') || lower.includes('madad')) {
       await chatWithAI(command, true);
+      return;
+    }
+    if (isApplyReviewIntent(command)) {
+      await applyReviewSuggestion(command, true);
+      return;
+    }
+    if (isReviewIntent(command)) {
+      await reviewWebsite(true);
       return;
     }
     if (lower.includes('preview') || lower.includes('show website') || lower.includes('run website') || lower.includes('dikhao')) {
@@ -591,6 +687,10 @@
     const lower = text.toLowerCase();
     const isBuildRequest = isBuildIntent(text);
     if (isBuildRequest) {
+      await handleVoiceCommand(text);
+      return;
+    }
+    if (isApplyReviewIntent(text) || isReviewIntent(text)) {
       await handleVoiceCommand(text);
       return;
     }
@@ -768,6 +868,8 @@
     window.runCode = () => previewHtml(true);
     window.analyzeCode = () => explainWebsite(true);
     window.fixCode = polishHtml;
+    window.reviewWebsite = reviewWebsite;
+    window.applyReviewSuggestion = (instruction) => applyReviewSuggestion(instruction, true);
     window.auditWebsite = auditWebsite;
     window.outlineWebsite = outlineWebsite;
     window.exportHtml = exportHtml;
