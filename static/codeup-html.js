@@ -62,6 +62,7 @@
     recognition: null,
     listening: false,
     paused: false,
+    demoMode: false,
     lastSpoken: '',
     lastUrl: '',
     memory: { history: [], last_html: '', last_url: '' },
@@ -102,6 +103,10 @@
     const output = $('output');
     if (output) output.textContent = message;
     if (shouldSpeak) speak(message);
+  }
+
+  function slugify(value) {
+    return (value || 'codeup-site').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'codeup-site';
   }
 
   function getEditor() { return $('htmlEditor'); }
@@ -215,6 +220,89 @@
     if (link) link.href = data.url;
     await saveMemory({ html, url: data.url, note: 'Published local preview' });
     return data.url;
+  }
+
+  function htmlOutline(html) {
+    const matches = [...html.matchAll(/<h([1-6])\b[^>]*>(.*?)<\/h\1>/gi)];
+    if (!matches.length) return t('No headings found yet. Add an h1 and section headings.', 'Abhi headings nahi mili. H1 aur section headings add karein.');
+    return matches.map((match) => {
+      const level = Number(match[1]);
+      const text = match[2].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      return `${'  '.repeat(Math.max(0, level - 1))}H${level}: ${text}`;
+    }).join('\n');
+  }
+
+  function exportHtml() {
+    const html = getHtml();
+    const title = (html.match(/<title>\s*([^<]+)/i) || [])[1] || 'codeup-site';
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = slugify(title) + '.html';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 500);
+    writeOutput(t('HTML file exported.', 'HTML file export ho gayi.'), true);
+  }
+
+  async function resetSession() {
+    cancelSpeech();
+    try {
+      await fetch('/reset-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: state.lastUrl || state.memory.last_url || '' }),
+      });
+    } catch (error) {}
+    state.memory = { history: [], last_html: '', last_url: '' };
+    state.lastUrl = '';
+    try { sessionStorage.removeItem('codeup_html_draft'); } catch (error) {}
+    setHtml(starterHtml);
+    const frame = $('sitePreviewFrame');
+    if (frame) frame.removeAttribute('src');
+    const link = $('sitePreviewLink');
+    if (link) link.href = '#';
+    writeOutput(t('Session reset. Starter website loaded.', 'Session reset ho gaya. Starter website load ho gayi.'), true);
+  }
+
+  async function auditWebsite(shouldSpeak = true) {
+    writeOutput(t('Auditing accessibility...', 'Accessibility audit chal raha hai...'), shouldSpeak);
+    try {
+      const response = await fetch('/html-audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html: getHtml() }),
+      });
+      const data = await response.json();
+      if (!data.success) throw new Error(data.error || 'Audit failed.');
+      const audit = data.audit;
+      const checks = audit.checks.map(item => `${item.passed ? 'PASS' : 'FIX'} - ${item.label}`).join('\n');
+      const suggestions = audit.suggestions.map(item => `- ${item}`).join('\n');
+      const message = `Accessibility score: ${audit.score}/100\n\n${checks}\n\nSuggestions:\n${suggestions}`;
+      writeOutput(message, shouldSpeak);
+    } catch (error) {
+      writeOutput(error.message, true);
+    }
+  }
+
+  function outlineWebsite(shouldSpeak = true) {
+    const message = t('Website outline:\n', 'Website outline:\n') + htmlOutline(getHtml());
+    writeOutput(message, shouldSpeak);
+  }
+
+  function toggleDemoMode() {
+    state.demoMode = !state.demoMode;
+    document.body.classList.toggle('cu-demo-mode', state.demoMode);
+    const button = $('demoModeBtn');
+    if (button) {
+      button.setAttribute('aria-pressed', state.demoMode ? 'true' : 'false');
+      button.textContent = state.demoMode ? 'Demo On' : 'Demo Mode';
+    }
+    speak(t(
+      state.demoMode ? 'Demo mode on. The interface is larger and calmer.' : 'Demo mode off.',
+      state.demoMode ? 'Demo mode on hai. Interface bada aur clear hai.' : 'Demo mode off hai.'
+    ));
   }
 
   async function previewHtml(shouldSpeak = false) {
@@ -412,8 +500,8 @@
 
   function helpText() {
     return t(
-      'You can say: build a website for robotics club, preview website, explain website, sonify website, polish HTML, add heading About Us, add paragraph Welcome students, pause voice, resume voice, or stop speaking.',
-      'Aap bol sakte hain: robotics club ke liye website banao, preview website, website samjhao, website sonify karo, HTML polish karo, heading add karo About Us, paragraph add karo Welcome students, pause voice, resume voice, ya stop speaking.'
+      'You can say: build a website for robotics club, preview website, explain website, audit website, outline website, export website, reset session, sonify website, polish HTML, add heading About Us, add paragraph Welcome students, pause voice, resume voice, or stop speaking.',
+      'Aap bol sakte hain: robotics club ke liye website banao, preview website, website samjhao, audit website, outline website, export website, reset session, website sonify karo, HTML polish karo, heading add karo About Us, paragraph add karo Welcome students, pause voice, resume voice, ya stop speaking. Hindi examples: school annual day ke liye website banao. Website kaisi dikhti hai? Isme kya missing hai?'
     );
   }
 
@@ -456,6 +544,22 @@
       await previewHtml(true);
       return;
     }
+    if (lower.includes('audit') || lower.includes('accessibility score') || lower.includes('check accessibility')) {
+      await auditWebsite(true);
+      return;
+    }
+    if (lower.includes('outline') || lower.includes('page structure') || lower.includes('sections')) {
+      outlineWebsite(true);
+      return;
+    }
+    if (lower.includes('export') || lower.includes('download')) {
+      exportHtml();
+      return;
+    }
+    if (lower.includes('reset session') || lower === 'reset') {
+      await resetSession();
+      return;
+    }
     if (lower.includes('explain') || lower.includes('describe') || lower.includes('looks') || lower.includes('samjhao') || lower.includes('kaisi dikhti')) {
       await explainWebsite(true);
       return;
@@ -495,6 +599,11 @@
       lower.includes('explain') ||
       lower.includes('describe') ||
       lower.includes('sonify') ||
+      lower.includes('audit') ||
+      lower.includes('outline') ||
+      lower.includes('export') ||
+      lower.includes('download') ||
+      lower.includes('reset session') ||
       lower.includes('polish') ||
       lower.includes('pause voice') ||
       lower.includes('resume voice') ||
@@ -603,6 +712,10 @@
     replaceButton('runBtn', 'Preview', 'Preview HTML website', () => previewHtml(true));
     replaceButton('analyzeBtn', 'Explain', 'Explain what the website looks like', () => explainWebsite(true));
     replaceButton('fixBtn', 'Polish', 'Polish HTML accessibility and layout', polishHtml);
+    replaceButton('auditBtn', 'Audit', 'Audit accessibility and page quality', () => auditWebsite(true));
+    replaceButton('outlineBtn', 'Outline', 'Summarize the website outline', () => outlineWebsite(true));
+    replaceButton('exportBtn', 'Export', 'Export website as an HTML file', exportHtml);
+    replaceButton('resetBtn', 'Reset', 'Reset this session', resetSession);
     replaceButton('voiceButton', 'Voice Off', 'Toggle voice control', toggleVoice);
     replaceButton('tutorialBtn', 'Help', 'Hear HTML voice commands', () => writeOutput(helpText(), true));
     replaceButton('helpBtn', 'Help', 'Hear HTML voice commands', () => writeOutput(helpText(), true));
@@ -655,6 +768,10 @@
     window.runCode = () => previewHtml(true);
     window.analyzeCode = () => explainWebsite(true);
     window.fixCode = polishHtml;
+    window.auditWebsite = auditWebsite;
+    window.outlineWebsite = outlineWebsite;
+    window.exportHtml = exportHtml;
+    window.resetSession = resetSession;
     window.generateCode = (prompt) => buildWebsite(prompt, true);
     window.chatWithAI = (message) => chatWithAI(message, true);
     window.submitCommand = async () => {
@@ -693,6 +810,7 @@
         setTimeout(startVoice, 300);
       }
     });
+    $('demoModeBtn')?.addEventListener('click', toggleDemoMode);
 
     document.body.dataset.htmlModeReady = 'true';
   }

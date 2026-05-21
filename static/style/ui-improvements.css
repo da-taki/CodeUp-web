@@ -222,3 +222,27 @@
 .cu-command-bar #voiceButton {
   display: inline-flex !important;
 }
+
+.cu-demo-mode .cu-title {
+  font-size: clamp(2.6rem, 8vw, 5.8rem);
+}
+.cu-demo-mode .cu-subtitle,
+.cu-demo-mode .cu-subtitle-info {
+  font-size: 1.08rem;
+}
+.cu-demo-mode .cu-button,
+.cu-demo-mode .theme-toggle,
+.cu-demo-mode .theme-selector,
+.cu-demo-mode .cu-language-selector,
+.cu-demo-mode #commandInput {
+  min-height: 46px;
+  font-size: 1rem;
+}
+.cu-demo-mode .cu-output-box {
+  font-size: 1rem;
+  line-height: 1.65;
+}
+.cu-demo-mode .cu-html-editor {
+  font-size: 1rem;
+  line-height: 1.7;
+}

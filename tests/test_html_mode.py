@@ -18,6 +18,10 @@ def test_root_is_html_builder(client):
     assert response.status_code == 200
     assert "CODEUP HTML" in body
     assert "Ask / Build" in body
+    assert "Demo Mode" in body
+    assert "Audit" in body
+    assert "Export" in body
+    assert "Reset" in body
     assert "Blind-first website builder" in body
     assert "legacy code execution IDE" not in body
 
@@ -53,6 +57,24 @@ def test_html_memory_persists_per_session(client):
     assert loaded["memory"]["last_html"] == "<html>Art</html>"
     assert loaded["memory"]["last_url"] == "/student-site/demo/"
     assert loaded["memory"]["history"][-1]["prompt"] == "Build a website for art club"
+
+
+def test_reset_session_clears_memory_and_local_site(client):
+    published = client.post("/publish-site", json={"html": "<h1>Reset Me</h1>"}).get_json()
+    assert client.get(published["url"]).status_code == 200
+
+    reset = client.post("/reset-session", json={"url": published["url"]}).get_json()
+    assert reset["success"] is True
+    assert reset["memory"] == {"history": [], "last_html": "", "last_url": ""}
+    assert client.get(published["url"]).status_code == 404
+
+
+def test_html_audit_scores_accessibility(client):
+    html = "<!doctype html><html lang='en'><head><title>Club</title><meta name='viewport' content='width=device-width'></head><body><main><h1>Club</h1><button>Join</button></main></body></html>"
+    data = client.post("/html-audit", json={"html": html}).get_json()
+    assert data["success"] is True
+    assert data["audit"]["score"] >= 80
+    assert data["audit"]["total"] == len(data["audit"]["checks"])
 
 
 def test_chat_uses_memory_and_has_local_fallback_without_ai(client):
@@ -96,6 +118,10 @@ def test_analyze_and_fix_validate_html(client):
 
 def test_voice_command_is_html_or_chat_focused(client):
     assert client.post("/voice-command", json={"text": "preview website"}).get_json()["action"] == "preview_site"
+    assert client.post("/voice-command", json={"text": "audit website"}).get_json()["action"] == "audit_site"
+    assert client.post("/voice-command", json={"text": "outline website"}).get_json()["action"] == "outline_site"
+    assert client.post("/voice-command", json={"text": "export website"}).get_json()["action"] == "export_site"
+    assert client.post("/voice-command", json={"text": "reset session"}).get_json()["action"] == "reset_session"
     assert client.post("/voice-command", json={"text": "explain website"}).get_json()["action"] == "explain_site"
     assert client.post("/voice-command", json={"text": "build a website for music class"}).get_json()["action"] == "build_site"
     assert client.post("/voice-command", json={"text": "what is missing in this website?"}).get_json()["action"] == "chat"

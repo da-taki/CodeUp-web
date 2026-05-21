@@ -7,6 +7,7 @@ load_dotenv()
 import json
 import os
 import re
+import shutil
 import threading
 import time
 import uuid
@@ -346,6 +347,50 @@ def _fallback_explanation(html: str, language: str) -> str:
     )
 
 
+def _html_text(html: str) -> str:
+    text = re.sub(r"<(script|style)\b[^>]*>.*?</\1>", " ", html, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r"<[^>]+>", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _audit_html(html: str) -> dict[str, Any]:
+    lowered = html.lower()
+    images = re.findall(r"<img\b[^>]*>", html, flags=re.IGNORECASE)
+    links = re.findall(r"<a\b[^>]*>(.*?)</a>", html, flags=re.IGNORECASE | re.DOTALL)
+    buttons = re.findall(r"<button\b[^>]*>(.*?)</button>", html, flags=re.IGNORECASE | re.DOTALL)
+    headings = re.findall(r"<h([1-6])\b[^>]*>(.*?)</h\1>", html, flags=re.IGNORECASE | re.DOTALL)
+    checks = [
+        ("Document starts with doctype", lowered.lstrip().startswith("<!doctype html")),
+        ("Page has a language attribute", bool(re.search(r"<html\b[^>]*\blang=", html, re.IGNORECASE))),
+        ("Page has a title", bool(re.search(r"<title>\s*[^<]+", html, re.IGNORECASE))),
+        ("Page has a viewport meta tag", "name=\"viewport\"" in lowered or "name='viewport'" in lowered),
+        ("Page has an h1 heading", bool(re.search(r"<h1\b", html, re.IGNORECASE))),
+        ("Images have alt text", all(re.search(r"\balt\s*=\s*['\"][^'\"]+['\"]", image, re.IGNORECASE) for image in images)),
+        ("Buttons have readable labels", all(_html_text(button) for button in buttons)),
+        ("Links have readable labels", all(_html_text(link) for link in links)),
+        ("Uses semantic sections", any(tag in lowered for tag in ("<main", "<section", "<article", "<header", "<footer"))),
+    ]
+    passed = sum(1 for _, ok in checks if ok)
+    issues = [label for label, ok in checks if not ok]
+    suggestions = []
+    if not headings:
+        suggestions.append("Add headings so screen reader users can skim the page.")
+    if images and "Images have alt text" in issues:
+        suggestions.append("Add meaningful alt text to every image.")
+    if "Uses semantic sections" in issues:
+        suggestions.append("Use main, section, header, and footer landmarks.")
+    if not suggestions:
+        suggestions.append("Preview the page on mobile and ask a student to describe what they hear.")
+    return {
+        "score": round((passed / len(checks)) * 100),
+        "passed": passed,
+        "total": len(checks),
+        "checks": [{"label": label, "passed": ok} for label, ok in checks],
+        "issues": issues,
+        "suggestions": suggestions,
+    }
+
+
 def _call_ollama(system_prompt: str, user_prompt: str, temperature: float) -> str | None:
     if os.environ.get("OLLAMA_ENABLED", "0") != "1":
         return None
@@ -506,6 +551,40 @@ def html_memory():
     return jsonify({"success": True, "memory": memory})
 
 
+@app.route("/reset-session", methods=["POST"])
+def reset_session():
+    body = safejson()
+    session_id = get_session_id()
+    url_session = re.search(r"/student-site/([^/]+)/", str(body.get("url") or ""))
+    if url_session:
+        session_id = _sanitize_id(url_session.group(1))
+    for path in (_html_memory_path(session_id),):
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            pass
+    site_dir = _student_site_dir(session_id)
+    try:
+        if os.path.isdir(site_dir):
+            shutil.rmtree(site_dir)
+    except OSError:
+        pass
+    return jsonify({"success": True, "memory": _load_html_memory(session_id)})
+
+
+@app.route("/html-audit", methods=["POST"])
+def html_audit():
+    html = str(safejson().get("html") or "")
+    if not html.strip():
+        return jsonify({"success": False, "error": "HTML cannot be empty"}), 400
+    if len(html) > MAX_HTML_SIZE:
+        return jsonify({"success": False, "error": f"HTML too large (max {MAX_HTML_SIZE} bytes)"}), 413
+    audit = _audit_html(html)
+    _append_memory(note=f"Accessibility audit score {audit['score']}", html=html)
+    return jsonify({"success": True, "audit": audit})
+
+
 @app.route("/html-chat", methods=["POST"])
 def html_chat():
     body = safejson()
@@ -628,6 +707,14 @@ def voice_command():
         action = "stop_speaking"
     elif "preview" in lower or "show website" in lower:
         action = "preview_site"
+    elif "audit" in lower or "accessibility" in lower:
+        action = "audit_site"
+    elif "outline" in lower or "page structure" in lower:
+        action = "outline_site"
+    elif "export" in lower or "download" in lower:
+        action = "export_site"
+    elif "reset session" in lower or lower == "reset":
+        action = "reset_session"
     elif "explain" in lower or "describe" in lower:
         action = "explain_site"
     elif "sonify" in lower or "sound" in lower:
