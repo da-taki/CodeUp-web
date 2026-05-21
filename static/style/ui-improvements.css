@@ -167,8 +167,7 @@
 }
 
 /* ------- "Open the IDE" badge link inside the IDE
-   (a small back-to-landing affordance — optional, only appears if you add
-   <a class="cu-back-home" href="/">← back to landing</a> in the header) ------- */
+   (optional small home affordance if you add a cu-back-home link) ------- */
 .cu-back-home {
   display: inline-flex; align-items: center; gap: 6px;
   font-family: var(--font-mono); font-size: 0.78rem; font-weight: 600;

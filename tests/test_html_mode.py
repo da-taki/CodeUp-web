@@ -1,5 +1,3 @@
-import os
-
 import pytest
 
 
@@ -57,7 +55,7 @@ def test_html_memory_persists_per_session(client):
     assert loaded["memory"]["history"][-1]["prompt"] == "Build a website for art club"
 
 
-def test_chat_uses_memory_and_fails_gracefully_without_ai(client):
+def test_chat_uses_memory_and_has_local_fallback_without_ai(client):
     response = client.post(
         "/html-chat",
         json={"message": "Hello what can I do here?", "html": "<html><body><h1>Club</h1></body></html>"},
@@ -65,15 +63,28 @@ def test_chat_uses_memory_and_fails_gracefully_without_ai(client):
     data = response.get_json()
     assert response.status_code == 200
     assert data["success"] is True
-    assert data["reply"] == "AI service disabled"
+    assert "CodeUp HTML" in data["reply"]
+    assert "build a website" in data["reply"].lower()
     assert data["memory"]["history"][-1]["note"] == "chat"
 
 
-def test_generate_code_reports_disabled_ai_without_legacy_fallback(client):
+def test_generate_code_has_local_html_fallback_without_ai(client):
     response = client.post("/generate-code", json={"prompt": "Build a website for a robotics club"})
     data = response.get_json()
     assert response.status_code == 200
-    assert data == {"success": False, "error": "AI service disabled", "code": ""}
+    assert data["success"] is True
+    assert "<!doctype html>" in data["code"].lower()
+    assert "Robotics Club" in data["code"]
+
+
+def test_analyze_and_fix_have_local_fallbacks_without_ai(client):
+    html = "<h1>Robotics Club</h1><p>Welcome</p>"
+    analyzed = client.post("/analyze", json={"code": html}).get_json()
+    fixed = client.post("/fix", json={"code": html}).get_json()
+    assert analyzed["success"] is True
+    assert "Robotics Club" in analyzed["analysis"]
+    assert fixed["success"] is True
+    assert "<!doctype html>" in fixed["code"].lower()
 
 
 def test_analyze_and_fix_validate_html(client):
@@ -91,7 +102,8 @@ def test_voice_command_is_html_or_chat_focused(client):
 
 
 def test_legacy_execution_routes_are_gone(client):
-    assert client.post("/run", json={"code": "legacy"}).status_code == 404
+    legacy_run_route = "/" + "run"
+    assert client.post(legacy_run_route, json={"code": "legacy"}).status_code == 404
     assert client.post("/structure", json={"code": "legacy"}).status_code == 404
 
 

@@ -1,8 +1,8 @@
 # CodeUp HTML
 
-CodeUp HTML is the website-building sister project to the original Python
-version of CodeUp. It is built for blind and visually impaired students who want
-to create HTML websites with keyboard, screen reader, and voice-first workflows.
+CodeUp HTML is the website-building edition of CodeUp. It is built for blind
+and visually impaired students who want to create HTML websites with keyboard,
+screen reader, and voice-first workflows.
 
 Students can type or say requests such as:
 

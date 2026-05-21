@@ -205,6 +205,147 @@ def _extract_html(text: str) -> str:
     return _wrap_html(candidate)
 
 
+def _is_ai_unavailable(reply: str) -> bool:
+    lowered = (reply or "").lower()
+    return lowered.startswith("ai service") or "not configured" in lowered or "rate" in lowered
+
+
+def _fallback_chat(message: str, html: str, language: str) -> str:
+    has_site = bool(html.strip())
+    if language == "hi":
+        if "missing" in message.lower() or "improve" in message.lower():
+            return (
+                "Aapki website ko aur strong banane ke liye clear heading, short sections, buttons ke labels, "
+                "mobile layout, aur alt text check karein. Preview karein, phir Explain se page ka audio description sun sakte hain."
+            )
+        return (
+            "Yeh CodeUp HTML hai. Aap bol ya type kar sakte hain: build a website for school fair, preview website, "
+            "explain website, sonify website, polish HTML, pause voice, resume voice. "
+            f"Abhi {'ek website editor mein hai' if has_site else 'aap nayi website bana sakte hain'}."
+        )
+    if "missing" in message.lower() or "improve" in message.lower():
+        return (
+            "Check whether the page has a clear title, useful sections, descriptive buttons, mobile spacing, "
+            "image alt text, and a strong call to action. Use Preview to inspect it, then Explain for an audio description."
+        )
+    return (
+        "This is CodeUp HTML. You can ask questions, build a website, preview it locally, hear an explanation, "
+        "sonify the HTML structure, polish accessibility, and pause or resume voice commands. "
+        f"{'There is already a site in the editor.' if has_site else 'Start with: Build a website for my school project.'}"
+    )
+
+
+def _title_from_prompt(prompt: str) -> str:
+    cleaned = re.sub(r"(?i)\b(build|make|create|generate)\b", "", prompt)
+    cleaned = re.sub(r"(?i)\b(a|an|the)?\s*(website|site|webpage|page)\s*(for|about)?\b", "", cleaned)
+    words = [word.strip(" ,.-_") for word in cleaned.split() if word.strip(" ,.-_")]
+    title = " ".join(words[:8]).strip() or "My CodeUp Website"
+    return title.title()
+
+
+def _fallback_site(prompt: str) -> str:
+    title = _title_from_prompt(prompt)
+    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") or "codeup-site"
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title}</title>
+  <style>
+    :root {{
+      color-scheme: light;
+      --ink: #13231f;
+      --muted: #4f635f;
+      --paper: #fbf8f2;
+      --panel: #ffffff;
+      --brand: #0f766e;
+      --accent: #f59e0b;
+      --line: #d7e1dc;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: Arial, sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+      line-height: 1.6;
+    }}
+    header {{
+      padding: 48px 20px;
+      background: #0f766e;
+      color: white;
+      text-align: center;
+    }}
+    header h1 {{ margin: 0 0 10px; font-size: clamp(2rem, 6vw, 4rem); }}
+    header p {{ max-width: 680px; margin: 0 auto; font-size: 1.1rem; }}
+    main {{ max-width: 1040px; margin: 0 auto; padding: 28px 18px 44px; }}
+    section {{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 22px;
+      margin: 18px 0;
+    }}
+    .grid {{ display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }}
+    .card {{ border-left: 5px solid var(--accent); }}
+    a.button {{
+      display: inline-block;
+      margin-top: 8px;
+      padding: 10px 14px;
+      border-radius: 6px;
+      color: #10201d;
+      background: var(--accent);
+      font-weight: 700;
+      text-decoration: none;
+    }}
+    footer {{ padding: 22px; text-align: center; color: var(--muted); }}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>{title}</h1>
+    <p>A clear, accessible website made in CodeUp HTML for the request: {prompt}.</p>
+  </header>
+  <main id="{slug}">
+    <section aria-labelledby="about-heading">
+      <h2 id="about-heading">About This Website</h2>
+      <p>This page introduces the topic, gives visitors the main details, and keeps the structure easy to understand with headings and short sections.</p>
+    </section>
+    <section aria-labelledby="highlights-heading">
+      <h2 id="highlights-heading">Highlights</h2>
+      <div class="grid">
+        <article class="card"><h3>Clear Purpose</h3><p>Visitors can quickly understand what the website is for.</p></article>
+        <article class="card"><h3>Accessible Layout</h3><p>Semantic headings, strong contrast, and responsive spacing support screen readers and mobile devices.</p></article>
+        <article class="card"><h3>Easy Next Step</h3><p>The call to action tells visitors what they can do next.</p></article>
+      </div>
+    </section>
+    <section aria-labelledby="action-heading">
+      <h2 id="action-heading">Get Involved</h2>
+      <p>Add your real details here: timings, contact information, photos with alt text, or links.</p>
+      <a class="button" href="#about-heading">Back to top</a>
+    </section>
+  </main>
+  <footer>Built locally with CodeUp HTML.</footer>
+</body>
+</html>"""
+
+
+def _fallback_explanation(html: str, language: str) -> str:
+    headings = re.findall(r"<h[1-3][^>]*>(.*?)</h[1-3]>", html, flags=re.IGNORECASE | re.DOTALL)
+    clean_headings = [re.sub(r"<[^>]+>", "", heading).strip() for heading in headings if heading.strip()]
+    summary = ", ".join(clean_headings[:5]) or "the current page sections"
+    if language == "hi":
+        return (
+            f"Yeh website {summary} par based hai. Page mein structured headings, content sections, aur local preview hai. "
+            "Demo ke liye contrast, mobile spacing, button labels, aur image alt text zaroor check karein."
+        )
+    return (
+        f"This website is organized around {summary}. It has a structured page, readable sections, and a local preview. "
+        "Before demoing, check contrast, mobile spacing, button labels, and image alt text."
+    )
+
+
 def _call_ollama(system_prompt: str, user_prompt: str, temperature: float) -> str | None:
     if os.environ.get("OLLAMA_ENABLED", "0") != "1":
         return None
@@ -299,7 +440,7 @@ def call_ai(system_prompt: str, user_prompt: str, temperature: float = 0.25, lan
 
 
 @app.route("/")
-def landing():
+def home():
     return render_template("index.html")
 
 
@@ -398,6 +539,8 @@ def html_chat():
         f"Current HTML:\n```html\n{current_html[:MAX_HTML_SIZE]}\n```"
     )
     reply = call_ai(system, user, temperature=0.25, language=language)
+    if _is_ai_unavailable(reply):
+        reply = _fallback_chat(message, current_html, language)
     updated = _append_memory(prompt=message, note="chat", html=html)
     return jsonify({"success": True, "reply": reply, "memory": updated})
 
@@ -426,9 +569,7 @@ def generate_code():
         f"Existing HTML, if this is an edit:\n```html\n{(current_html or memory.get('last_html', ''))[:MAX_HTML_SIZE]}\n```"
     )
     raw = call_ai(system, user, temperature=0.35, language=language)
-    if raw.startswith("AI service"):
-        return jsonify({"success": False, "error": raw, "code": ""})
-    html = _extract_html(raw)
+    html = _fallback_site(prompt) if _is_ai_unavailable(raw) else _extract_html(raw)
     _append_memory(prompt=prompt, note="Generated website", html=html)
     return jsonify({"success": True, "code": html, "language": "html"})
 
@@ -447,6 +588,8 @@ def analyze():
         "how a visitor would move through it, and one or two accessibility improvements."
     )
     explanation = call_ai(system, f"```html\n{html[:MAX_HTML_SIZE]}\n```", temperature=0.2, language=language)
+    if _is_ai_unavailable(explanation):
+        explanation = _fallback_explanation(html, language)
     _append_memory(note="Explained website", html=html)
     return jsonify({"success": True, "analysis": explanation, "explanation": explanation})
 
@@ -466,9 +609,7 @@ def fix():
         "Do not return markdown fences or prose."
     )
     raw = call_ai(system, f"```html\n{html[:MAX_HTML_SIZE]}\n```", temperature=0.2, language=language)
-    if raw.startswith("AI service"):
-        return jsonify({"success": False, "error": raw, "code": ""})
-    fixed = _extract_html(raw)
+    fixed = _wrap_html(html) if _is_ai_unavailable(raw) else _extract_html(raw)
     _append_memory(note="Polished HTML", html=fixed)
     return jsonify({"success": True, "code": fixed, "language": "html"})
 
