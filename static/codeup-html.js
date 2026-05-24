@@ -68,6 +68,21 @@
     lastReview: '',
     memory: { history: [], last_html: '', last_url: '', last_review: '' },
     audioCtx: null,
+    wakeWord: (localStorage.getItem('codeup_wake_word') || 'hey codeup').toLowerCase(),
+    wakeArmed: true,
+    wakeUntil: 0,
+    navigator: { items: [], index: -1 },
+    versions: [],
+    pages: {},
+    currentPage: 'home',
+  };
+
+  const pageTemplates = {
+    'school event': { title: 'School Event', sections: ['About the Event', 'Schedule', 'How to Join'] },
+    'club page': { title: 'Club Page', sections: ['About the Club', 'Meetings', 'Join Us'] },
+    'personal portfolio': { title: 'Personal Portfolio', sections: ['About Me', 'Projects', 'Contact'] },
+    'charity drive': { title: 'Charity Drive', sections: ['Our Goal', 'What We Need', 'Volunteer'] },
+    'science project': { title: 'Science Project', sections: ['Question', 'Experiment', 'Results'] },
   };
 
   function $(id) { return document.getElementById(id); }
@@ -113,12 +128,35 @@
   function getEditor() { return $('htmlEditor'); }
   function getHtml() { return (getEditor() || {}).value || ''; }
 
+  function snapshotVersion(note) {
+    const html = getHtml();
+    if (!html) return;
+    const last = state.versions[state.versions.length - 1];
+    if (last && last.html === html) return;
+    state.versions.push({
+      html,
+      note: note || 'Edited website',
+      page: state.currentPage,
+      timestamp: new Date().toISOString(),
+    });
+    state.versions = state.versions.slice(-25);
+    try { sessionStorage.setItem('codeup_versions', JSON.stringify(state.versions)); } catch (error) {}
+  }
+
   function setHtml(html) {
     const editor = getEditor();
     if (editor) {
       editor.value = html;
       try { sessionStorage.setItem('codeup_html_draft', html); } catch (error) {}
+      state.pages[state.currentPage] = html;
     }
+  }
+
+  function restoreVersions() {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem('codeup_versions') || '[]');
+      if (Array.isArray(saved)) state.versions = saved.filter(item => item && item.html);
+    } catch (error) {}
   }
 
   function ensureHtmlEditor() {
@@ -135,6 +173,7 @@
     editor.value = sessionStorage.getItem('codeup_html_draft') || state.memory.last_html || starterHtml;
     editor.addEventListener('input', () => {
       try { sessionStorage.setItem('codeup_html_draft', editor.value); } catch (error) {}
+      state.pages[state.currentPage] = editor.value;
     });
     editor.addEventListener('keydown', (event) => {
       if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
@@ -239,6 +278,69 @@
     }).join('\n');
   }
 
+  function makeTemplateHtml(kind) {
+    const template = pageTemplates[kind] || pageTemplates['club page'];
+    const slug = slugify(template.title);
+    return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${template.title}</title>
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; color: #182620; background: #fbf7ed; line-height: 1.6; }
+    header { padding: 48px 20px; color: white; background: #0f766e; text-align: center; }
+    nav a { color: white; margin: 0 8px; font-weight: 700; }
+    main { max-width: 920px; margin: 0 auto; padding: 24px 18px 44px; }
+    section { margin: 18px 0; padding: 22px; border: 1px solid #d9e2dc; border-radius: 8px; background: white; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>${template.title}</h1>
+    <p>Customize this ${kind} template with your own details.</p>
+    <nav aria-label="Site pages"><a href="#${slug}-main">Home</a><a href="#contact">Contact</a></nav>
+  </header>
+  <main id="${slug}-main">
+    ${template.sections.map((section, index) => `<section aria-labelledby="section-${index + 1}"><h2 id="section-${index + 1}">${section}</h2><p>Add clear details for ${section.toLowerCase()} here.</p></section>`).join('\n    ')}
+    <section id="contact" aria-labelledby="contact-heading"><h2 id="contact-heading">Contact</h2><p>Add a teacher, club leader, or team email here.</p></section>
+  </main>
+</body>
+</html>`;
+  }
+
+  function createMultiPageSite(topic) {
+    const title = topic ? topic.replace(/\b(homepage|about page|contact page|website|site)\b/gi, '').trim() : 'Student Website';
+    const base = title || 'Student Website';
+    state.pages = {
+      home: makeTemplateHtml('school event').replace(/School Event/g, base),
+      about: makeTemplateHtml('personal portfolio').replace(/Personal Portfolio/g, `${base} About`),
+      contact: makeTemplateHtml('charity drive').replace(/Charity Drive/g, `${base} Contact`),
+    };
+    state.currentPage = 'home';
+    setHtml(state.pages.home);
+    snapshotVersion('Created multi-page website');
+    speak('Created a homepage, about page, and contact page. You are editing the homepage.');
+  }
+
+  function switchPage(pageName) {
+    const page = slugify(pageName || '').replace(/-/g, ' ');
+    const key = page.includes('about') ? 'about' : page.includes('contact') ? 'contact' : 'home';
+    state.pages[state.currentPage] = getHtml();
+    if (!state.pages[key]) state.pages[key] = makeTemplateHtml('club page').replace(/Club Page/g, key.charAt(0).toUpperCase() + key.slice(1));
+    state.currentPage = key;
+    setHtml(state.pages[key]);
+    writeOutput(`Now editing ${key} page.`, true);
+  }
+
+  function useTemplate(kind) {
+    const lower = kind.toLowerCase();
+    const name = Object.keys(pageTemplates).find(item => lower.includes(item)) || 'club page';
+    setHtml(makeTemplateHtml(name));
+    snapshotVersion(`Started from ${name} template`);
+    writeOutput(`Loaded ${name} template.`, true);
+  }
+
   function exportHtml() {
     const html = getHtml();
     const title = (html.match(/<title>\s*([^<]+)/i) || [])[1] || 'codeup-site';
@@ -251,6 +353,156 @@
     link.remove();
     setTimeout(() => URL.revokeObjectURL(link.href), 500);
     writeOutput(t('HTML file exported.', 'HTML file export ho gayi.'), true);
+  }
+
+  function previewDocument() {
+    const parser = new DOMParser();
+    return parser.parseFromString(getHtml(), 'text/html');
+  }
+
+  function rebuildNavigator() {
+    const doc = previewDocument();
+    const selectors = 'h1,h2,h3,h4,h5,h6,section,article,nav,main,p,button,a,img,form,label,input,textarea,select';
+    state.navigator.items = [...doc.body.querySelectorAll(selectors)].map((node, index) => {
+      const tag = node.tagName.toLowerCase();
+      const text = (node.getAttribute('alt') || node.getAttribute('aria-label') || node.textContent || node.getAttribute('placeholder') || '').replace(/\s+/g, ' ').trim();
+      return { tag, text: text || `${tag} ${index + 1}`, index };
+    });
+    if (state.navigator.index >= state.navigator.items.length) state.navigator.index = state.navigator.items.length - 1;
+  }
+
+  function readNavigatorItem(item) {
+    if (!item) {
+      speak('No matching page element found.');
+      return;
+    }
+    const label = `${item.tag} ${item.index + 1}: ${item.text}`;
+    writeOutput(label, true);
+  }
+
+  function navigatePreview(command) {
+    rebuildNavigator();
+    const lower = command.toLowerCase();
+    if (!state.navigator.items.length) {
+      speak('No readable elements found in the current HTML.');
+      return true;
+    }
+    if (lower.includes('previous')) state.navigator.index = Math.max(0, state.navigator.index - 1);
+    else if (lower.includes('next')) state.navigator.index = Math.min(state.navigator.items.length - 1, state.navigator.index + 1);
+    const paragraph = lower.match(/paragraph\s+(\d+)/);
+    if (paragraph) {
+      const paragraphs = state.navigator.items.filter(item => item.tag === 'p');
+      readNavigatorItem(paragraphs[Number(paragraph[1]) - 1]);
+      return true;
+    }
+    const tag = lower.includes('heading') ? /^h[1-6]$/ : lower.includes('section') ? /^section$/ : null;
+    if (tag) {
+      const direction = lower.includes('previous') ? -1 : 1;
+      let cursor = state.navigator.index;
+      for (let i = 0; i < state.navigator.items.length; i += 1) {
+        cursor = Math.max(0, Math.min(state.navigator.items.length - 1, cursor + direction));
+        if (tag.test(state.navigator.items[cursor].tag)) {
+          state.navigator.index = cursor;
+          break;
+        }
+      }
+    }
+    readNavigatorItem(state.navigator.items[state.navigator.index]);
+    return true;
+  }
+
+  function applyCssEdit(command) {
+    const lower = command.toLowerCase();
+    const rules = [];
+    if (lower.includes('heading') && (lower.includes('bigger') || lower.includes('larger'))) rules.push('h1, h2 { font-size: clamp(2rem, 6vw, 4rem); }');
+    if (lower.includes('heading') && lower.includes('smaller')) rules.push('h1, h2 { font-size: 1.6rem; }');
+    if (lower.includes('background') && lower.includes('cream')) rules.push('body { background: #fbf3df; }');
+    if (lower.includes('background') && lower.includes('white')) rules.push('body { background: #ffffff; }');
+    if (lower.includes('background') && lower.includes('dark')) rules.push('body { background: #111827; color: #f9fafb; } section { background: #1f2937; }');
+    if (lower.includes('more spacing') || lower.includes('more space')) rules.push('section { margin-block: 28px; padding: 30px; } main { padding-block: 40px; }');
+    if (lower.includes('less spacing') || lower.includes('less space')) rules.push('section { margin-block: 12px; padding: 16px; } main { padding-block: 20px; }');
+    if (!rules.length) return false;
+    snapshotVersion('Before CSS voice edit');
+    const styleBlock = `\n<style data-codeup-voice-css>\n${rules.join('\n')}\n</style>\n`;
+    const html = getHtml();
+    const next = /<\/head\s*>/i.test(html)
+      ? html.replace(/<\/head\s*>/i, `${styleBlock}</head>`)
+      : `<head>${styleBlock}</head>\n${html}`;
+    setHtml(next);
+    writeOutput(`Applied CSS edit: ${rules.join(' ')}`, true);
+    previewHtml(false);
+    return true;
+  }
+
+  function contrastRatio(fg, bg) {
+    const parse = (hex) => {
+      const value = hex.replace('#', '');
+      const full = value.length === 3 ? value.split('').map(char => char + char).join('') : value;
+      const rgb = [0, 2, 4].map(i => parseInt(full.slice(i, i + 2), 16) / 255).map(v => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+      return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+    };
+    const a = parse(fg);
+    const b = parse(bg);
+    return ((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)).toFixed(2);
+  }
+
+  function announceContrast() {
+    const html = getHtml();
+    const fg = (html.match(/(?:color|--ink)\s*:\s*(#[0-9a-f]{3,6})/i) || [])[1] || '#17202a';
+    const bg = (html.match(/(?:background|--paper)\s*:\s*(#[0-9a-f]{3,6})/i) || [])[1] || '#ffffff';
+    const ratio = contrastRatio(fg, bg);
+    writeOutput(`Estimated main text contrast is ${ratio} to 1 for ${fg} on ${bg}. WCAG AA needs 4.5 to 1 for normal text.`, true);
+  }
+
+  function explainConcept(command) {
+    const concepts = {
+      div: 'A div is a generic container. Use it for grouping when no semantic element like header, main, section, nav, or button fits.',
+      'aria-label': 'aria-label gives an accessible name to an element when visible text is missing or not enough, such as an icon-only button.',
+      section: 'A section groups related content and usually needs a heading so screen reader users can understand the page outline.',
+      heading: 'Headings name each part of a page. Screen reader users often jump by headings to skim the structure.',
+      contrast: 'Color contrast compares text color against its background. A higher ratio makes text easier to read for sighted visitors.',
+    };
+    const key = Object.keys(concepts).find(item => command.toLowerCase().includes(item));
+    if (!key) return false;
+    speak(concepts[key]);
+    writeOutput(concepts[key], false);
+    return true;
+  }
+
+  function undoByVoice(command) {
+    const match = command.toLowerCase().match(/(?:back|undo)\s+(\d+)/);
+    const words = { one: 1, two: 2, three: 3, four: 4, five: 5 };
+    const wordMatch = command.toLowerCase().match(/(?:back|undo)\s+(one|two|three|four|five)/);
+    const steps = match ? Number(match[1]) : wordMatch ? words[wordMatch[1]] : 1;
+    if (state.versions.length <= 1) {
+      speak('No earlier version is available.');
+      return true;
+    }
+    const target = Math.max(0, state.versions.length - 1 - steps);
+    const version = state.versions[target];
+    state.versions = state.versions.slice(0, target + 1);
+    setHtml(version.html);
+    writeOutput(`Restored version: ${version.note}.`, true);
+    return true;
+  }
+
+  function reviewChanges() {
+    if (state.versions.length < 2) {
+      speak('There is only one saved version so far.');
+      return true;
+    }
+    const previous = _htmlWords(state.versions[state.versions.length - 2].html);
+    const current = _htmlWords(state.versions[state.versions.length - 1].html);
+    const added = [...current].filter(word => !previous.has(word)).slice(0, 8);
+    const removed = [...previous].filter(word => !current.has(word)).slice(0, 8);
+    const message = `Changed since the last version. Added: ${added.join(', ') || 'nothing major'}. Removed: ${removed.join(', ') || 'nothing major'}.`;
+    writeOutput(message, true);
+    return true;
+  }
+
+  function _htmlWords(html) {
+    const text = html.replace(/<[^>]+>/g, ' ').toLowerCase().match(/[a-z][a-z0-9-]{3,}/g) || [];
+    return new Set(text);
   }
 
   async function resetSession() {
@@ -385,6 +637,7 @@
       });
       const data = await response.json();
       if (!data.success || !data.code) throw new Error(data.error || 'Could not apply review suggestions.');
+      snapshotVersion('Before applying review');
       setHtml(data.code);
       if (data.memory) state.memory = data.memory;
       const url = await publish(data.code);
@@ -424,7 +677,9 @@
       });
       const data = await response.json();
       if (!data.success || !data.code) throw new Error(data.error || 'Website generation failed.');
+      snapshotVersion('Before building website');
       setHtml(data.code);
+      snapshotVersion('Built website');
       const url = await publish(data.code);
       await saveMemory({ prompt: normalized, html: data.code, url });
       const review = await reviewWebsite(false);
@@ -448,7 +703,9 @@
       });
       const data = await response.json();
       if (!data.success || !data.code) throw new Error(data.error || 'Could not polish the HTML.');
+      snapshotVersion('Before polishing HTML');
       setHtml(data.code);
+      snapshotVersion('Polished HTML');
       await publish(data.code);
       writeOutput(t('HTML polished and preview updated.', 'HTML polish ho gaya aur preview update ho gaya.'), true);
     } catch (error) {
@@ -492,15 +749,22 @@
     return state.audioCtx;
   }
 
-  function playTone(freq, duration, offset = 0, type = 'sine') {
+  function playTone(freq, duration, offset = 0, type = 'sine', pan = 0) {
     const ctx = ensureAudio();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
+    const panner = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
     osc.type = type;
     osc.frequency.value = freq;
     gain.gain.value = 0.045;
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    if (panner) {
+      panner.pan.value = Math.max(-1, Math.min(1, pan));
+      gain.connect(panner);
+      panner.connect(ctx.destination);
+    } else {
+      gain.connect(ctx.destination);
+    }
     const start = ctx.currentTime + offset;
     osc.start(start);
     gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
@@ -510,15 +774,20 @@
   function sonifyHtml() {
     cancelSpeech();
     const html = getHtml();
-    const tags = [...html.matchAll(/<\/?([a-zA-Z][\w-]*)\b[^>]*>/g)].map(match => match[1].toLowerCase());
+    const doc = previewDocument();
+    const elements = [...doc.body.querySelectorAll('header,main,section,article,nav,h1,h2,h3,p,a,button,img,form')];
+    const tags = elements.length
+      ? elements.map((node, index) => ({ tag: node.tagName.toLowerCase(), pan: (index % 5 - 2) / 2 }))
+      : [...html.matchAll(/<\/?([a-zA-Z][\w-]*)\b[^>]*>/g)].map((match, index) => ({ tag: match[1].toLowerCase(), pan: (index % 5 - 2) / 2 }));
     if (!tags.length) {
       speak(t('No HTML tags found to sonify.', 'Sonify karne ke liye HTML tags nahi mile.'));
       return;
     }
     speak(t(`Sonifying ${tags.length} HTML tags.`, `${tags.length} HTML tags ko sound mein suna raha hoon.`));
-    tags.slice(0, 80).forEach((tag, index) => {
+    tags.slice(0, 80).forEach((item, index) => {
+      const tag = item.tag;
       const base = tag === 'header' ? 520 : tag === 'section' ? 440 : tag === 'button' ? 700 : tag === 'img' ? 820 : tag === 'script' ? 300 : 360;
-      playTone(base + (index % 5) * 35, 0.12, index * 0.11, tag === 'button' ? 'square' : 'sine');
+      playTone(base + (index % 5) * 35, 0.12, index * 0.11, tag === 'button' ? 'square' : 'sine', item.pan);
     });
   }
 
@@ -541,16 +810,19 @@
     const paragraph = command.match(/(?:add paragraph|insert paragraph|write paragraph|paragraph|para|anuched)\s+(.+)/i);
     const button = command.match(/(?:add button|insert button|button|button jodo)\s+(.+)/i);
     if (button) {
+      snapshotVersion('Before adding button');
       insertAtCursor(`\n<button type="button">${button[1].trim()}</button>\n`);
       speak(t('Button added.', 'Button add ho gaya.'));
       return true;
     }
     if (paragraph) {
+      snapshotVersion('Before adding paragraph');
       insertAtCursor(`\n<p>${paragraph[1].trim()}</p>\n`);
       speak(t('Paragraph added.', 'Paragraph add ho gaya.'));
       return true;
     }
     if (heading && !lower.includes('website')) {
+      snapshotVersion('Before adding heading');
       insertAtCursor(`\n<h2>${heading[1].trim()}</h2>\n`);
       speak(t('Heading added.', 'Heading add ho gayi.'));
       return true;
@@ -607,6 +879,31 @@
     if (!command) return;
     cancelSpeech();
     const lower = command.toLowerCase();
+    if (lower.startsWith('set wake word to ') || lower.startsWith('change wake word to ')) {
+      state.wakeWord = lower.replace(/^set wake word to |^change wake word to /, '').trim() || 'hey codeup';
+      localStorage.setItem('codeup_wake_word', state.wakeWord);
+      state.wakeArmed = true;
+      state.wakeUntil = Date.now() + 45000;
+      writeOutput(`Wake word changed to ${state.wakeWord}.`, true);
+      return;
+    }
+    if (lower.includes(state.wakeWord)) {
+      state.wakeArmed = true;
+      state.wakeUntil = Date.now() + 45000;
+      const afterWake = command.slice(lower.indexOf(state.wakeWord) + state.wakeWord.length).trim();
+      if (!afterWake) {
+        writeOutput(`Heard ${state.wakeWord}. Say a CodeUp command.`, true);
+        return;
+      }
+      await handleVoiceCommand(afterWake);
+      return;
+    }
+    if (state.listening && !state.wakeArmed && Date.now() > state.wakeUntil && !lower.includes('voice off')) {
+      announce(`Waiting for ${state.wakeWord}`);
+      return;
+    }
+    state.wakeArmed = false;
+    state.wakeUntil = Date.now() + 45000;
     writeOutput(`${t('Heard', 'Suna')}: ${command}`);
 
     if (lower.includes('pause voice') || lower.includes('stop listening') || lower.includes('awaaz rok') || lower.includes('ruk jao')) {
@@ -628,6 +925,37 @@
       await chatWithAI(command, true);
       return;
     }
+    if (lower.includes('next heading') || lower.includes('previous heading') || lower.includes('next section') || lower.includes('previous section') || /read paragraph\s+\d+/i.test(command)) {
+      navigatePreview(command);
+      return;
+    }
+    if (lower.includes('contrast')) {
+      announceContrast();
+      return;
+    }
+    if ((lower.includes('what is') || lower.includes('what does') || lower.includes('explain concept')) && explainConcept(command)) return;
+    if (lower.includes('go back') || lower.startsWith('undo')) {
+      undoByVoice(command);
+      return;
+    }
+    if (lower.includes('what changed') || lower.includes('compare versions') || lower.includes('review changes')) {
+      snapshotVersion('Current version for comparison');
+      reviewChanges();
+      return;
+    }
+    if (lower.includes('multi page') || lower.includes('multiple page') || lower.includes('homepage plus')) {
+      createMultiPageSite(command);
+      return;
+    }
+    if (lower.includes('go to page') || lower.includes('open page') || lower.includes('switch to page')) {
+      switchPage(command);
+      return;
+    }
+    if (lower.includes('template')) {
+      useTemplate(command);
+      return;
+    }
+    if (applyCssEdit(command)) return;
     if (isApplyReviewIntent(command)) {
       await applyReviewSuggestion(command, true);
       return;
@@ -684,6 +1012,8 @@
       await chatWithAI(text, true);
       return;
     }
+    state.wakeArmed = true;
+    state.wakeUntil = Date.now() + 45000;
     const lower = text.toLowerCase();
     const isBuildRequest = isBuildIntent(text);
     if (isBuildRequest) {
@@ -710,7 +1040,20 @@
       lower.includes('stop speaking') ||
       lower.includes('add heading') ||
       lower.includes('add paragraph') ||
-      lower.includes('add button')
+      lower.includes('add button') ||
+      lower.includes('next heading') ||
+      lower.includes('previous section') ||
+      lower.includes('read paragraph') ||
+      lower.includes('contrast') ||
+      lower.includes('template') ||
+      lower.includes('multi page') ||
+      lower.includes('go back') ||
+      lower.includes('what changed') ||
+      lower.includes('wake word') ||
+      lower.includes('make the heading') ||
+      lower.includes('make heading') ||
+      lower.includes('change the background') ||
+      lower.includes('more spacing')
     ) {
       await handleVoiceCommand(text);
       return;
@@ -736,6 +1079,8 @@
     state.recognition.onstart = () => {
       state.listening = true;
       state.paused = false;
+      state.wakeArmed = true;
+      state.wakeUntil = Date.now() + 45000;
       updateVoiceButton();
       speak(t('Voice on. You can code hands free.', 'Voice on hai. Aap bina keyboard ke code kar sakte hain.'));
     };
@@ -755,6 +1100,37 @@
       }
     };
     try { state.recognition.start(); } catch (error) { speak(t('Could not start voice.', 'Voice start nahi ho payi.')); }
+  }
+
+  function startWakeListener() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition || state.listening) return;
+    state.recognition = new SpeechRecognition();
+    state.recognition.continuous = true;
+    state.recognition.interimResults = false;
+    state.recognition.lang = isHindi() ? 'hi-IN' : 'en-US';
+    state.recognition.onstart = () => {
+      state.listening = true;
+      state.paused = false;
+      state.wakeArmed = false;
+      updateVoiceButton();
+      announce(`Wake word listener ready. Say ${state.wakeWord}.`);
+    };
+    state.recognition.onresult = (event) => {
+      const result = event.results[event.results.length - 1];
+      const transcript = result && result[0] ? result[0].transcript : '';
+      handleVoiceCommand(transcript);
+    };
+    state.recognition.onerror = () => updateVoiceButton();
+    state.recognition.onend = () => {
+      const shouldRestart = state.listening;
+      if (shouldRestart) {
+        setTimeout(() => {
+          try { state.recognition.start(); } catch (error) {}
+        }, 700);
+      }
+    };
+    try { state.recognition.start(); } catch (error) {}
   }
 
   function stopVoice() {
@@ -885,6 +1261,11 @@
     window.toggleVoice = toggleVoice;
     window.pauseVoiceRecognition = pauseVoice;
     window.resumeVoiceRecognition = resumeVoice;
+    window.setWakeWord = (value) => {
+      state.wakeWord = String(value || 'hey codeup').toLowerCase();
+      localStorage.setItem('codeup_wake_word', state.wakeWord);
+      writeOutput(`Wake word changed to ${state.wakeWord}.`, true);
+    };
 
     document.addEventListener('keydown', (event) => {
       if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'm') {
@@ -919,11 +1300,15 @@
 
   window.addEventListener('load', async () => {
     await loadMemory();
+    restoreVersions();
     setupUi();
+    state.pages.home = getHtml();
+    snapshotVersion('Initial version');
     await previewHtml(false);
+    setTimeout(startWakeListener, 600);
     speak(t(
-      'CodeUp HTML ready. Turn on voice to build websites in English or Hindi.',
-      'CodeUp HTML ready hai. Hindi ya English mein website banane ke liye voice on karein.'
+      `CodeUp HTML ready. Say ${state.wakeWord} to start voice commands, or use the Voice button.`,
+      `CodeUp HTML ready hai. Voice commands start karne ke liye ${state.wakeWord} boliye, ya Voice button use karein.`
     ));
   });
 })();

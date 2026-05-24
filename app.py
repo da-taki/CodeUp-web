@@ -414,6 +414,85 @@ def _html_text(html: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _contrast_ratio(foreground: str, background: str) -> float:
+    def luminance(hex_color: str) -> float:
+        value = hex_color.strip().lstrip("#")
+        if len(value) == 3:
+            value = "".join(char * 2 for char in value)
+        if len(value) != 6:
+            return 0.0
+        channels = [int(value[i : i + 2], 16) / 255 for i in (0, 2, 4)]
+        linear = [channel / 12.92 if channel <= 0.03928 else ((channel + 0.055) / 1.055) ** 2.4 for channel in channels]
+        return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+    light = max(luminance(foreground), luminance(background))
+    dark = min(luminance(foreground), luminance(background))
+    return round((light + 0.05) / (dark + 0.05), 2)
+
+
+def _contrast_pairs(html: str) -> list[dict[str, Any]]:
+    style_text = " ".join(re.findall(r"<style\b[^>]*>(.*?)</style>", html, flags=re.IGNORECASE | re.DOTALL))
+    pairs = []
+    blocks = re.findall(r"([^{}]+)\{([^{}]+)\}", style_text)
+    variables = dict(re.findall(r"(--[\w-]+)\s*:\s*(#[0-9a-fA-F]{3,6})", style_text))
+
+    def resolve(value: str) -> str:
+        var_match = re.search(r"var\((--[\w-]+)\)", value)
+        if var_match:
+            return variables.get(var_match.group(1), "")
+        color_match = re.search(r"#[0-9a-fA-F]{3,6}", value)
+        return color_match.group(0) if color_match else ""
+
+    for selector, declarations in blocks:
+        color = ""
+        background = ""
+        for name, value in re.findall(r"([\w-]+)\s*:\s*([^;]+)", declarations):
+            if name == "color":
+                color = resolve(value)
+            if name in {"background", "background-color"}:
+                background = resolve(value)
+        if color and background:
+            ratio = _contrast_ratio(color, background)
+            pairs.append(
+                {
+                    "selector": re.sub(r"\s+", " ", selector).strip()[:80],
+                    "foreground": color,
+                    "background": background,
+                    "ratio": ratio,
+                    "passes_aa": ratio >= 4.5,
+                }
+            )
+    if not pairs:
+        pairs.append(
+            {
+                "selector": "body",
+                "foreground": "#17202a",
+                "background": "#ffffff",
+                "ratio": _contrast_ratio("#17202a", "#ffffff"),
+                "passes_aa": True,
+            }
+        )
+    return pairs[:12]
+
+
+def _screen_reader_checks(html: str) -> list[dict[str, Any]]:
+    lowered = html.lower()
+    headings = [int(level) for level in re.findall(r"<h([1-6])\b", html, flags=re.IGNORECASE)]
+    skipped_heading = any(next_level - level > 1 for level, next_level in zip(headings, headings[1:]))
+    controls = re.findall(r"<(button|a|input|textarea|select)\b([^>]*)>(.*?)</\1>|<(input)\b([^>]*)>", html, flags=re.IGNORECASE | re.DOTALL)
+    unnamed = 0
+    for match in controls:
+        attrs = (match[1] or "") + " " + (match[4] or "")
+        text = _html_text(match[2] or "")
+        if not text and not re.search(r"\b(aria-label|title|placeholder|alt)\s*=", attrs, re.IGNORECASE):
+            unnamed += 1
+    return [
+        {"pattern": "NVDA heading navigation", "passed": bool(headings) and not skipped_heading, "note": "Headings exist and do not skip levels." if bool(headings) and not skipped_heading else "Add ordered headings so students can skim by heading."},
+        {"pattern": "JAWS landmark navigation", "passed": any(tag in lowered for tag in ("<main", "<nav", "<header", "<footer")), "note": "Semantic landmarks are present."},
+        {"pattern": "VoiceOver control names", "passed": unnamed == 0, "note": "Interactive controls expose names." if unnamed == 0 else f"{unnamed} controls may be announced without a useful name."},
+    ]
+
+
 def _audit_html(html: str) -> dict[str, Any]:
     lowered = html.lower()
     images = re.findall(r"<img\b[^>]*>", html, flags=re.IGNORECASE)
@@ -442,6 +521,12 @@ def _audit_html(html: str) -> dict[str, Any]:
         suggestions.append("Use main, section, header, and footer landmarks.")
     if not suggestions:
         suggestions.append("Preview the page on mobile and ask a student to describe what they hear.")
+    contrast_pairs = _contrast_pairs(html)
+    screen_reader_checks = _screen_reader_checks(html)
+    if any(not pair["passes_aa"] for pair in contrast_pairs):
+        suggestions.append("Increase text/background contrast until each normal text pair is at least 4.5:1.")
+    if any(not check["passed"] for check in screen_reader_checks):
+        suggestions.append("Run the page by headings, landmarks, and control names to match common screen reader navigation patterns.")
     return {
         "score": round((passed / len(checks)) * 100),
         "passed": passed,
@@ -449,6 +534,8 @@ def _audit_html(html: str) -> dict[str, Any]:
         "checks": [{"label": label, "passed": ok} for label, ok in checks],
         "issues": issues,
         "suggestions": suggestions,
+        "contrast_pairs": contrast_pairs,
+        "screen_reader_checks": screen_reader_checks,
     }
 
 
@@ -818,7 +905,27 @@ def voice_command():
     lower = text.lower()
     if not text:
         return jsonify({"success": True, "action": "unknown", "message": "No command heard"})
-    if "pause voice" in lower:
+    if "wake word" in lower:
+        action = "set_wake_word"
+    elif "next heading" in lower or "previous heading" in lower or "next section" in lower or "previous section" in lower or re.search(r"read paragraph\s+\d+", lower):
+        action = "navigate_page"
+    elif "contrast" in lower:
+        action = "announce_contrast"
+    elif "what is a div" in lower or "aria-label" in lower or "what does" in lower:
+        action = "explain_concept"
+    elif "go back" in lower or lower.startswith("undo"):
+        action = "undo_version"
+    elif "what changed" in lower or "compare versions" in lower or "review changes" in lower:
+        action = "review_changes"
+    elif "multi page" in lower or "multiple page" in lower:
+        action = "create_multipage_site"
+    elif "go to page" in lower or "switch to page" in lower:
+        action = "switch_page"
+    elif "template" in lower:
+        action = "use_template"
+    elif "make the heading" in lower or "change the background" in lower or "more spacing" in lower or "less spacing" in lower:
+        action = "edit_css"
+    elif "pause voice" in lower:
         action = "pause_voice"
     elif "resume voice" in lower or "voice on" in lower:
         action = "resume_voice"

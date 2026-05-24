@@ -75,6 +75,20 @@ def test_html_audit_scores_accessibility(client):
     assert data["success"] is True
     assert data["audit"]["score"] >= 80
     assert data["audit"]["total"] == len(data["audit"]["checks"])
+    assert data["audit"]["contrast_pairs"]
+    assert data["audit"]["screen_reader_checks"]
+
+
+def test_html_audit_reports_contrast_and_screen_reader_patterns(client):
+    html = """<!doctype html><html lang='en'><head><title>Low Contrast</title><meta name='viewport' content='width=device-width'><style>
+    body { color: #777777; background: #777777; }
+    </style></head><body><main><h1>Club</h1><h3>Skipped</h3><button></button></main></body></html>"""
+    data = client.post("/html-audit", json={"html": html}).get_json()
+    assert data["success"] is True
+    assert data["audit"]["contrast_pairs"][0]["ratio"] == 1.0
+    assert data["audit"]["contrast_pairs"][0]["passes_aa"] is False
+    assert any(check["pattern"] == "NVDA heading navigation" and check["passed"] is False for check in data["audit"]["screen_reader_checks"])
+    assert any(check["pattern"] == "VoiceOver control names" and check["passed"] is False for check in data["audit"]["screen_reader_checks"])
 
 
 def test_chat_uses_memory_and_has_local_fallback_without_ai(client):
@@ -149,6 +163,14 @@ def test_voice_command_is_html_or_chat_focused(client):
     assert client.post("/voice-command", json={"text": "build a website for music class"}).get_json()["action"] == "build_site"
     assert client.post("/voice-command", json={"text": "what is missing in this website?"}).get_json()["action"] == "review_site"
     assert client.post("/voice-command", json={"text": "add that"}).get_json()["action"] == "apply_review"
+    assert client.post("/voice-command", json={"text": "set wake word to table one"}).get_json()["action"] == "set_wake_word"
+    assert client.post("/voice-command", json={"text": "next heading"}).get_json()["action"] == "navigate_page"
+    assert client.post("/voice-command", json={"text": "make the heading bigger"}).get_json()["action"] == "edit_css"
+    assert client.post("/voice-command", json={"text": "what is a div"}).get_json()["action"] == "explain_concept"
+    assert client.post("/voice-command", json={"text": "go back two steps"}).get_json()["action"] == "undo_version"
+    assert client.post("/voice-command", json={"text": "what changed"}).get_json()["action"] == "review_changes"
+    assert client.post("/voice-command", json={"text": "use the science project template"}).get_json()["action"] == "use_template"
+    assert client.post("/voice-command", json={"text": "create a multi page website"}).get_json()["action"] == "create_multipage_site"
 
 
 def test_legacy_execution_routes_are_gone(client):
