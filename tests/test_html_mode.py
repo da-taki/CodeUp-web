@@ -46,6 +46,28 @@ def test_publish_site_wraps_fragment_and_serves_locally(client):
     assert "Science Fair" in hosted_body
 
 
+def test_publish_site_serves_multiple_pages(client):
+    response = client.post(
+        "/publish-site",
+        json={
+            "pages": {
+                "home": "<h1>Club Home</h1><a href='about.html'>About</a>",
+                "about": "<h1>About Club</h1>",
+                "contact": "<h1>Contact Club</h1>",
+            }
+        },
+    )
+    data = response.get_json()
+    assert response.status_code == 200
+    assert data["success"] is True
+    assert data["pages"]["home"].endswith("/")
+    assert data["pages"]["about"].endswith("/about.html")
+
+    assert "Club Home" in client.get(data["pages"]["home"]).get_data(as_text=True)
+    assert "About Club" in client.get(data["pages"]["about"]).get_data(as_text=True)
+    assert "Contact Club" in client.get(data["pages"]["contact"]).get_data(as_text=True)
+
+
 def test_html_memory_persists_per_session(client):
     saved = client.post(
         "/html-memory",
@@ -77,6 +99,8 @@ def test_html_audit_scores_accessibility(client):
     assert data["audit"]["total"] == len(data["audit"]["checks"])
     assert data["audit"]["contrast_pairs"]
     assert data["audit"]["screen_reader_checks"]
+    assert data["audit"]["screen_reader_transcript"]
+    assert data["audit"]["screen_reader_transcript"][0]["announcement"].startswith("main")
 
 
 def test_html_audit_reports_contrast_and_screen_reader_patterns(client):
@@ -89,6 +113,7 @@ def test_html_audit_reports_contrast_and_screen_reader_patterns(client):
     assert data["audit"]["contrast_pairs"][0]["passes_aa"] is False
     assert any(check["pattern"] == "NVDA heading navigation" and check["passed"] is False for check in data["audit"]["screen_reader_checks"])
     assert any(check["pattern"] == "VoiceOver control names" and check["passed"] is False for check in data["audit"]["screen_reader_checks"])
+    assert any(item["announcement"] == "button, unnamed" for item in data["audit"]["screen_reader_transcript"])
 
 
 def test_chat_uses_memory_and_has_local_fallback_without_ai(client):
@@ -166,6 +191,9 @@ def test_voice_command_is_html_or_chat_focused(client):
     assert client.post("/voice-command", json={"text": "set wake word to table one"}).get_json()["action"] == "set_wake_word"
     assert client.post("/voice-command", json={"text": "next heading"}).get_json()["action"] == "navigate_page"
     assert client.post("/voice-command", json={"text": "make the heading bigger"}).get_json()["action"] == "edit_css"
+    assert client.post("/voice-command", json={"text": "center the section text"}).get_json()["action"] == "edit_css"
+    assert client.post("/voice-command", json={"text": "make the buttons rounded"}).get_json()["action"] == "edit_css"
+    assert client.post("/voice-command", json={"text": "turn on high contrast"}).get_json()["action"] == "edit_css"
     assert client.post("/voice-command", json={"text": "what is a div"}).get_json()["action"] == "explain_concept"
     assert client.post("/voice-command", json={"text": "go back two steps"}).get_json()["action"] == "undo_version"
     assert client.post("/voice-command", json={"text": "what changed"}).get_json()["action"] == "review_changes"

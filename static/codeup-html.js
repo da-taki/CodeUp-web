@@ -251,10 +251,13 @@
   }
 
   async function publish(html) {
+    state.pages[state.currentPage] = html;
+    const activePages = Object.fromEntries(Object.entries(state.pages).filter(([, value]) => value && value.trim()));
+    const payload = Object.keys(activePages).length > 1 ? { html, pages: activePages } : { html };
     const response = await fetch('/publish-site', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ html }),
+      body: JSON.stringify(payload),
     });
     const data = await response.json();
     if (!data.success) throw new Error(data.error || 'Could not publish website.');
@@ -266,6 +269,14 @@
     if (link) link.href = data.url;
     await saveMemory({ html, url: data.url, note: 'Published local preview' });
     return data.url;
+  }
+
+  function applyPageLinks(html) {
+    if (!Object.keys(state.pages).length) return html;
+    return html
+      .replace(/href="#home"/gi, 'href="index.html"')
+      .replace(/href="#about"/gi, 'href="about.html"')
+      .replace(/href="#contact"/gi, 'href="contact.html"');
   }
 
   function htmlOutline(html) {
@@ -299,7 +310,7 @@
   <header>
     <h1>${template.title}</h1>
     <p>Customize this ${kind} template with your own details.</p>
-    <nav aria-label="Site pages"><a href="#${slug}-main">Home</a><a href="#contact">Contact</a></nav>
+    <nav aria-label="Site pages"><a href="index.html">Home</a><a href="about.html">About</a><a href="contact.html">Contact</a></nav>
   </header>
   <main id="${slug}-main">
     ${template.sections.map((section, index) => `<section aria-labelledby="section-${index + 1}"><h2 id="section-${index + 1}">${section}</h2><p>Add clear details for ${section.toLowerCase()} here.</p></section>`).join('\n    ')}
@@ -318,6 +329,7 @@
       contact: makeTemplateHtml('charity drive').replace(/Charity Drive/g, `${base} Contact`),
     };
     state.currentPage = 'home';
+    Object.keys(state.pages).forEach((key) => { state.pages[key] = applyPageLinks(state.pages[key]); });
     setHtml(state.pages.home);
     snapshotVersion('Created multi-page website');
     speak('Created a homepage, about page, and contact page. You are editing the homepage.');
@@ -336,6 +348,8 @@
   function useTemplate(kind) {
     const lower = kind.toLowerCase();
     const name = Object.keys(pageTemplates).find(item => lower.includes(item)) || 'club page';
+    state.currentPage = 'home';
+    state.pages = {};
     setHtml(makeTemplateHtml(name));
     snapshotVersion(`Started from ${name} template`);
     writeOutput(`Loaded ${name} template.`, true);
@@ -413,14 +427,60 @@
 
   function applyCssEdit(command) {
     const lower = command.toLowerCase();
+    const colors = {
+      cream: '#fbf3df',
+      white: '#ffffff',
+      black: '#111827',
+      dark: '#111827',
+      navy: '#1e3a8a',
+      blue: '#2563eb',
+      teal: '#0f766e',
+      green: '#15803d',
+      yellow: '#facc15',
+      orange: '#f97316',
+      red: '#dc2626',
+      pink: '#db2777',
+      purple: '#7c3aed',
+      gray: '#6b7280',
+      grey: '#6b7280',
+    };
+    const findColor = () => {
+      const hex = lower.match(/#[0-9a-f]{3,6}\b/i);
+      if (hex) return hex[0];
+      return Object.keys(colors).find(name => lower.includes(name)) ? colors[Object.keys(colors).find(name => lower.includes(name))] : '';
+    };
+    const size = (fallback, min = 12, max = 96) => {
+      const match = lower.match(/(\d{1,3})\s*(px|pixel|pixels|rem|em|percent|%)/);
+      if (!match) return fallback;
+      const amount = Math.max(min, Math.min(max, Number(match[1])));
+      if (match[2].startsWith('percent') || match[2] === '%') return `${amount}%`;
+      if (match[2] === 'rem' || match[2] === 'em') return `${Math.max(0.5, Math.min(6, amount))}${match[2]}`;
+      return `${amount}px`;
+    };
+    const selector = lower.includes('button') ? 'button, .button, a.button'
+      : lower.includes('paragraph') || lower.includes('body text') ? 'p'
+      : lower.includes('section') || lower.includes('card') ? 'section, article, .card'
+      : lower.includes('link') ? 'a'
+      : lower.includes('heading') || lower.includes('title') ? 'h1, h2, h3'
+      : 'body';
     const rules = [];
-    if (lower.includes('heading') && (lower.includes('bigger') || lower.includes('larger'))) rules.push('h1, h2 { font-size: clamp(2rem, 6vw, 4rem); }');
-    if (lower.includes('heading') && lower.includes('smaller')) rules.push('h1, h2 { font-size: 1.6rem; }');
-    if (lower.includes('background') && lower.includes('cream')) rules.push('body { background: #fbf3df; }');
-    if (lower.includes('background') && lower.includes('white')) rules.push('body { background: #ffffff; }');
-    if (lower.includes('background') && lower.includes('dark')) rules.push('body { background: #111827; color: #f9fafb; } section { background: #1f2937; }');
-    if (lower.includes('more spacing') || lower.includes('more space')) rules.push('section { margin-block: 28px; padding: 30px; } main { padding-block: 40px; }');
-    if (lower.includes('less spacing') || lower.includes('less space')) rules.push('section { margin-block: 12px; padding: 16px; } main { padding-block: 20px; }');
+    const color = findColor();
+    if (color && lower.includes('background')) rules.push(`${selector === 'body' ? 'body' : selector} { background: ${color}; }`);
+    if (color && (lower.includes('text') || lower.includes('font color') || lower.includes('words'))) rules.push(`${selector} { color: ${color}; }`);
+    if (color && lower.includes('button')) rules.push(`button, .button, a.button { background: ${color}; }`);
+    if ((lower.includes('bigger') || lower.includes('larger') || lower.includes('increase')) && (lower.includes('heading') || lower.includes('text') || lower.includes('font'))) {
+      rules.push(`${selector} { font-size: ${size(selector.includes('h1') ? 'clamp(2rem, 6vw, 4rem)' : '1.15rem')}; }`);
+    }
+    if ((lower.includes('smaller') || lower.includes('decrease') || lower.includes('reduce')) && (lower.includes('heading') || lower.includes('text') || lower.includes('font'))) {
+      rules.push(`${selector} { font-size: ${size(selector.includes('h1') ? '1.6rem' : '0.95rem')}; }`);
+    }
+    if (lower.includes('center')) rules.push(`${selector} { text-align: center; }`);
+    if (lower.includes('left align') || lower.includes('align left')) rules.push(`${selector} { text-align: left; }`);
+    if (lower.includes('bold')) rules.push(`${selector} { font-weight: 700; }`);
+    if (lower.includes('rounded')) rules.push(`${selector} { border-radius: ${size('12px', 0, 40)}; }`);
+    if (lower.includes('more spacing') || lower.includes('more space') || lower.includes('spread out')) rules.push('section, article, .card { margin-block: 28px; padding: 30px; } main { padding-block: 40px; }');
+    if (lower.includes('less spacing') || lower.includes('less space') || lower.includes('closer together')) rules.push('section, article, .card { margin-block: 12px; padding: 16px; } main { padding-block: 20px; }');
+    if (lower.includes('high contrast')) rules.push('body { color: #0f172a; background: #ffffff; } a, button, .button { color: #ffffff; background: #0f172a; }');
     if (!rules.length) return false;
     snapshotVersion('Before CSS voice edit');
     const styleBlock = `\n<style data-codeup-voice-css>\n${rules.join('\n')}\n</style>\n`;
@@ -517,6 +577,8 @@
     state.memory = { history: [], last_html: '', last_url: '', last_review: '' };
     state.lastReview = '';
     state.lastUrl = '';
+    state.pages = {};
+    state.currentPage = 'home';
     try { sessionStorage.removeItem('codeup_html_draft'); } catch (error) {}
     setHtml(starterHtml);
     const frame = $('sitePreviewFrame');
@@ -539,7 +601,9 @@
       const audit = data.audit;
       const checks = audit.checks.map(item => `${item.passed ? 'PASS' : 'FIX'} - ${item.label}`).join('\n');
       const suggestions = audit.suggestions.map(item => `- ${item}`).join('\n');
-      const message = `Accessibility score: ${audit.score}/100\n\n${checks}\n\nSuggestions:\n${suggestions}`;
+      const contrast = (audit.contrast_pairs || []).map(item => `${item.passes_aa ? 'PASS' : 'FIX'} - ${item.selector}: ${item.ratio}:1`).join('\n');
+      const transcript = (audit.screen_reader_transcript || []).slice(0, 12).map(item => `- ${item.announcement}`).join('\n');
+      const message = `Accessibility score: ${audit.score}/100\n\n${checks}\n\nContrast:\n${contrast || 'No color pairs found.'}\n\nScreen reader transcript preview:\n${transcript || 'No readable announcements found.'}\n\nSuggestions:\n${suggestions}`;
       writeOutput(message, shouldSpeak);
     } catch (error) {
       writeOutput(error.message, true);
@@ -678,6 +742,8 @@
       const data = await response.json();
       if (!data.success || !data.code) throw new Error(data.error || 'Website generation failed.');
       snapshotVersion('Before building website');
+      state.currentPage = 'home';
+      state.pages = {};
       setHtml(data.code);
       snapshotVersion('Built website');
       const url = await publish(data.code);
@@ -929,6 +995,7 @@
       navigatePreview(command);
       return;
     }
+    if (lower.includes('high contrast') && applyCssEdit(command)) return;
     if (lower.includes('contrast')) {
       announceContrast();
       return;
@@ -1053,7 +1120,14 @@
       lower.includes('make the heading') ||
       lower.includes('make heading') ||
       lower.includes('change the background') ||
-      lower.includes('more spacing')
+      lower.includes('background') ||
+      lower.includes('font') ||
+      lower.includes('text color') ||
+      lower.includes('more spacing') ||
+      lower.includes('less spacing') ||
+      lower.includes('high contrast') ||
+      lower.includes('rounded') ||
+      lower.includes('center')
     ) {
       await handleVoiceCommand(text);
       return;

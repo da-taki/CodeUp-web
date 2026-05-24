@@ -138,6 +138,13 @@ def _student_site_dir(session_id: str | None = None) -> str:
     return path
 
 
+def _safe_page_filename(name: str) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", name or "page").strip("-").lower()[:48]
+    if slug in {"", "home", "index"}:
+        return "index.html"
+    return f"{slug}.html"
+
+
 def _load_html_memory(session_id: str | None = None) -> dict[str, Any]:
     path = _html_memory_path(session_id)
     if not os.path.exists(path):
@@ -493,6 +500,55 @@ def _screen_reader_checks(html: str) -> list[dict[str, Any]]:
     ]
 
 
+def _screen_reader_transcript(html: str) -> list[dict[str, str]]:
+    body = re.search(r"<body\b[^>]*>(.*?)</body>", html, flags=re.IGNORECASE | re.DOTALL)
+    source = body.group(1) if body else html
+    token_pattern = re.compile(r"<(header|nav|main|footer|section|article|form|h[1-6]|a|button|img|input|textarea|select)\b([^>]*)>", flags=re.IGNORECASE)
+    role_names = {
+        "header": "banner",
+        "nav": "navigation",
+        "main": "main",
+        "footer": "content information",
+        "section": "region",
+        "article": "article",
+        "form": "form",
+        "a": "link",
+        "button": "button",
+        "img": "image",
+        "input": "input",
+        "textarea": "text area",
+        "select": "menu",
+    }
+    transcript = []
+    for match in token_pattern.finditer(source):
+        tag = match.group(1).lower()
+        attrs = match.group(2) or ""
+        inner = ""
+        if tag not in {"img", "input"}:
+            close = re.search(rf"</{tag}>", source[match.end() :], flags=re.IGNORECASE)
+            if close:
+                inner = source[match.end() : match.end() + close.start()]
+        text = (
+            re.search(r"\baria-label\s*=\s*['\"]([^'\"]+)", attrs, re.IGNORECASE)
+            or re.search(r"\balt\s*=\s*['\"]([^'\"]*)", attrs, re.IGNORECASE)
+            or re.search(r"\bplaceholder\s*=\s*['\"]([^'\"]+)", attrs, re.IGNORECASE)
+            or re.search(r"\btitle\s*=\s*['\"]([^'\"]+)", attrs, re.IGNORECASE)
+        )
+        name = text.group(1).strip() if text else _html_text(inner)
+        if tag.startswith("h") and len(tag) == 2:
+            role = f"heading level {tag[1]}"
+            announcement = f"{role}, {name or 'unnamed'}"
+        else:
+            role = role_names.get(tag, tag)
+            announcement = f"{role}, {name}" if name else f"{role}, unnamed"
+        transcript.append({"tag": tag, "role": role, "name": name or "", "announcement": announcement[:220]})
+        if len(transcript) >= 30:
+            break
+    if not transcript:
+        transcript.append({"tag": "document", "role": "document", "name": "", "announcement": "document, no readable body content"})
+    return transcript
+
+
 def _audit_html(html: str) -> dict[str, Any]:
     lowered = html.lower()
     images = re.findall(r"<img\b[^>]*>", html, flags=re.IGNORECASE)
@@ -523,6 +579,7 @@ def _audit_html(html: str) -> dict[str, Any]:
         suggestions.append("Preview the page on mobile and ask a student to describe what they hear.")
     contrast_pairs = _contrast_pairs(html)
     screen_reader_checks = _screen_reader_checks(html)
+    screen_reader_transcript = _screen_reader_transcript(html)
     if any(not pair["passes_aa"] for pair in contrast_pairs):
         suggestions.append("Increase text/background contrast until each normal text pair is at least 4.5:1.")
     if any(not check["passed"] for check in screen_reader_checks):
@@ -536,6 +593,7 @@ def _audit_html(html: str) -> dict[str, Any]:
         "suggestions": suggestions,
         "contrast_pairs": contrast_pairs,
         "screen_reader_checks": screen_reader_checks,
+        "screen_reader_transcript": screen_reader_transcript,
     }
 
 
@@ -660,25 +718,54 @@ def api_config():
 def publish_site():
     body = safejson()
     html = str(body.get("html") or "")
-    if len(html) > MAX_HTML_SIZE:
-        return jsonify({"success": False, "error": f"HTML too large (max {MAX_HTML_SIZE} bytes)"}), 413
-    if not html.strip():
+    raw_pages = body.get("pages")
+    pages: dict[str, str] = {}
+    if isinstance(raw_pages, dict):
+        for name, page_html in raw_pages.items():
+            page_name = str(name or "page").strip() or "page"
+            page_value = str(page_html or "")
+            if not page_value.strip():
+                continue
+            pages[page_name] = page_value
+    if not pages and html.strip():
+        pages["home"] = html
+    total_size = sum(len(page_html) for page_html in pages.values())
+    if total_size > MAX_HTML_SIZE * 5:
+        return jsonify({"success": False, "error": f"Website too large (max {MAX_HTML_SIZE * 5} bytes)"}), 413
+    if not pages:
         return jsonify({"success": False, "error": "HTML cannot be empty"}), 400
 
-    html = _wrap_html(html)
     session_id = get_session_id()
     site_dir = _student_site_dir(session_id)
-    with open(os.path.join(site_dir, "index.html"), "w", encoding="utf-8") as handle:
-        handle.write(html)
+    page_urls = {}
+    last_html = ""
+    for name, page_html in pages.items():
+        if len(page_html) > MAX_HTML_SIZE:
+            return jsonify({"success": False, "error": f"Page {name} too large (max {MAX_HTML_SIZE} bytes)"}), 413
+        wrapped = _wrap_html(page_html)
+        filename = _safe_page_filename(name)
+        with open(os.path.join(site_dir, filename), "w", encoding="utf-8") as handle:
+            handle.write(wrapped)
+        page_urls[name] = f"/student-site/{session_id}/{'' if filename == 'index.html' else filename}"
+        if filename == "index.html" or not last_html:
+            last_html = wrapped
 
     url = f"/student-site/{session_id}/"
-    _append_memory(note="Published website preview", html=html, url=url)
-    return jsonify({"success": True, "url": url})
+    _append_memory(note=f"Published website preview with {len(pages)} page(s)", html=last_html, url=url)
+    return jsonify({"success": True, "url": url, "pages": page_urls})
 
 
 @app.route("/student-site/<session_id>/")
 def student_site(session_id: str):
     return send_from_directory(_student_site_dir(_sanitize_id(session_id)), "index.html")
+
+
+@app.route("/student-site/<session_id>/<path:filename>")
+def student_site_page(session_id: str, filename: str):
+    safe_name = os.path.basename(filename)
+    if safe_name != filename or not safe_name.endswith(".html"):
+        return jsonify({"success": False, "error": "Page not found"}), 404
+    return send_from_directory(_student_site_dir(_sanitize_id(session_id)), safe_name)
 
 
 @app.route("/html-memory", methods=["GET", "POST"])
@@ -909,6 +996,8 @@ def voice_command():
         action = "set_wake_word"
     elif "next heading" in lower or "previous heading" in lower or "next section" in lower or "previous section" in lower or re.search(r"read paragraph\s+\d+", lower):
         action = "navigate_page"
+    elif "high contrast" in lower:
+        action = "edit_css"
     elif "contrast" in lower:
         action = "announce_contrast"
     elif "what is a div" in lower or "aria-label" in lower or "what does" in lower:
@@ -923,7 +1012,18 @@ def voice_command():
         action = "switch_page"
     elif "template" in lower:
         action = "use_template"
-    elif "make the heading" in lower or "change the background" in lower or "more spacing" in lower or "less spacing" in lower:
+    elif (
+        "make the heading" in lower
+        or "make heading" in lower
+        or "change the background" in lower
+        or "background" in lower
+        or "font" in lower
+        or "text color" in lower
+        or "more spacing" in lower
+        or "less spacing" in lower
+        or "rounded" in lower
+        or "center" in lower
+    ):
         action = "edit_css"
     elif "pause voice" in lower:
         action = "pause_voice"
