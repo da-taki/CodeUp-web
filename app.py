@@ -11,6 +11,7 @@ import shutil
 import threading
 import time
 import uuid
+from html import escape
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from urllib.parse import urlparse
@@ -263,12 +264,14 @@ def _title_from_prompt(prompt: str) -> str:
 def _fallback_site(prompt: str) -> str:
     title = _title_from_prompt(prompt)
     slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") or "codeup-site"
+    safe_title = escape(title)
+    safe_prompt = escape(prompt)
     return f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{title}</title>
+  <title>{safe_title}</title>
   <style>
     :root {{
       color-scheme: light;
@@ -321,8 +324,8 @@ def _fallback_site(prompt: str) -> str:
 </head>
 <body>
   <header>
-    <h1>{title}</h1>
-    <p>A clear, accessible website made in CodeUp HTML for the request: {prompt}.</p>
+    <h1>{safe_title}</h1>
+    <p>A clear, accessible website made in CodeUp HTML for the request: {safe_prompt}.</p>
   </header>
   <main id="{slug}">
     <section aria-labelledby="about-heading">
@@ -788,11 +791,7 @@ def html_memory():
 
 @app.route("/reset-session", methods=["POST"])
 def reset_session():
-    body = safejson()
     session_id = get_session_id()
-    url_session = re.search(r"/student-site/([^/]+)/", str(body.get("url") or ""))
-    if url_session:
-        session_id = _sanitize_id(url_session.group(1))
     for path in (_html_memory_path(session_id),):
         try:
             if os.path.exists(path):

@@ -91,6 +91,24 @@ def test_reset_session_clears_memory_and_local_site(client):
     assert client.get(published["url"]).status_code == 404
 
 
+def test_reset_session_cannot_clear_another_session(monkeypatch, tmp_path):
+    monkeypatch.setenv("FLASK_TESTING", "true")
+    monkeypatch.setenv("GEMINI_ENABLED", "0")
+    import app as app_module
+
+    monkeypatch.setattr(app_module, "DATA_DIR", str(tmp_path))
+    app_module.app.config.update(TESTING=True)
+    first_client = app_module.app.test_client()
+    second_client = app_module.app.test_client()
+
+    first_site = first_client.post("/publish-site", json={"html": "<h1>Keep Me</h1>"}).get_json()
+    assert first_client.get(first_site["url"]).status_code == 200
+
+    reset = second_client.post("/reset-session", json={"url": first_site["url"]}).get_json()
+    assert reset["success"] is True
+    assert first_client.get(first_site["url"]).status_code == 200
+
+
 def test_html_audit_scores_accessibility(client):
     html = "<!doctype html><html lang='en'><head><title>Club</title><meta name='viewport' content='width=device-width'></head><body><main><h1>Club</h1><button>Join</button></main></body></html>"
     data = client.post("/html-audit", json={"html": html}).get_json()
@@ -136,6 +154,18 @@ def test_generate_code_has_local_html_fallback_without_ai(client):
     assert data["success"] is True
     assert "<!doctype html>" in data["code"].lower()
     assert "Robotics Club" in data["code"]
+
+
+def test_generate_code_fallback_escapes_prompt_html(client):
+    response = client.post(
+        "/generate-code",
+        json={"prompt": "Build a website for <script>alert(1)</script> club"},
+    )
+    data = response.get_json()
+    assert response.status_code == 200
+    assert data["success"] is True
+    assert "<script>alert(1)</script>" not in data["code"]
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in data["code"]
 
 
 def test_analyze_and_fix_have_local_fallbacks_without_ai(client):
