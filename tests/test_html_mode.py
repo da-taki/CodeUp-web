@@ -1,3 +1,8 @@
+from http.cookies import SimpleCookie
+import shutil
+import subprocess
+import textwrap
+
 import pytest
 
 
@@ -30,6 +35,49 @@ def test_healthz(client):
     data = client.get("/healthz").get_json()
     assert data["status"] == "ok"
     assert data["version"].endswith("-html")
+
+
+def test_malformed_session_cookie_is_replaced(client):
+    import app as app_module
+
+    client.set_cookie(app_module.SESSION_COOKIE_NAME, "bad.session")
+    response = client.get("/html-memory")
+    cookie = SimpleCookie(response.headers["Set-Cookie"])
+
+    assert app_module.SESSION_COOKIE_NAME in cookie
+    assert cookie[app_module.SESSION_COOKIE_NAME].value == "badsession"
+
+
+def test_empty_sanitized_session_cookie_is_regenerated(client):
+    import app as app_module
+
+    client.set_cookie(app_module.SESSION_COOKIE_NAME, ".")
+    response = client.get("/html-memory")
+    cookie = SimpleCookie(response.headers["Set-Cookie"])
+    replacement = cookie[app_module.SESSION_COOKIE_NAME].value
+
+    assert replacement
+    assert replacement != "."
+
+
+def test_ai_unavailable_matching_avoids_rate_false_positives():
+    import app as app_module
+
+    assert app_module._is_ai_unavailable("This is a great page with separate sections.") is False
+    assert app_module._is_ai_unavailable("Iterate on the layout after preview.") is False
+    assert app_module._is_ai_unavailable("The provider returned a rate limit error.") is True
+    assert app_module._is_ai_unavailable("AI service not configured. Please set an API key.") is True
+
+
+def test_flask_debug_is_env_driven(monkeypatch):
+    import app as app_module
+
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    assert app_module._flask_debug_enabled() is False
+    monkeypatch.setenv("FLASK_DEBUG", "true")
+    assert app_module._flask_debug_enabled() is True
+    monkeypatch.setenv("FLASK_DEBUG", "0")
+    assert app_module._flask_debug_enabled() is False
 
 
 def test_publish_site_wraps_fragment_and_serves_locally(client):
@@ -66,6 +114,19 @@ def test_publish_site_serves_multiple_pages(client):
     assert "Club Home" in client.get(data["pages"]["home"]).get_data(as_text=True)
     assert "About Club" in client.get(data["pages"]["about"]).get_data(as_text=True)
     assert "Contact Club" in client.get(data["pages"]["contact"]).get_data(as_text=True)
+
+
+def test_student_site_serves_html_pages_only(client):
+    response = client.post(
+        "/publish-site",
+        json={"pages": {"home": "<h1>Home</h1>", "about": "<h1>About</h1>"}},
+    )
+    data = response.get_json()
+
+    assert client.get(data["pages"]["about"]).status_code == 200
+    assert client.get(data["url"] + "style.css").status_code == 404
+    assert client.get(data["url"] + "assets/app.js").status_code == 404
+    assert client.get(data["url"] + "Home.html").status_code == 404
 
 
 def test_html_memory_persists_per_session(client):
@@ -251,3 +312,151 @@ def test_same_origin_blocks_cross_site_posts(monkeypatch, tmp_path):
         headers={"Origin": "https://evil.example", "Host": "localhost"},
     )
     assert response.status_code == 403
+
+
+def test_frontend_uses_current_template_ids_only():
+    script = open("static/codeup-html.js", encoding="utf-8").read()
+
+    for legacy_id in (
+        "voiceText",
+        "command-input-label",
+        "startGate",
+        "structurePanel",
+        "inputAddField",
+        "tutorialBtn",
+    ):
+        assert legacy_id not in script
+
+
+def test_voice_state_separates_wake_and_active_modes():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is required for the JS voice-state check")
+
+    harness = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function assert(condition, message) {
+          if (!condition) throw new Error(message);
+        }
+
+        function makeElement(id) {
+          const classes = new Set();
+          return {
+            id,
+            textContent: '',
+            attributes: {},
+            classList: {
+              toggle(name, enabled) {
+                if (enabled) classes.add(name);
+                else classes.delete(name);
+              },
+              contains(name) {
+                return classes.has(name);
+              },
+            },
+            setAttribute(name, value) {
+              this.attributes[name] = String(value);
+            },
+            getAttribute(name) {
+              return this.attributes[name];
+            },
+          };
+        }
+
+        const voiceButton = makeElement('voiceButton');
+        const elements = {
+          voiceButton,
+          srAnnouncer: makeElement('srAnnouncer'),
+          output: makeElement('output'),
+          languageSelector: { value: 'en', addEventListener() {} },
+        };
+        const storage = new Map();
+        const recognitions = [];
+
+        class MockRecognition {
+          constructor() {
+            this.starts = 0;
+            this.stops = 0;
+            recognitions.push(this);
+          }
+          start() {
+            this.starts += 1;
+            if (this.onstart) this.onstart();
+          }
+          stop() {
+            this.stops += 1;
+            if (this.onend) this.onend();
+          }
+        }
+
+        const context = {
+          console,
+          Date,
+          setTimeout(callback) { callback(); },
+          localStorage: {
+            getItem(key) { return storage.get(key) || null; },
+            setItem(key, value) { storage.set(key, String(value)); },
+          },
+          SpeechSynthesisUtterance: function SpeechSynthesisUtterance(text) {
+            this.text = text;
+          },
+          document: {
+            getElementById(id) { return elements[id] || null; },
+            addEventListener() {},
+            body: { dataset: {} },
+          },
+          window: {
+            __codeupEnableTestHooks: true,
+            SpeechRecognition: MockRecognition,
+            webkitSpeechRecognition: MockRecognition,
+            speechSynthesis: { cancel() {}, speak() {} },
+            addEventListener() {},
+          },
+        };
+        context.window.window = context.window;
+        context.window.document = context.document;
+        context.window.localStorage = context.localStorage;
+
+        vm.runInNewContext(fs.readFileSync('static/codeup-html.js', 'utf8'), context);
+        const api = context.window.__codeupVoiceTest;
+
+        api.startWakeListener();
+        assert(api.state.wakeListening === true, 'wake listener should be active');
+        assert(api.state.activeVoice === false, 'passive wake should not enable active voice');
+        assert(voiceButton.textContent === 'Voice Off', 'wake standby must not show Voice On');
+        assert(voiceButton.getAttribute('aria-pressed') === 'false', 'wake standby must not press the voice button');
+        const wake = recognitions[0];
+
+        api.toggleVoice();
+        assert(wake.stops === 1, 'starting active voice should stop passive wake recognition');
+        assert(api.state.activeVoice === true, 'active voice should turn on');
+        assert(api.state.wakeListening === false, 'passive wake should be suspended during active voice');
+        assert(voiceButton.textContent === 'Voice On', 'active voice should show Voice On');
+        const active = recognitions[1];
+
+        api.pauseVoice();
+        assert(api.state.activeVoice === true, 'pause should preserve active voice mode');
+        assert(api.state.paused === true, 'pause should mark voice as paused');
+        assert(active.stops === 1, 'pause should stop active recognition');
+        assert(voiceButton.textContent === 'Voice Paused', 'pause should update the button label');
+        assert(voiceButton.getAttribute('aria-pressed') === 'false', 'paused voice is not active listening');
+        assert(api.state.wakeListening === true, 'pause should restart passive wake recognition for resume');
+        const wakeWhilePaused = recognitions[2];
+
+        api.resumeVoice();
+        assert(wakeWhilePaused.stops === 1, 'resume should stop passive wake recognition');
+        assert(api.state.activeVoice === true && api.state.paused === false, 'resume should restore active listening');
+        assert(voiceButton.textContent === 'Voice On', 'resume should show Voice On');
+        const resumed = recognitions[3];
+
+        api.toggleVoice();
+        assert(resumed.stops === 1, 'voice toggle should stop active recognition');
+        assert(api.state.activeVoice === false, 'voice toggle should turn active mode off');
+        assert(voiceButton.textContent === 'Voice Off', 'voice off should update the button label');
+        """
+    )
+
+    subprocess.run([node, "-e", harness], check=True, cwd=".")

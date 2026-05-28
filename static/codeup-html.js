@@ -59,8 +59,10 @@
 </html>`;
 
   const state = {
-    recognition: null,
-    listening: false,
+    activeRecognition: null,
+    wakeRecognition: null,
+    activeVoice: false,
+    wakeListening: false,
     paused: false,
     demoMode: false,
     lastSpoken: '',
@@ -69,7 +71,6 @@
     memory: { history: [], last_html: '', last_url: '', last_review: '' },
     audioCtx: null,
     wakeWord: (localStorage.getItem('codeup_wake_word') || 'hey codeup').toLowerCase(),
-    wakeArmed: true,
     wakeUntil: 0,
     navigator: { items: [], index: -1 },
     versions: [],
@@ -948,15 +949,15 @@
     if (lower.startsWith('set wake word to ') || lower.startsWith('change wake word to ')) {
       state.wakeWord = lower.replace(/^set wake word to |^change wake word to /, '').trim() || 'hey codeup';
       localStorage.setItem('codeup_wake_word', state.wakeWord);
-      state.wakeArmed = true;
       state.wakeUntil = Date.now() + 45000;
       writeOutput(`Wake word changed to ${state.wakeWord}.`, true);
       return;
     }
-    if (lower.includes(state.wakeWord)) {
-      state.wakeArmed = true;
+    const wakeIndex = lower.indexOf(state.wakeWord);
+    if (wakeIndex !== -1) {
       state.wakeUntil = Date.now() + 45000;
-      const afterWake = command.slice(lower.indexOf(state.wakeWord) + state.wakeWord.length).trim();
+      const afterWake = command.slice(wakeIndex + state.wakeWord.length).trim();
+      if (!state.activeVoice) startVoice({ silent: true });
       if (!afterWake) {
         writeOutput(`Heard ${state.wakeWord}. Say a CodeUp command.`, true);
         return;
@@ -964,14 +965,13 @@
       await handleVoiceCommand(afterWake);
       return;
     }
-    if (state.listening && !state.wakeArmed && Date.now() > state.wakeUntil && !lower.includes('voice off')) {
-      announce(`Waiting for ${state.wakeWord}`);
-      return;
-    }
-    state.wakeArmed = false;
     state.wakeUntil = Date.now() + 45000;
     writeOutput(`${t('Heard', 'Suna')}: ${command}`);
 
+    if (lower.includes('voice off') || lower.includes('stop voice')) {
+      stopVoice();
+      return;
+    }
     if (lower.includes('pause voice') || lower.includes('stop listening') || lower.includes('awaaz rok') || lower.includes('ruk jao')) {
       pauseVoice();
       return;
@@ -1079,7 +1079,6 @@
       await chatWithAI(text, true);
       return;
     }
-    state.wakeArmed = true;
     state.wakeUntil = Date.now() + 45000;
     const lower = text.toLowerCase();
     const isBuildRequest = isBuildIntent(text);
@@ -1135,114 +1134,203 @@
     await chatWithAI(text, true);
   }
 
-  function startVoice() {
+  function transcriptFromEvent(event) {
+    const result = event.results[event.results.length - 1];
+    return result && result[0] ? result[0].transcript : '';
+  }
+
+  function isResumeVoiceCommand(lower) {
+    return lower.includes('resume voice') ||
+      lower.includes('start listening') ||
+      lower.includes('voice on') ||
+      lower.includes('phir se') ||
+      lower.includes('chalu');
+  }
+
+  function stopActiveRecognition() {
+    const recognition = state.activeRecognition;
+    state.activeRecognition = null;
+    if (!recognition) return;
+    try { recognition.stop(); } catch (error) {}
+  }
+
+  function stopWakeListener() {
+    const recognition = state.wakeRecognition;
+    state.wakeRecognition = null;
+    state.wakeListening = false;
+    if (!recognition) return;
+    try { recognition.stop(); } catch (error) {}
+  }
+
+  function startActiveRecognition() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       speak(t('Voice recognition is not supported in this browser. Please use Chrome or Edge.', 'Is browser mein voice recognition support nahi hai. Chrome ya Edge use karein.'));
       return;
     }
-    if (state.listening) {
-      speak(t('Voice is already on.', 'Voice pehle se on hai.'));
-      return;
-    }
-    cancelSpeech();
-    state.recognition = new SpeechRecognition();
-    state.recognition.continuous = true;
-    state.recognition.interimResults = false;
-    state.recognition.lang = isHindi() ? 'hi-IN' : 'en-US';
-    state.recognition.onstart = () => {
-      state.listening = true;
-      state.paused = false;
-      state.wakeArmed = true;
-      state.wakeUntil = Date.now() + 45000;
+    if (!state.activeVoice || state.paused || state.activeRecognition) return;
+    const recognition = new SpeechRecognition();
+    state.activeRecognition = recognition;
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = isHindi() ? 'hi-IN' : 'en-US';
+    recognition.onstart = () => {
       updateVoiceButton();
-      speak(t('Voice on. You can code hands free.', 'Voice on hai. Aap bina keyboard ke code kar sakte hain.'));
+      announce(t('Voice command listening.', 'Voice command sun raha hai.'));
     };
-    state.recognition.onresult = (event) => {
+    recognition.onresult = (event) => {
       cancelSpeech();
-      const result = event.results[event.results.length - 1];
-      const transcript = result && result[0] ? result[0].transcript : '';
-      handleVoiceCommand(transcript);
+      handleVoiceCommand(transcriptFromEvent(event));
     };
-    state.recognition.onerror = () => updateVoiceButton();
-    state.recognition.onend = () => {
-      const shouldRestart = state.listening;
-      if (shouldRestart) {
+    recognition.onerror = () => updateVoiceButton();
+    recognition.onend = () => {
+      if (state.activeRecognition !== recognition) return;
+      state.activeRecognition = null;
+      updateVoiceButton();
+      if (state.activeVoice && !state.paused) {
         setTimeout(() => {
-          try { state.recognition.start(); } catch (error) {}
+          startActiveRecognition();
         }, 400);
       }
     };
-    try { state.recognition.start(); } catch (error) { speak(t('Could not start voice.', 'Voice start nahi ho payi.')); }
+    try {
+      recognition.start();
+    } catch (error) {
+      if (state.activeRecognition === recognition) state.activeRecognition = null;
+      state.activeVoice = false;
+      state.paused = false;
+      updateVoiceButton();
+      speak(t('Could not start voice.', 'Voice start nahi ho payi.'));
+      startWakeListener();
+    }
+  }
+
+  function startVoice(options = {}) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      speak(t('Voice recognition is not supported in this browser. Please use Chrome or Edge.', 'Is browser mein voice recognition support nahi hai. Chrome ya Edge use karein.'));
+      return;
+    }
+    if (state.activeVoice && !state.paused) {
+      if (!options.silent) speak(t('Voice is already on.', 'Voice pehle se on hai.'));
+      return;
+    }
+    cancelSpeech();
+    stopWakeListener();
+    state.activeVoice = true;
+    state.paused = false;
+    state.wakeUntil = Date.now() + 45000;
+    updateVoiceButton();
+    startActiveRecognition();
+    if (!options.silent) {
+      speak(t('Voice on. You can code hands free.', 'Voice on hai. Aap bina keyboard ke code kar sakte hain.'));
+    }
   }
 
   function startWakeListener() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition || state.listening) return;
-    state.recognition = new SpeechRecognition();
-    state.recognition.continuous = true;
-    state.recognition.interimResults = false;
-    state.recognition.lang = isHindi() ? 'hi-IN' : 'en-US';
-    state.recognition.onstart = () => {
-      state.listening = true;
-      state.paused = false;
-      state.wakeArmed = false;
+    if (!SpeechRecognition || state.wakeListening || (state.activeVoice && !state.paused)) return;
+    const recognition = new SpeechRecognition();
+    state.wakeRecognition = recognition;
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = isHindi() ? 'hi-IN' : 'en-US';
+    recognition.onstart = () => {
+      state.wakeListening = true;
       updateVoiceButton();
       announce(`Wake word listener ready. Say ${state.wakeWord}.`);
     };
-    state.recognition.onresult = (event) => {
-      const result = event.results[event.results.length - 1];
-      const transcript = result && result[0] ? result[0].transcript : '';
-      handleVoiceCommand(transcript);
+    recognition.onresult = (event) => {
+      const transcript = transcriptFromEvent(event);
+      const lower = transcript.toLowerCase();
+      if (isResumeVoiceCommand(lower) && state.paused) {
+        resumeVoice();
+        return;
+      }
+      const wakeIndex = lower.indexOf(state.wakeWord);
+      if (wakeIndex === -1) {
+        announce(`Waiting for ${state.wakeWord}`);
+        return;
+      }
+      const afterWake = transcript.slice(wakeIndex + state.wakeWord.length).trim();
+      startVoice({ silent: true });
+      if (afterWake) handleVoiceCommand(afterWake);
+      else writeOutput(`Heard ${state.wakeWord}. Say a CodeUp command.`, true);
     };
-    state.recognition.onerror = () => updateVoiceButton();
-    state.recognition.onend = () => {
-      const shouldRestart = state.listening;
-      if (shouldRestart) {
+    recognition.onerror = () => updateVoiceButton();
+    recognition.onend = () => {
+      if (state.wakeRecognition !== recognition) return;
+      state.wakeRecognition = null;
+      state.wakeListening = false;
+      updateVoiceButton();
+      if (!state.activeVoice || state.paused) {
         setTimeout(() => {
-          try { state.recognition.start(); } catch (error) {}
+          startWakeListener();
         }, 700);
       }
     };
-    try { state.recognition.start(); } catch (error) {}
+    try { recognition.start(); } catch (error) { state.wakeRecognition = null; state.wakeListening = false; }
   }
 
   function stopVoice() {
-    state.listening = false;
+    const wasActive = state.activeVoice || state.paused;
+    state.activeVoice = false;
     state.paused = false;
-    try { if (state.recognition) state.recognition.stop(); } catch (error) {}
+    stopActiveRecognition();
     updateVoiceButton();
-    speak(t('Voice off.', 'Voice off hai.'));
+    startWakeListener();
+    if (wasActive) speak(t('Voice off.', 'Voice off hai.'));
   }
 
   function pauseVoice() {
+    if (!state.activeVoice) {
+      writeOutput(t('Voice is already off.', 'Voice pehle se off hai.'), true);
+      return;
+    }
     state.paused = true;
+    stopActiveRecognition();
     updateVoiceButton();
+    startWakeListener();
     speak(t('Voice paused. Say resume voice when you want commands again.', 'Voice pause hai. Dobara command ke liye resume voice boliye.'));
   }
 
   function resumeVoice() {
+    if (!state.paused) {
+      startVoice();
+      return;
+    }
+    stopWakeListener();
+    state.activeVoice = true;
     state.paused = false;
     updateVoiceButton();
+    startActiveRecognition();
     speak(t('Voice resumed.', 'Voice resume ho gayi.'));
   }
 
   function toggleVoice() {
-    if (state.listening) stopVoice();
+    if (state.activeVoice) stopVoice();
     else startVoice();
   }
 
   function updateVoiceButton() {
     const button = $('voiceButton');
     if (!button) return;
-    button.classList.toggle('cu-button-voice--active', state.listening && !state.paused);
+    const activelyListening = state.activeVoice && !state.paused;
+    button.classList.toggle('cu-button-voice--active', activelyListening);
     button.classList.toggle('cu-button-voice--paused', state.paused);
-    button.setAttribute('aria-pressed', state.listening ? 'true' : 'false');
+    button.setAttribute('aria-pressed', activelyListening ? 'true' : 'false');
     button.textContent = state.paused
       ? 'Voice Paused'
-      : state.listening
+      : activelyListening
         ? 'Voice On'
         : 'Voice Off';
+  }
+
+  async function submitCommandFromInput() {
+    const field = $('commandInput');
+    const value = field ? field.value.trim() : '';
+    if (field) field.value = '';
+    await handleStudentText(value);
   }
 
   function setupUi() {
@@ -1267,18 +1355,10 @@
     replaceButton('exportBtn', 'Export', 'Export website as an HTML file', exportHtml);
     replaceButton('resetBtn', 'Reset', 'Reset this session', resetSession);
     replaceButton('voiceButton', 'Voice Off', 'Toggle voice control', toggleVoice);
-    replaceButton('tutorialBtn', 'Help', 'Hear HTML voice commands', () => writeOutput(helpText(), true));
     replaceButton('helpBtn', 'Help', 'Hear HTML voice commands', () => writeOutput(helpText(), true));
-    replaceButton('sendCommandBtn', 'Ask / Build', 'Ask CodeUp or build a website from request', () => {
-      const field = $('voiceText') || $('commandInput');
-      const value = field ? field.value.trim() : '';
-      if (field) field.value = '';
-      handleStudentText(value);
-    });
+    replaceButton('sendCommandBtn', 'Ask / Build', 'Ask CodeUp or build a website from request', submitCommandFromInput);
 
-    const label = $('command-input-label');
-    if (label) label.textContent = 'WEBSITE REQUEST OR VOICE TRANSCRIPT';
-    const field = $('voiceText') || $('commandInput');
+    const field = $('commandInput');
     if (field) {
       field.placeholder = 'Ask what you can do, or build a website for a school science fair...';
       field.setAttribute('aria-label', 'Website request or voice transcript');
@@ -1288,30 +1368,9 @@
         if (event.key !== 'Enter') return;
         event.preventDefault();
         cancelSpeech();
-        const value = clone.value.trim();
-        clone.value = '';
-        handleStudentText(value);
+        submitCommandFromInput();
       });
     }
-
-    const structure = $('structurePanel');
-    if (structure) {
-      structure.hidden = true;
-      structure.style.display = 'none';
-    }
-    const startGate = $('startGate');
-    if (startGate) startGate.remove();
-    const inputsPanel = $('inputAddField');
-    if (inputsPanel) {
-      const secondTitle = inputsPanel.closest('.cu-snippets')?.querySelectorAll('.cu-panel-title')[1];
-      if (secondTitle) secondTitle.textContent = 'SESSION MEMORY';
-      const wrapper = inputsPanel.closest('div');
-      if (wrapper) wrapper.style.display = 'none';
-    }
-    ['inputsPanelList', 'clearInputsBtn', 'toggleInputModeBtn', 'inputModeIndicator'].forEach(id => {
-      const el = $(id);
-      if (el) el.style.display = 'none';
-    });
 
     ensureHtmlEditor();
     ensurePreviewFrame();
@@ -1326,12 +1385,7 @@
     window.resetSession = resetSession;
     window.generateCode = (prompt) => buildWebsite(prompt, true);
     window.chatWithAI = (message) => chatWithAI(message, true);
-    window.submitCommand = async () => {
-      const field = $('voiceText') || $('commandInput');
-      const value = field ? field.value.trim() : '';
-      if (field) field.value = '';
-      await handleStudentText(value);
-    };
+    window.submitCommand = submitCommandFromInput;
     window.toggleVoice = toggleVoice;
     window.pauseVoiceRecognition = pauseVoice;
     window.resumeVoiceRecognition = resumeVoice;
@@ -1348,28 +1402,32 @@
       }
       if (event.key === 'Escape') cancelSpeech();
     }, true);
-    document.addEventListener('click', (event) => {
-      const button = event.target && event.target.closest ? event.target.closest('button') : event.target;
-      if (!button || !button.id) return;
-      if (button.id === 'sendCommandBtn') {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        const field = $('voiceText') || $('commandInput');
-        const value = field ? field.value.trim() : '';
-        if (field) field.value = '';
-        handleStudentText(value);
-      }
-    }, true);
     $('languageSelector')?.addEventListener('change', () => {
       cancelSpeech();
-      if (state.listening && state.recognition) {
-        stopVoice();
-        setTimeout(startVoice, 300);
+      if (state.activeVoice && !state.paused) {
+        stopActiveRecognition();
+        setTimeout(startActiveRecognition, 300);
+      } else if (state.wakeListening) {
+        stopWakeListener();
+        setTimeout(startWakeListener, 300);
       }
     });
     $('demoModeBtn')?.addEventListener('click', toggleDemoMode);
 
     document.body.dataset.htmlModeReady = 'true';
+  }
+
+  if (window.__codeupEnableTestHooks) {
+    window.__codeupVoiceTest = {
+      state,
+      startVoice,
+      startWakeListener,
+      stopVoice,
+      pauseVoice,
+      resumeVoice,
+      toggleVoice,
+      updateVoiceButton,
+    };
   }
 
   window.addEventListener('load', async () => {

@@ -59,6 +59,17 @@ def _sanitize_id(value: str | None) -> str:
     return clean or str(uuid.uuid4())
 
 
+def _env_enabled(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _flask_debug_enabled() -> bool:
+    return _env_enabled("FLASK_DEBUG")
+
+
 def get_session_id() -> str:
     cached = getattr(g, "session_id", None)
     if cached:
@@ -66,7 +77,7 @@ def get_session_id() -> str:
     cookie_value = request.cookies.get(SESSION_COOKIE_NAME)
     session_id = _sanitize_id(cookie_value)
     g.session_id = session_id
-    g.needs_session_cookie = not cookie_value
+    g.needs_session_cookie = not cookie_value or session_id != cookie_value
     return session_id
 
 
@@ -144,6 +155,15 @@ def _safe_page_filename(name: str) -> str:
     if slug in {"", "home", "index"}:
         return "index.html"
     return f"{slug}.html"
+
+
+def _is_safe_hosted_html_page(filename: str) -> bool:
+    safe_name = os.path.basename(filename)
+    return (
+        safe_name == filename
+        and safe_name.endswith(".html")
+        and _safe_page_filename(safe_name[:-5]) == safe_name
+    )
 
 
 def _load_html_memory(session_id: str | None = None) -> dict[str, Any]:
@@ -225,7 +245,21 @@ def _extract_html(text: str) -> str:
 
 def _is_ai_unavailable(reply: str) -> bool:
     lowered = (reply or "").lower()
-    return lowered.startswith("ai service") or "not configured" in lowered or "rate" in lowered
+    return any(
+        phrase in lowered
+        for phrase in (
+            "rate limit",
+            "quota",
+            "service unavailable",
+            "service disabled",
+            "service is busy",
+            "temporarily unavailable",
+            "timed out",
+            "not configured",
+            "api key",
+            "had a problem",
+        )
+    )
 
 
 def _fallback_chat(message: str, html: str, language: str) -> str:
@@ -765,10 +799,9 @@ def student_site(session_id: str):
 
 @app.route("/student-site/<session_id>/<path:filename>")
 def student_site_page(session_id: str, filename: str):
-    safe_name = os.path.basename(filename)
-    if safe_name != filename or not safe_name.endswith(".html"):
+    if not _is_safe_hosted_html_page(filename):
         return jsonify({"success": False, "error": "Page not found"}), 404
-    return send_from_directory(_student_site_dir(_sanitize_id(session_id)), safe_name)
+    return send_from_directory(_student_site_dir(_sanitize_id(session_id)), filename)
 
 
 @app.route("/html-memory", methods=["GET", "POST"])
@@ -1056,4 +1089,4 @@ def voice_command():
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=_flask_debug_enabled())

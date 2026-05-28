@@ -11,6 +11,9 @@ This project is the HTML website-building edition of CodeUp.
    previews it in the IDE, and explains what was built.
 
 `Ctrl+Enter` previews the current HTML and hosts it at `/student-site/<session>/`.
+Hosted session pages are HTML-only: CodeUp serves generated `.html` pages from
+the session directory and rejects CSS, JavaScript, image, or nested asset paths.
+Keep page CSS and JavaScript inline in the generated HTML.
 
 ## AI Keys
 

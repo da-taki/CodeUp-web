@@ -37,6 +37,8 @@ The important loop is:
 
 1. Student asks CodeUp HTML to build a website.
 2. The app writes HTML and hosts it at `/student-site/<session-id>/`.
+   Hosted session sites intentionally serve generated `.html` pages only; CSS,
+   JavaScript, and media should stay inline in those pages.
 3. CodeUp gives a sighted-guide style review for blind students: what the page
    looks like, what is missing, and what to add next.
 4. Student says `add that` or `fix missing things`.
