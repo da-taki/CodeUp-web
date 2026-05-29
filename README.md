@@ -51,13 +51,13 @@ CodeUp HTML works even when no cloud AI key is configured. For a deterministic
 pilot demo, run:
 
 ```text
-GEMINI_ENABLED=0 python app.py
+AI_CLOUD_ENABLED=0 python app.py
 ```
 
 On Windows PowerShell:
 
 ```text
-$env:GEMINI_ENABLED="0"
+$env:AI_CLOUD_ENABLED="0"
 python app.py
 ```
 
@@ -147,11 +147,32 @@ GROQ_API_KEY=your_groq_key
 GROQ_MODEL=llama-3.3-70b-versatile
 ```
 
+API keys are read from server environment variables. The browser app does not
+accept or persist user-supplied provider keys at runtime.
+
 Cloud AI can be disabled for offline-style demos:
 
 ```text
-GEMINI_ENABLED=0
+AI_CLOUD_ENABLED=0
 ```
+
+The older `GEMINI_ENABLED=0` flag is still accepted as a compatibility alias,
+but new deployments should use `AI_CLOUD_ENABLED`.
+
+## Security Configuration
+
+For local development, CodeUp uses a development-only Flask secret if
+`FLASK_SECRET_KEY` is not set. For production, set:
+
+```text
+CODEUP_ENV=production
+FLASK_SECRET_KEY=<long random secret>
+SESSION_COOKIE_SECURE=true
+```
+
+When `CODEUP_ENV=production`, startup fails without `FLASK_SECRET_KEY`.
+`SESSION_COOKIE_SECURE` defaults to true in production and false for local HTTP
+development unless explicitly set.
 
 ## Quickstart
 

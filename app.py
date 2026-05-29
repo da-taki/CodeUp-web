@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 import json
 import os
 import re
@@ -12,20 +14,16 @@ import threading
 import time
 import uuid
 from html import escape
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from urllib.parse import urlparse
 
-from flask import Flask, g, jsonify, render_template, request, send_from_directory
+from flask import Flask, g, jsonify, render_template, request, send_from_directory, session
 
 __version__ = "1.0.0-html"
 
-app = Flask(__name__)
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key-change-in-production")
-
+DEV_SECRET_KEY = "dev-secret-key-change-in-production"
 SESSION_COOKIE_NAME = "codeup_html_session"
 SESSION_COOKIE_MAX_AGE = 3600 * 24 * 7
-SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "false").lower() == "true"
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = None if os.environ.get("FLASK_TESTING", "false").lower() == "true" else "Lax"
 
@@ -34,29 +32,7 @@ MAX_REQUEST_SIZE = 1_000_000
 MAX_HTML_SIZE = 100_000
 MAX_MESSAGE_SIZE = 20_000
 AI_TIMEOUT = int(os.environ.get("AI_TIMEOUT", "30"))
-
-_ai_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="codeup-ai")
-_ai_lock = threading.Lock()
-_ai_active = 0
-_ALLOWED_ORIGINS = {
-    origin.strip().lower()
-    for origin in os.environ.get("ALLOWED_ORIGINS", "").split(",")
-    if origin.strip()
-}
-
-
-def safejson() -> dict[str, Any]:
-    data = request.get_json(silent=True)
-    return data if isinstance(data, dict) else {}
-
-
-def _testing_mode() -> bool:
-    return os.environ.get("FLASK_TESTING", "false").lower() == "true"
-
-
-def _sanitize_id(value: str | None) -> str:
-    clean = re.sub(r"[^a-zA-Z0-9_-]", "", value or "")[:64]
-    return clean or str(uuid.uuid4())
+AI_MAX_CONCURRENT = int(os.environ.get("AI_MAX_CONCURRENT", "3"))
 
 
 def _env_enabled(name: str, default: bool = False) -> bool:
@@ -64,6 +40,68 @@ def _env_enabled(name: str, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _production_mode() -> bool:
+    return os.environ.get("CODEUP_ENV", "").strip().lower() == "production"
+
+
+def _load_secret_key() -> str:
+    secret = os.environ.get("FLASK_SECRET_KEY")
+    if secret:
+        return secret
+    if _production_mode():
+        raise RuntimeError("FLASK_SECRET_KEY is required when CODEUP_ENV=production.")
+    return DEV_SECRET_KEY
+
+
+def _session_cookie_secure() -> bool:
+    if "SESSION_COOKIE_SECURE" in os.environ:
+        return _env_enabled("SESSION_COOKIE_SECURE")
+    return _production_mode()
+
+
+def _cloud_ai_enabled() -> bool:
+    if "AI_CLOUD_ENABLED" in os.environ:
+        return _env_enabled("AI_CLOUD_ENABLED", default=True)
+    return _env_enabled("GEMINI_ENABLED", default=True)
+
+
+SESSION_COOKIE_SECURE = _session_cookie_secure()
+
+_ai_executor = ThreadPoolExecutor(max_workers=AI_MAX_CONCURRENT, thread_name_prefix="codeup-ai")
+_ai_semaphore = threading.BoundedSemaphore(AI_MAX_CONCURRENT)
+_memory_locks: dict[str, threading.RLock] = {}
+_memory_locks_guard = threading.Lock()
+_ALLOWED_ORIGINS = {
+    origin.strip().lower()
+    for origin in os.environ.get("ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+}
+
+app = Flask(__name__)
+app.secret_key = _load_secret_key()
+app.config.update(
+    PERMANENT_SESSION_LIFETIME=timedelta(seconds=SESSION_COOKIE_MAX_AGE),
+    SESSION_COOKIE_NAME=SESSION_COOKIE_NAME,
+    SESSION_COOKIE_SECURE=SESSION_COOKIE_SECURE,
+    SESSION_COOKIE_HTTPONLY=SESSION_COOKIE_HTTPONLY,
+    SESSION_COOKIE_SAMESITE=SESSION_COOKIE_SAMESITE,
+)
+
+
+def safejson() -> dict[str, Any]:
+    data = request.get_json(silent=True)
+    return data if isinstance(data, dict) else {}
+
+
+def _sanitize_id(value: str | None) -> str:
+    clean = re.sub(r"[^a-zA-Z0-9_-]", "", value or "")[:64]
+    return clean or str(uuid.uuid4())
+
+
+def _testing_mode() -> bool:
+    return _env_enabled("FLASK_TESTING")
 
 
 def _flask_debug_enabled() -> bool:
@@ -74,25 +112,13 @@ def get_session_id() -> str:
     cached = getattr(g, "session_id", None)
     if cached:
         return cached
-    cookie_value = request.cookies.get(SESSION_COOKIE_NAME)
-    session_id = _sanitize_id(cookie_value)
+    session.permanent = True
+    stored = session.get("session_id")
+    session_id = _sanitize_id(stored if isinstance(stored, str) else None)
+    if stored != session_id:
+        session["session_id"] = session_id
     g.session_id = session_id
-    g.needs_session_cookie = not cookie_value or session_id != cookie_value
     return session_id
-
-
-@app.after_request
-def set_session_cookie(response):
-    if getattr(g, "needs_session_cookie", False):
-        response.set_cookie(
-            SESSION_COOKIE_NAME,
-            get_session_id(),
-            max_age=SESSION_COOKIE_MAX_AGE,
-            secure=SESSION_COOKIE_SECURE,
-            httponly=SESSION_COOKIE_HTTPONLY,
-            samesite=SESSION_COOKIE_SAMESITE,
-        )
-    return response
 
 
 @app.before_request
@@ -144,10 +170,24 @@ def _html_memory_path(session_id: str | None = None) -> str:
     return _data_path("html_memory", f"{_sanitize_id(session_id or get_session_id())}.json")
 
 
-def _student_site_dir(session_id: str | None = None) -> str:
-    path = os.path.join(DATA_DIR, "student_sites", _sanitize_id(session_id or get_session_id()))
+def _student_site_path(session_id: str | None = None) -> str:
+    return os.path.join(DATA_DIR, "student_sites", _sanitize_id(session_id or get_session_id()))
+
+
+def _ensure_student_site_dir(session_id: str | None = None) -> str:
+    path = _student_site_path(session_id)
     os.makedirs(path, exist_ok=True)
     return path
+
+
+def _memory_lock(session_id: str | None = None) -> threading.RLock:
+    safe_session = _sanitize_id(session_id or get_session_id())
+    with _memory_locks_guard:
+        lock = _memory_locks.get(safe_session)
+        if lock is None:
+            lock = threading.RLock()
+            _memory_locks[safe_session] = lock
+        return lock
 
 
 def _safe_page_filename(name: str) -> str:
@@ -164,6 +204,31 @@ def _is_safe_hosted_html_page(filename: str) -> bool:
         and safe_name.endswith(".html")
         and _safe_page_filename(safe_name[:-5]) == safe_name
     )
+
+
+def _publish_page_plan(pages: dict[str, str]) -> tuple[list[tuple[str, str, str]], dict[str, list[str]]]:
+    filenames: dict[str, list[str]] = {}
+    plan: list[tuple[str, str, str]] = []
+    for name, page_html in pages.items():
+        filename = _safe_page_filename(name)
+        filenames.setdefault(filename, []).append(name)
+        plan.append((name, filename, page_html))
+    collisions = {filename: names for filename, names in filenames.items() if len(names) > 1}
+    return plan, collisions
+
+
+def _delete_stale_hosted_pages(site_dir: str, intended_filenames: set[str]) -> None:
+    if not os.path.isdir(site_dir):
+        return
+    for existing in os.listdir(site_dir):
+        if existing in intended_filenames or not _is_safe_hosted_html_page(existing):
+            continue
+        candidate = os.path.join(site_dir, existing)
+        if os.path.isfile(candidate):
+            try:
+                os.remove(candidate)
+            except OSError:
+                pass
 
 
 def _load_html_memory(session_id: str | None = None) -> dict[str, Any]:
@@ -201,20 +266,23 @@ def _append_memory(
     html: str = "",
     url: str = "",
     review: str = "",
+    session_id: str | None = None,
 ) -> dict[str, Any]:
-    memory = _load_html_memory()
-    if prompt or note or url:
-        memory.setdefault("history", []).append(
-            {"prompt": prompt, "note": note, "url": url, "timestamp": time.time()}
-        )
-    if html:
-        memory["last_html"] = html
-    if url:
-        memory["last_url"] = url
-    if review:
-        memory["last_review"] = review
-    _save_html_memory(memory)
-    return memory
+    safe_session = _sanitize_id(session_id or get_session_id())
+    with _memory_lock(safe_session):
+        memory = _load_html_memory(safe_session)
+        if prompt or note or url:
+            memory.setdefault("history", []).append(
+                {"prompt": prompt, "note": note, "url": url, "timestamp": time.time()}
+            )
+        if html:
+            memory["last_html"] = html
+        if url:
+            memory["last_url"] = url
+        if review:
+            memory["last_review"] = review
+        _save_html_memory(memory, safe_session)
+        return memory
 
 
 def _wrap_html(fragment: str) -> str:
@@ -661,7 +729,7 @@ def _call_ollama(system_prompt: str, user_prompt: str, temperature: float) -> st
 
 
 def call_ai(system_prompt: str, user_prompt: str, temperature: float = 0.25, language: str = "en") -> str:
-    if os.environ.get("GEMINI_ENABLED", "1") != "1":
+    if not _cloud_ai_enabled():
         local = _call_ollama(system_prompt, user_prompt, temperature)
         return local or "AI service disabled"
 
@@ -675,10 +743,11 @@ def call_ai(system_prompt: str, user_prompt: str, temperature: float = 0.25, lan
     if language == "hi":
         prompt = f"Reply in natural Hindi or Hinglish for a blind student. {system_prompt}"
 
+    if not _ai_semaphore.acquire(blocking=False):
+        local = _call_ollama(system_prompt, user_prompt, temperature)
+        return local or "AI service is busy. Please try again in a moment."
+
     def run_call() -> str:
-        global _ai_active
-        with _ai_lock:
-            _ai_active += 1
         try:
             messages = [
                 {"role": "system", "content": prompt},
@@ -711,15 +780,13 @@ def call_ai(system_prompt: str, user_prompt: str, temperature: float = 0.25, lan
             )
             return response.choices[0].message.content.strip()
         finally:
-            with _ai_lock:
-                _ai_active -= 1
+            _ai_semaphore.release()
 
-    with _ai_lock:
-        if _ai_active >= 3:
-            local = _call_ollama(system_prompt, user_prompt, temperature)
-            return local or "AI service is busy. Please try again in a moment."
-
-    future = _ai_executor.submit(run_call)
+    try:
+        future = _ai_executor.submit(run_call)
+    except Exception:
+        _ai_semaphore.release()
+        raise
     try:
         return future.result(timeout=AI_TIMEOUT + 1)
     except Exception as exc:
@@ -740,15 +807,6 @@ def ide():
 @app.route("/healthz", methods=["GET"])
 def healthz():
     return jsonify({"status": "ok", "version": __version__})
-
-
-@app.route("/api-config", methods=["POST"])
-def api_config():
-    body = safejson()
-    key = str(body.get("apiKey") or body.get("xaiKey") or "").strip()
-    if key:
-        os.environ["XAI_API_KEY"] = key
-    return jsonify({"success": True, "provider": "xAI/Grok" if key else "environment"})
 
 
 @app.route("/publish-site", methods=["POST"])
@@ -772,15 +830,25 @@ def publish_site():
     if not pages:
         return jsonify({"success": False, "error": "HTML cannot be empty"}), 400
 
-    session_id = get_session_id()
-    site_dir = _student_site_dir(session_id)
-    page_urls = {}
-    last_html = ""
-    for name, page_html in pages.items():
+    plan, collisions = _publish_page_plan(pages)
+    if collisions:
+        details = "; ".join(
+            f"{filename}: {', '.join(names)}" for filename, names in sorted(collisions.items())
+        )
+        return jsonify({"success": False, "error": f"Page names collide after slug normalization ({details})"}), 400
+
+    for name, _, page_html in plan:
         if len(page_html) > MAX_HTML_SIZE:
             return jsonify({"success": False, "error": f"Page {name} too large (max {MAX_HTML_SIZE} bytes)"}), 413
+
+    session_id = get_session_id()
+    site_dir = _ensure_student_site_dir(session_id)
+    intended_filenames = {filename for _, filename, _ in plan}
+    _delete_stale_hosted_pages(site_dir, intended_filenames)
+    page_urls = {}
+    last_html = ""
+    for name, filename, page_html in plan:
         wrapped = _wrap_html(page_html)
-        filename = _safe_page_filename(name)
         with open(os.path.join(site_dir, filename), "w", encoding="utf-8") as handle:
             handle.write(wrapped)
         page_urls[name] = f"/student-site/{session_id}/{'' if filename == 'index.html' else filename}"
@@ -794,14 +862,14 @@ def publish_site():
 
 @app.route("/student-site/<session_id>/")
 def student_site(session_id: str):
-    return send_from_directory(_student_site_dir(_sanitize_id(session_id)), "index.html")
+    return send_from_directory(_student_site_path(_sanitize_id(session_id)), "index.html")
 
 
 @app.route("/student-site/<session_id>/<path:filename>")
 def student_site_page(session_id: str, filename: str):
     if not _is_safe_hosted_html_page(filename):
         return jsonify({"success": False, "error": "Page not found"}), 404
-    return send_from_directory(_student_site_dir(_sanitize_id(session_id)), filename)
+    return send_from_directory(_student_site_path(_sanitize_id(session_id)), filename)
 
 
 @app.route("/html-memory", methods=["GET", "POST"])
@@ -825,19 +893,21 @@ def html_memory():
 @app.route("/reset-session", methods=["POST"])
 def reset_session():
     session_id = get_session_id()
-    for path in (_html_memory_path(session_id),):
-        try:
-            if os.path.exists(path):
-                os.remove(path)
-        except OSError:
-            pass
-    site_dir = _student_site_dir(session_id)
+    with _memory_lock(session_id):
+        for path in (_html_memory_path(session_id),):
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except OSError:
+                pass
+        memory = _load_html_memory(session_id)
+    site_dir = _student_site_path(session_id)
     try:
         if os.path.isdir(site_dir):
             shutil.rmtree(site_dir)
     except OSError:
         pass
-    return jsonify({"success": True, "memory": _load_html_memory(session_id)})
+    return jsonify({"success": True, "memory": memory})
 
 
 @app.route("/html-audit", methods=["POST"])

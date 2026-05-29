@@ -141,7 +141,7 @@
       timestamp: new Date().toISOString(),
     });
     state.versions = state.versions.slice(-25);
-    try { sessionStorage.setItem('codeup_versions', JSON.stringify(state.versions)); } catch (error) {}
+    persistVersions();
   }
 
   function setHtml(html) {
@@ -158,6 +158,56 @@
       const saved = JSON.parse(sessionStorage.getItem('codeup_versions') || '[]');
       if (Array.isArray(saved)) state.versions = saved.filter(item => item && item.html);
     } catch (error) {}
+  }
+
+  function persistVersions() {
+    try { sessionStorage.setItem('codeup_versions', JSON.stringify(state.versions)); } catch (error) {}
+  }
+
+  function normalizeHtmlDocument(html) {
+    const source = String(html || '').trim();
+    const headMarkup = '<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>CodeUp Site</title></head>';
+    if (!/<html\b/i.test(source)) {
+      const fragment = source.replace(/^\s*<!doctype[^>]*>\s*/i, '');
+      return `<!doctype html>\n<html lang="en">\n${headMarkup}\n<body>\n${fragment}\n</body>\n</html>`;
+    }
+
+    let normalized = source;
+    if (!/^\s*<!doctype/i.test(normalized)) normalized = `<!doctype html>\n${normalized}`;
+    if (!/<head\b/i.test(normalized)) {
+      normalized = normalized.replace(/<html\b[^>]*>/i, match => `${match}\n${headMarkup}`);
+    }
+    if (!/<\/head\s*>/i.test(normalized)) {
+      normalized = normalized.replace(/<head\b[^>]*>/i, headMarkup);
+    }
+    if (!/<body\b/i.test(normalized)) {
+      normalized = normalized.replace(/<\/head\s*>/i, '</head>\n<body>');
+      if (/<\/html\s*>/i.test(normalized)) normalized = normalized.replace(/<\/html\s*>/i, '</body>\n</html>');
+      else normalized += '\n</body>';
+    }
+    return normalized;
+  }
+
+  function managedVoiceCssRules(html) {
+    const rules = [];
+    const matches = html.matchAll(/<style\b(?=[^>]*\bdata-codeup-voice-css\b)[^>]*>([\s\S]*?)<\/style>/gi);
+    for (const match of matches) {
+      for (const rule of match[1].split('\n').map(line => line.trim()).filter(Boolean)) {
+        if (!rules.includes(rule)) rules.push(rule);
+      }
+    }
+    return rules;
+  }
+
+  function injectVoiceCss(html, rules) {
+    const existing = managedVoiceCssRules(html);
+    for (const rule of rules) {
+      if (!existing.includes(rule)) existing.push(rule);
+    }
+    const normalized = normalizeHtmlDocument(html)
+      .replace(/\s*<style\b(?=[^>]*\bdata-codeup-voice-css\b)[^>]*>[\s\S]*?<\/style>\s*/gi, '\n');
+    const styleBlock = `\n<style data-codeup-voice-css>\n${existing.join('\n')}\n</style>\n`;
+    return normalized.replace(/<\/head\s*>/i, `${styleBlock}</head>`);
   }
 
   function ensureHtmlEditor() {
@@ -484,12 +534,8 @@
     if (lower.includes('high contrast')) rules.push('body { color: #0f172a; background: #ffffff; } a, button, .button { color: #ffffff; background: #0f172a; }');
     if (!rules.length) return false;
     snapshotVersion('Before CSS voice edit');
-    const styleBlock = `\n<style data-codeup-voice-css>\n${rules.join('\n')}\n</style>\n`;
     const html = getHtml();
-    const next = /<\/head\s*>/i.test(html)
-      ? html.replace(/<\/head\s*>/i, `${styleBlock}</head>`)
-      : `<head>${styleBlock}</head>\n${html}`;
-    setHtml(next);
+    setHtml(injectVoiceCss(html, rules));
     writeOutput(`Applied CSS edit: ${rules.join(' ')}`, true);
     previewHtml(false);
     return true;
@@ -542,6 +588,7 @@
     const target = Math.max(0, state.versions.length - 1 - steps);
     const version = state.versions[target];
     state.versions = state.versions.slice(0, target + 1);
+    persistVersions();
     setHtml(version.html);
     writeOutput(`Restored version: ${version.note}.`, true);
     return true;
@@ -1427,6 +1474,12 @@
       resumeVoice,
       toggleVoice,
       updateVoiceButton,
+      applyCssEdit,
+      undoByVoice,
+      snapshotVersion,
+      restoreVersions,
+      setHtml,
+      getHtml,
     };
   }
 

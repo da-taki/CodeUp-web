@@ -1,7 +1,12 @@
 from http.cookies import SimpleCookie
+import json
+import os
 import shutil
 import subprocess
 import textwrap
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import pytest
 
@@ -37,15 +42,28 @@ def test_healthz(client):
     assert data["version"].endswith("-html")
 
 
+def test_api_config_route_is_unavailable_and_does_not_mutate_env(client, monkeypatch):
+    monkeypatch.setenv("XAI_API_KEY", "original-key")
+
+    response = client.post("/api-config", json={"apiKey": "user-supplied-key"})
+
+    assert response.status_code == 404
+    assert os.environ["XAI_API_KEY"] == "original-key"
+
+
 def test_malformed_session_cookie_is_replaced(client):
     import app as app_module
 
     client.set_cookie(app_module.SESSION_COOKIE_NAME, "bad.session")
     response = client.get("/html-memory")
     cookie = SimpleCookie(response.headers["Set-Cookie"])
+    replacement = cookie[app_module.SESSION_COOKIE_NAME].value
+    serializer = app_module.app.session_interface.get_signing_serializer(app_module.app)
+    signed = serializer.loads(replacement)
 
     assert app_module.SESSION_COOKIE_NAME in cookie
-    assert cookie[app_module.SESSION_COOKIE_NAME].value == "badsession"
+    assert replacement != "bad.session"
+    assert signed["session_id"] not in {"bad.session", "badsession"}
 
 
 def test_empty_sanitized_session_cookie_is_regenerated(client):
@@ -55,9 +73,12 @@ def test_empty_sanitized_session_cookie_is_regenerated(client):
     response = client.get("/html-memory")
     cookie = SimpleCookie(response.headers["Set-Cookie"])
     replacement = cookie[app_module.SESSION_COOKIE_NAME].value
+    serializer = app_module.app.session_interface.get_signing_serializer(app_module.app)
+    signed = serializer.loads(replacement)
 
     assert replacement
     assert replacement != "."
+    assert signed["session_id"]
 
 
 def test_ai_unavailable_matching_avoids_rate_false_positives():
@@ -67,6 +88,59 @@ def test_ai_unavailable_matching_avoids_rate_false_positives():
     assert app_module._is_ai_unavailable("Iterate on the layout after preview.") is False
     assert app_module._is_ai_unavailable("The provider returned a rate limit error.") is True
     assert app_module._is_ai_unavailable("AI service not configured. Please set an API key.") is True
+
+
+def test_call_ai_concurrency_cap_is_reserved_before_submit(monkeypatch):
+    import requests
+    import app as app_module
+
+    monkeypatch.setenv("AI_CLOUD_ENABLED", "1")
+    monkeypatch.setenv("XAI_API_KEY", "test-key")
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.setattr(app_module, "_call_ollama", lambda *args: None)
+
+    active = 0
+    post_count = 0
+    lock = threading.Lock()
+    all_started = threading.Event()
+    release_calls = threading.Event()
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"choices": [{"message": {"content": "ok"}}]}
+
+    def fake_post(*args, **kwargs):
+        nonlocal active, post_count
+        with lock:
+            active += 1
+            post_count += 1
+            if active == app_module.AI_MAX_CONCURRENT:
+                all_started.set()
+        release_calls.wait(timeout=5)
+        with lock:
+            active -= 1
+        return FakeResponse()
+
+    monkeypatch.setattr(requests, "post", fake_post)
+
+    with ThreadPoolExecutor(max_workers=app_module.AI_MAX_CONCURRENT) as pool:
+        futures = [
+            pool.submit(app_module.call_ai, "system", f"user-{index}")
+            for index in range(app_module.AI_MAX_CONCURRENT)
+        ]
+        assert all_started.wait(timeout=3)
+        busy = app_module.call_ai("system", "overflow")
+        release_calls.set()
+        results = [future.result(timeout=3) for future in futures]
+
+    assert busy == "AI service is busy. Please try again in a moment."
+    assert results == ["ok"] * app_module.AI_MAX_CONCURRENT
+    assert post_count == app_module.AI_MAX_CONCURRENT
+    assert app_module.call_ai("system", "after-release") == "ok"
+    assert post_count == app_module.AI_MAX_CONCURRENT + 1
 
 
 def test_flask_debug_is_env_driven(monkeypatch):
@@ -116,6 +190,48 @@ def test_publish_site_serves_multiple_pages(client):
     assert "Contact Club" in client.get(data["pages"]["contact"]).get_data(as_text=True)
 
 
+def test_publish_site_removes_stale_html_pages_on_republish(client):
+    first = client.post(
+        "/publish-site",
+        json={"pages": {"home": "<h1>Home</h1>", "about": "<h1>About</h1>"}},
+    ).get_json()
+    assert client.get(first["pages"]["about"]).status_code == 200
+
+    second = client.post("/publish-site", json={"html": "<h1>Only Home</h1>"}).get_json()
+
+    assert second["success"] is True
+    assert client.get(second["url"]).status_code == 200
+    assert client.get(first["pages"]["about"]).status_code == 404
+
+
+def test_publish_site_rejects_home_index_slug_collision(client):
+    response = client.post(
+        "/publish-site",
+        json={"pages": {"home": "<h1>Home</h1>", "index": "<h1>Index</h1>"}},
+    )
+    data = response.get_json()
+
+    assert response.status_code == 400
+    assert data["success"] is False
+    assert "index.html" in data["error"]
+    assert "home" in data["error"]
+    assert "index" in data["error"]
+
+
+def test_publish_site_rejects_normalized_slug_collision(client):
+    response = client.post(
+        "/publish-site",
+        json={"pages": {"About Us": "<h1>About</h1>", "about!us": "<h1>Other</h1>"}},
+    )
+    data = response.get_json()
+
+    assert response.status_code == 400
+    assert data["success"] is False
+    assert "about-us.html" in data["error"]
+    assert "About Us" in data["error"]
+    assert "about!us" in data["error"]
+
+
 def test_student_site_serves_html_pages_only(client):
     response = client.post(
         "/publish-site",
@@ -129,6 +245,15 @@ def test_student_site_serves_html_pages_only(client):
     assert client.get(data["url"] + "Home.html").status_code == 404
 
 
+def test_student_site_get_does_not_create_missing_directory(client, tmp_path):
+    missing_dir = Path(tmp_path) / "student_sites" / "missing-session"
+
+    response = client.get("/student-site/missing-session/")
+
+    assert response.status_code == 404
+    assert not missing_dir.exists()
+
+
 def test_html_memory_persists_per_session(client):
     saved = client.post(
         "/html-memory",
@@ -140,6 +265,77 @@ def test_html_memory_persists_per_session(client):
     assert loaded["memory"]["last_html"] == "<html>Art</html>"
     assert loaded["memory"]["last_url"] == "/student-site/demo/"
     assert loaded["memory"]["history"][-1]["prompt"] == "Build a website for art club"
+
+
+def test_fresh_clients_do_not_share_memory(monkeypatch, tmp_path):
+    monkeypatch.setenv("FLASK_TESTING", "true")
+    monkeypatch.setenv("GEMINI_ENABLED", "0")
+    import app as app_module
+
+    monkeypatch.setattr(app_module, "DATA_DIR", str(tmp_path))
+    app_module.app.config.update(TESTING=True)
+    first_client = app_module.app.test_client()
+    second_client = app_module.app.test_client()
+
+    first_client.post("/html-memory", json={"prompt": "private", "html": "<h1>Private</h1>"})
+    second_memory = second_client.get("/html-memory").get_json()["memory"]
+
+    assert second_memory == {"history": [], "last_html": "", "last_url": "", "last_review": ""}
+
+
+def test_raw_cookie_cannot_force_access_to_another_session(monkeypatch, tmp_path):
+    monkeypatch.setenv("FLASK_TESTING", "true")
+    monkeypatch.setenv("GEMINI_ENABLED", "0")
+    import app as app_module
+
+    monkeypatch.setattr(app_module, "DATA_DIR", str(tmp_path))
+    app_module.app.config.update(TESTING=True)
+    victim = app_module.app.test_client()
+    attacker = app_module.app.test_client()
+
+    victim_response = victim.post("/html-memory", json={"prompt": "victim", "html": "<h1>Victim</h1>"})
+    signed_cookie = SimpleCookie(victim_response.headers["Set-Cookie"])[app_module.SESSION_COOKIE_NAME].value
+    serializer = app_module.app.session_interface.get_signing_serializer(app_module.app)
+    victim_session_id = serializer.loads(signed_cookie)["session_id"]
+
+    attacker.set_cookie(app_module.SESSION_COOKIE_NAME, victim_session_id)
+    response = attacker.get("/html-memory")
+    attacker_memory = response.get_json()["memory"]
+    replacement = SimpleCookie(response.headers["Set-Cookie"])[app_module.SESSION_COOKIE_NAME].value
+    attacker_session_id = serializer.loads(replacement)["session_id"]
+
+    assert attacker_memory == {"history": [], "last_html": "", "last_url": "", "last_review": ""}
+    assert attacker_session_id != victim_session_id
+
+
+def test_concurrent_memory_writes_are_serialized(client, tmp_path):
+    import app as app_module
+
+    seed = client.get("/html-memory")
+    signed_cookie = SimpleCookie(seed.headers["Set-Cookie"])[app_module.SESSION_COOKIE_NAME].value
+    serializer = app_module.app.session_interface.get_signing_serializer(app_module.app)
+    session_id = serializer.loads(signed_cookie)["session_id"]
+
+    def post_note(index):
+        worker = app_module.app.test_client()
+        worker.set_cookie(app_module.SESSION_COOKIE_NAME, signed_cookie)
+        response = worker.post(
+            "/html-memory",
+            json={"note": f"note-{index}", "html": f"<h1>Version {index}</h1>"},
+        )
+        assert response.status_code == 200
+
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        list(pool.map(post_note, range(30)))
+
+    loaded = client.get("/html-memory").get_json()["memory"]
+    notes = {item["note"] for item in loaded["history"]}
+    memory_path = Path(tmp_path) / "html_memory" / f"{session_id}.json"
+    persisted = json.loads(memory_path.read_text(encoding="utf-8"))
+
+    assert len(loaded["history"]) == 30
+    assert notes == {f"note-{index}" for index in range(30)}
+    assert len(persisted["history"]) == 30
 
 
 def test_reset_session_clears_memory_and_local_site(client):
@@ -326,6 +522,149 @@ def test_frontend_uses_current_template_ids_only():
         "tutorialBtn",
     ):
         assert legacy_id not in script
+
+
+def test_frontend_undo_persists_trimmed_versions():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is required for the JS undo persistence check")
+
+    harness = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function assert(condition, message) {
+          if (!condition) throw new Error(message);
+        }
+
+        const storage = new Map();
+        const elements = {
+          htmlEditor: { value: '', addEventListener() {}, setAttribute() {} },
+          output: { textContent: '' },
+          srAnnouncer: { textContent: '' },
+          languageSelector: { value: 'en', addEventListener() {} },
+        };
+        const sessionStorage = {
+          getItem(key) { return storage.has(key) ? storage.get(key) : null; },
+          setItem(key, value) { storage.set(key, String(value)); },
+          removeItem(key) { storage.delete(key); },
+        };
+        const context = {
+          console,
+          Date,
+          setTimeout(callback) { callback(); },
+          sessionStorage,
+          localStorage: { getItem() { return null; }, setItem() {} },
+          SpeechSynthesisUtterance: function SpeechSynthesisUtterance(text) { this.text = text; },
+          document: {
+            getElementById(id) { return elements[id] || null; },
+            addEventListener() {},
+            body: { dataset: {}, classList: { toggle() {} } },
+          },
+          window: {
+            __codeupEnableTestHooks: true,
+            speechSynthesis: { cancel() {}, speak() {} },
+            addEventListener() {},
+          },
+        };
+        context.window.window = context.window;
+        context.window.document = context.document;
+        context.window.sessionStorage = sessionStorage;
+        context.window.localStorage = context.localStorage;
+
+        vm.runInNewContext(fs.readFileSync('static/codeup-html.js', 'utf8'), context);
+        const api = context.window.__codeupVoiceTest;
+
+        api.setHtml('<h1>First</h1>');
+        api.snapshotVersion('First version');
+        api.setHtml('<h1>Second</h1>');
+        api.snapshotVersion('Second version');
+        assert(JSON.parse(storage.get('codeup_versions')).length === 2, 'two versions should be stored before undo');
+
+        api.undoByVoice('undo');
+        const saved = JSON.parse(storage.get('codeup_versions'));
+        assert(saved.length === 1, 'undo should persist the trimmed version stack');
+        assert(saved[0].html === '<h1>First</h1>', 'the persisted stack should keep the restored version');
+
+        api.state.versions = [];
+        api.restoreVersions();
+        assert(api.state.versions.length === 1, 'simulated reload should restore the trimmed stack');
+        assert(api.state.versions[0].html === '<h1>First</h1>', 'reload should not resurrect undone versions');
+        """
+    )
+
+    subprocess.run([node, "-e", harness], check=True, cwd=".")
+
+
+def test_frontend_voice_css_edits_are_single_block_and_wrap_fragments():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is required for the JS CSS edit check")
+
+    harness = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function assert(condition, message) {
+          if (!condition) throw new Error(message);
+        }
+
+        const storage = new Map();
+        const elements = {
+          htmlEditor: { value: '<h1>Hello</h1>', addEventListener() {}, setAttribute() {} },
+          output: { textContent: '' },
+          srAnnouncer: { textContent: '' },
+          languageSelector: { value: 'en', addEventListener() {} },
+        };
+        const sessionStorage = {
+          getItem(key) { return storage.has(key) ? storage.get(key) : null; },
+          setItem(key, value) { storage.set(key, String(value)); },
+          removeItem(key) { storage.delete(key); },
+        };
+        const context = {
+          console,
+          Date,
+          setTimeout(callback) { callback(); },
+          sessionStorage,
+          localStorage: { getItem() { return null; }, setItem() {} },
+          SpeechSynthesisUtterance: function SpeechSynthesisUtterance(text) { this.text = text; },
+          document: {
+            getElementById(id) { return elements[id] || null; },
+            addEventListener() {},
+            body: { dataset: {}, classList: { toggle() {} } },
+          },
+          window: {
+            __codeupEnableTestHooks: true,
+            speechSynthesis: { cancel() {}, speak() {} },
+            addEventListener() {},
+          },
+        };
+        context.window.window = context.window;
+        context.window.document = context.document;
+        context.window.sessionStorage = sessionStorage;
+        context.window.localStorage = context.localStorage;
+
+        vm.runInNewContext(fs.readFileSync('static/codeup-html.js', 'utf8'), context);
+        const api = context.window.__codeupVoiceTest;
+
+        assert(api.applyCssEdit('change the background blue'), 'background command should apply');
+        assert(api.applyCssEdit('center the heading'), 'heading command should apply');
+        assert(api.applyCssEdit('center the heading'), 'repeated command should still apply');
+        const html = api.getHtml();
+        const styleBlocks = html.match(/<style\b[^>]*data-codeup-voice-css[^>]*>/gi) || [];
+        const centerRules = html.match(/h1, h2, h3 \{ text-align: center; \}/g) || [];
+
+        assert(styleBlocks.length === 1, 'voice CSS should use exactly one managed style block');
+        assert(centerRules.length === 1, 'repeated CSS edits should not duplicate identical rules');
+        assert(/<!doctype html>/i.test(html), 'fragment edits should be wrapped with a doctype');
+        assert(/<html\b/i.test(html) && /<head\b/i.test(html) && /<body\b/i.test(html), 'fragment edits should produce a full document');
+        assert(html.includes('body { background: #2563eb; }'), 'previous voice CSS rules should be retained in the managed block');
+        """
+    )
+
+    subprocess.run([node, "-e", harness], check=True, cwd=".")
 
 
 def test_voice_state_separates_wake_and_active_modes():
