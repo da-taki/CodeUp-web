@@ -9,6 +9,14 @@
     SPEAKING: 'SPEAKING',
   };
 
+  const VALID_TRANSITIONS = {
+    IDLE: ['LISTENING'],
+    LISTENING: ['PROCESSING', 'IDLE'],
+    PROCESSING: ['RESPONDING', 'LISTENING', 'IDLE'],
+    RESPONDING: ['SPEAKING', 'LISTENING', 'IDLE'],
+    SPEAKING: ['LISTENING', 'IDLE'],
+  };
+
   const engine = {
     state: STATES.IDLE,
     abortController: null,
@@ -17,6 +25,8 @@
     lastTranscriptTime: 0,
     narrationQueue: [],
     narrationActive: false,
+    interrupted: false,
+    voiceActive: false,
     conversationHistory: [],
     maxHistory: 20,
     streamBuffer: '',
@@ -29,6 +39,11 @@
 
   function setState(newState) {
     const prev = engine.state;
+    if (prev === newState) return;
+    const allowed = VALID_TRANSITIONS[prev];
+    if (allowed && !allowed.includes(newState)) {
+      return;
+    }
     engine.state = newState;
     if (engine.onStateChange) {
       engine.onStateChange(newState, prev);
@@ -36,6 +51,7 @@
   }
 
   function cancelAllOutput() {
+    engine.interrupted = true;
     try { window.speechSynthesis.cancel(); } catch (e) {}
     if (engine.abortController) {
       engine.abortController.abort();
@@ -98,6 +114,10 @@
     if (engine.narrationActive) return;
     engine.narrationActive = true;
     while (engine.narrationQueue.length > 0) {
+      if (engine.interrupted) {
+        engine.narrationQueue = [];
+        break;
+      }
       if (engine.state !== STATES.SPEAKING && engine.state !== STATES.RESPONDING) {
         engine.narrationQueue = [];
         break;
@@ -106,8 +126,12 @@
       await speakSentence(sentence);
     }
     engine.narrationActive = false;
-    if (engine.narrationQueue.length === 0 && engine.state === STATES.SPEAKING) {
-      setState(STATES.IDLE);
+    if (engine.narrationQueue.length === 0 && engine.state === STATES.SPEAKING && !engine.interrupted) {
+      if (engine.voiceActive) {
+        setState(STATES.LISTENING);
+      } else {
+        setState(STATES.IDLE);
+      }
     }
   }
 
@@ -128,12 +152,21 @@
       sentences.push(match[0].trim());
       lastIndex = match.index + match[0].length;
     }
-    return { sentences, remainder: buffer.slice(lastIndex) };
+    let remainder = buffer.slice(lastIndex);
+    if (sentences.length === 0 && remainder.length > 40) {
+      const breakPoint = remainder.lastIndexOf(' ', 40);
+      if (breakPoint > 10) {
+        sentences.push(remainder.slice(0, breakPoint).trim());
+        remainder = remainder.slice(breakPoint);
+      }
+    }
+    return { sentences, remainder };
   }
 
   async function streamAIResponse(prompt, options) {
     if (engine.requestLock) return null;
     engine.requestLock = true;
+    engine.interrupted = false;
     setState(STATES.PROCESSING);
 
     const controller = new AbortController();
@@ -170,6 +203,7 @@
       let partialLine = '';
 
       while (true) {
+        if (engine.interrupted) break;
         const { done, value } = await reader.read();
         if (done) break;
         if (controller.signal.aborted) break;
@@ -189,12 +223,13 @@
               engine.streamBuffer += data.chunk;
 
               if (engine.onStreamChunk) {
-                if (!engine.streamUpdateThrottle) {
-                  engine.streamUpdateThrottle = setTimeout(function () {
-                    engine.onStreamChunk(fullResponse);
-                    engine.streamUpdateThrottle = null;
-                  }, 50);
+                if (engine.streamUpdateThrottle) {
+                  clearTimeout(engine.streamUpdateThrottle);
                 }
+                engine.streamUpdateThrottle = setTimeout(function () {
+                  engine.streamUpdateThrottle = null;
+                  if (engine.onStreamChunk) engine.onStreamChunk(fullResponse);
+                }, 35);
               }
 
               const { sentences, remainder } = extractSentences(engine.streamBuffer);
@@ -208,6 +243,17 @@
             }
           } catch (e) {}
         }
+      }
+
+      if (engine.streamUpdateThrottle) {
+        clearTimeout(engine.streamUpdateThrottle);
+        engine.streamUpdateThrottle = null;
+      }
+
+      if (engine.interrupted) {
+        engine.requestLock = false;
+        engine.abortController = null;
+        return null;
       }
 
       if (engine.streamBuffer.trim()) {
@@ -247,6 +293,7 @@
   async function chatWithContext(message, options) {
     if (engine.requestLock) return null;
     engine.requestLock = true;
+    engine.interrupted = false;
     setState(STATES.PROCESSING);
 
     const controller = new AbortController();
@@ -349,6 +396,10 @@
     return engine.conversationHistory.slice();
   }
 
+  function setVoiceActive(active) {
+    engine.voiceActive = !!active;
+  }
+
   function resetEngine() {
     cancelAllOutput();
     engine.state = STATES.IDLE;
@@ -358,6 +409,8 @@
     engine.conversationHistory = [];
     engine.narrationQueue = [];
     engine.narrationActive = false;
+    engine.interrupted = false;
+    engine.voiceActive = false;
     engine.streamBuffer = '';
   }
 
@@ -373,6 +426,7 @@
     chatWithContext: chatWithContext,
     addToHistory: addToHistory,
     getHistory: getHistory,
+    setVoiceActive: setVoiceActive,
     resetEngine: resetEngine,
     set onStateChange(fn) { engine.onStateChange = fn; },
     set onStreamChunk(fn) { engine.onStreamChunk = fn; },
