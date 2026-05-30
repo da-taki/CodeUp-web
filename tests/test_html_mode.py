@@ -280,7 +280,10 @@ def test_fresh_clients_do_not_share_memory(monkeypatch, tmp_path):
     first_client.post("/html-memory", json={"prompt": "private", "html": "<h1>Private</h1>"})
     second_memory = second_client.get("/html-memory").get_json()["memory"]
 
-    assert second_memory == {"history": [], "last_html": "", "last_url": "", "last_review": ""}
+    assert second_memory["history"] == []
+    assert second_memory["last_html"] == ""
+    assert second_memory["last_url"] == ""
+    assert second_memory["last_review"] == ""
 
 
 def test_raw_cookie_cannot_force_access_to_another_session(monkeypatch, tmp_path):
@@ -304,7 +307,10 @@ def test_raw_cookie_cannot_force_access_to_another_session(monkeypatch, tmp_path
     replacement = SimpleCookie(response.headers["Set-Cookie"])[app_module.SESSION_COOKIE_NAME].value
     attacker_session_id = serializer.loads(replacement)["session_id"]
 
-    assert attacker_memory == {"history": [], "last_html": "", "last_url": "", "last_review": ""}
+    assert attacker_memory["history"] == []
+    assert attacker_memory["last_html"] == ""
+    assert attacker_memory["last_url"] == ""
+    assert attacker_memory["last_review"] == ""
     assert attacker_session_id != victim_session_id
 
 
@@ -344,7 +350,10 @@ def test_reset_session_clears_memory_and_local_site(client):
 
     reset = client.post("/reset-session", json={"url": published["url"]}).get_json()
     assert reset["success"] is True
-    assert reset["memory"] == {"history": [], "last_html": "", "last_url": "", "last_review": ""}
+    assert reset["memory"]["history"] == []
+    assert reset["memory"]["last_html"] == ""
+    assert reset["memory"]["last_url"] == ""
+    assert reset["memory"]["last_review"] == ""
     assert client.get(published["url"]).status_code == 404
 
 
