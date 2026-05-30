@@ -776,6 +776,37 @@
     const normalized = /^build a website/i.test(prompt) || /^make/i.test(prompt)
       ? prompt
       : 'Build a website for ' + prompt;
+
+    if (window.VoiceMemoryEngine && shouldSpeak) {
+      writeOutput(t('Building website...', 'Website ban rahi hai...'));
+      updateStateIndicator('PROCESSING');
+      const result = await window.VoiceMemoryEngine.streamAIResponse(normalized, {
+        currentHtml: getHtml(),
+      });
+      if (result) {
+        const html = result.indexOf('<') !== -1 ? result : '';
+        if (html) {
+          snapshotVersion('Before building website');
+          state.currentPage = 'home';
+          state.pages = {};
+          setHtml(html);
+          snapshotVersion('Built website');
+          try {
+            const url = await publish(html);
+            await saveMemory({ prompt: normalized, html, url });
+            const review = await reviewWebsite(false);
+            writeOutput(t(
+              `Website built and hosted locally at ${url}. ${review}`,
+              `Website ban gayi: ${url}. ${review}`
+            ), false);
+          } catch (error) {
+            writeOutput(t('Website built but preview failed.', 'Website bani par preview fail.'), false);
+          }
+        }
+      }
+      return;
+    }
+
     writeOutput(t('Building website...', 'Website ban rahi hai...'), shouldSpeak);
     try {
       const response = await fetch('/generate-code', {
@@ -834,6 +865,17 @@
         'Ask me anything about this tool or your website.',
         'Aap is tool ya apni website ke baare mein kuch bhi pooch sakte hain.'
       ));
+      return;
+    }
+    if (window.VoiceMemoryEngine && shouldSpeak) {
+      writeOutput(t('Thinking...', 'Soch raha hoon...'));
+      updateStateIndicator('PROCESSING');
+      const reply = await window.VoiceMemoryEngine.chatWithContext(message, {
+        currentHtml: getHtml(),
+      });
+      if (reply) {
+        writeOutput(reply, false);
+      }
       return;
     }
     writeOutput(t('Thinking...', 'Soch raha hoon...'), shouldSpeak);
@@ -1227,7 +1269,7 @@
     };
     recognition.onresult = (event) => {
       cancelSpeech();
-      handleVoiceCommand(transcriptFromEvent(event));
+      handleVoiceCommandWithInterrupt(transcriptFromEvent(event));
     };
     recognition.onerror = () => updateVoiceButton();
     recognition.onend = () => {
@@ -1464,6 +1506,55 @@
     document.body.dataset.htmlModeReady = 'true';
   }
 
+  function updateStateIndicator(voiceState) {
+    const button = $('voiceButton');
+    if (!button) return;
+    const indicator = voiceState || 'IDLE';
+    button.dataset.voiceState = indicator;
+    const sr = $('srAnnouncer');
+    if (indicator === 'PROCESSING' && sr) sr.textContent = t('Processing...', 'Process ho raha hai...');
+    if (indicator === 'RESPONDING' && sr) sr.textContent = t('AI is responding...', 'AI jawab de raha hai...');
+    if (indicator === 'SPEAKING' && sr) sr.textContent = t('Speaking response...', 'Jawab bol raha hai...');
+  }
+
+  function initVoiceMemoryEngine() {
+    if (!window.VoiceMemoryEngine) return;
+    const VME = window.VoiceMemoryEngine;
+
+    VME.onStateChange = function (newState) {
+      updateStateIndicator(newState);
+    };
+
+    VME.onStreamChunk = function (fullText) {
+      const output = $('output');
+      if (output) {
+        output.textContent = fullText.slice(-2000);
+        output.scrollTop = output.scrollHeight;
+      }
+    };
+
+    VME.onResponseComplete = function (response, prompt) {
+      updateStateIndicator('IDLE');
+    };
+
+    VME.onError = function (error) {
+      writeOutput(error.message || t('An error occurred.', 'Ek error aayi.'), true);
+      updateStateIndicator('IDLE');
+    };
+  }
+
+  const originalHandleVoiceCommand = handleVoiceCommand;
+  async function handleVoiceCommandWithInterrupt(raw) {
+    const command = raw.trim();
+    if (!command) return;
+    if (window.VoiceMemoryEngine) {
+      if (!window.VoiceMemoryEngine.handleTranscript(command)) {
+        return;
+      }
+    }
+    await originalHandleVoiceCommand(command);
+  }
+
   if (window.__codeupEnableTestHooks) {
     window.__codeupVoiceTest = {
       state,
@@ -1487,6 +1578,7 @@
     await loadMemory();
     restoreVersions();
     setupUi();
+    initVoiceMemoryEngine();
     state.pages.home = getHtml();
     snapshotVersion('Initial version');
     await previewHtml(false);

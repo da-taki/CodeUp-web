@@ -368,3 +368,34 @@ body.theme-night .cu-output-box {
     min-height: 62vh;
   }
 }
+
+/* ------- Voice state indicators ------- */
+.cu-button-voice[data-voice-state="LISTENING"] {
+  animation: voice-pulse 1.5s ease-in-out infinite;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.cu-button-voice[data-voice-state="PROCESSING"] {
+  opacity: 0.7;
+  cursor: wait;
+}
+.cu-button-voice[data-voice-state="RESPONDING"] {
+  background: var(--success);
+  animation: voice-stream 0.8s ease-in-out infinite alternate;
+}
+.cu-button-voice[data-voice-state="SPEAKING"] {
+  background: var(--accent);
+  animation: voice-speak 1s ease-in-out infinite;
+}
+
+@keyframes voice-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px var(--accent-soft); }
+  50% { box-shadow: 0 0 0 6px var(--accent-soft); }
+}
+@keyframes voice-stream {
+  from { opacity: 0.8; }
+  to { opacity: 1; }
+}
+@keyframes voice-speak {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.03); }
+}
