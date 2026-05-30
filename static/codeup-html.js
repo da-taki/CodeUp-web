@@ -100,6 +100,11 @@
     try { window.speechSynthesis.cancel(); } catch (error) {}
   }
 
+  function detectSpeakLang(text) {
+    if (window.VoiceMemoryEngine) return window.VoiceMemoryEngine.detectLang(text);
+    return isHindi() ? 'hi-IN' : 'en-US';
+  }
+
   function speak(text, opts = {}) {
     if (!text) return;
     cancelSpeech();
@@ -108,7 +113,7 @@
     if (opts.silent) return;
     if (!('speechSynthesis' in window)) return;
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = isHindi() ? 'hi-IN' : 'en-US';
+    utterance.lang = detectSpeakLang(text);
     utterance.rate = opts.rate || 1;
     utterance.pitch = opts.pitch || 1;
     window.speechSynthesis.speak(utterance);
@@ -1076,6 +1081,23 @@
       announce('Speech stopped');
       return;
     }
+    if (lower.includes('voice language') || lower.includes('speech language') || lower.includes('bhasha')) {
+      const VME = window.VoiceMemoryEngine;
+      if (VME) {
+        let mode = 'auto';
+        if (lower.includes('hindi') || lower.includes('हिंदी')) mode = 'hi';
+        else if (lower.includes('english') || lower.includes('अंग्रेज़ी')) mode = 'en';
+        VME.setVoiceLangMode(mode);
+        localStorage.setItem('codeup_voice_lang_mode', mode);
+        const labels = { auto: 'Auto-detect', en: 'English', hi: 'Hindi' };
+        writeOutput(t(`Voice language set to ${labels[mode]}.`, `Voice bhasha ${labels[mode]} set ho gayi.`), true);
+        if (state.activeVoice && !state.paused) {
+          stopActiveRecognition();
+          setTimeout(startActiveRecognition, 200);
+        }
+      }
+      return;
+    }
     if (lower.includes('help') || lower.includes('madad')) {
       await chatWithAI(command, true);
       return;
@@ -1204,6 +1226,9 @@
       lower.includes('multi page') ||
       lower.includes('go back') ||
       lower.includes('what changed') ||
+      lower.includes('voice language') ||
+      lower.includes('speech language') ||
+      lower.includes('bhasha') ||
       lower.includes('wake word') ||
       lower.includes('make the heading') ||
       lower.includes('make heading') ||
@@ -1266,7 +1291,10 @@
     state.activeRecognition = recognition;
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.lang = isHindi() ? 'hi-IN' : 'en-US';
+    const vmeMode = window.VoiceMemoryEngine ? window.VoiceMemoryEngine.getVoiceLangMode() : null;
+    if (vmeMode === 'hi') recognition.lang = 'hi-IN';
+    else if (vmeMode === 'en') recognition.lang = 'en-US';
+    else recognition.lang = isHindi() ? 'hi-IN' : 'en-US';
     recognition.onstart = () => {
       updateVoiceButton();
       announce(t('Voice command listening.', 'Voice command sun raha hai.'));
@@ -1500,6 +1528,16 @@
       localStorage.setItem('codeup_wake_word', state.wakeWord);
       writeOutput(`Wake word changed to ${state.wakeWord}.`, true);
     };
+    window.setVoiceLangMode = (mode) => {
+      if (window.VoiceMemoryEngine) {
+        window.VoiceMemoryEngine.setVoiceLangMode(mode);
+        localStorage.setItem('codeup_voice_lang_mode', mode);
+        if (state.activeVoice && !state.paused) {
+          stopActiveRecognition();
+          setTimeout(startActiveRecognition, 200);
+        }
+      }
+    };
 
     document.addEventListener('keydown', (event) => {
       if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'm') {
@@ -1538,39 +1576,59 @@
     if (!window.VoiceMemoryEngine) return;
     const VME = window.VoiceMemoryEngine;
 
+    const savedLangMode = localStorage.getItem('codeup_voice_lang_mode');
+    if (savedLangMode) VME.setVoiceLangMode(savedLangMode);
+
+    let lastRenderedText = '';
+
     VME.onStateChange = function (newState, prevState) {
       updateStateIndicator(newState);
       const output = $('output');
       if (newState === 'LISTENING' && output) {
         if (prevState === 'SPEAKING' || prevState === 'RESPONDING') {
+          output.classList.add('cu-fade-in');
           output.textContent = t('Listening...', 'Sun raha hoon...');
-          output.classList.remove('cu-streaming');
+          output.classList.remove('cu-streaming', 'cu-typing');
+          setTimeout(() => output.classList.remove('cu-fade-in'), 300);
         }
         if (state.activeVoice && !state.paused && !state.activeRecognition) {
           setTimeout(startActiveRecognition, 100);
         }
       }
       if (newState === 'PROCESSING' && output) {
+        output.classList.add('cu-fade-in');
         output.textContent = t('Thinking...', 'Soch raha hoon...');
-        output.classList.remove('cu-streaming');
+        output.classList.remove('cu-streaming', 'cu-typing');
+        setTimeout(() => output.classList.remove('cu-fade-in'), 300);
+        lastRenderedText = '';
       }
       if (newState === 'RESPONDING' && output) {
-        output.classList.add('cu-streaming');
+        output.classList.add('cu-streaming', 'cu-typing');
       }
       if (newState === 'IDLE' && output) {
-        output.classList.remove('cu-streaming');
+        output.classList.remove('cu-streaming', 'cu-typing', 'cu-fade-in');
       }
     };
 
-    VME.onStreamChunk = function (fullText) {
+    VME.onStreamChunk = function (fullText, spokenIndex) {
       const output = $('output');
-      if (output) {
-        output.textContent = fullText.slice(-2000);
+      if (!output) return;
+      const display = fullText.slice(-2000);
+      if (display !== lastRenderedText) {
+        output.textContent = display;
         output.scrollTop = output.scrollHeight;
+        lastRenderedText = display;
       }
+    };
+
+    VME.onSyncUpdate = function (spokenIdx, renderedIdx) {
     };
 
     VME.onResponseComplete = function (response, prompt) {
+      const output = $('output');
+      if (output) {
+        output.classList.remove('cu-typing');
+      }
     };
 
     VME.onError = function (error) {

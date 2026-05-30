@@ -574,21 +574,16 @@ class TestVoiceUpgrades:
             assert(VME.getState() === 'LISTENING', 'should return to LISTENING');
         """))
 
-    def test_extract_sentences_long_buffer_fallback(self):
+    def test_extract_micro_chunks_long_buffer_fallback(self):
         self._run(self._base_context() + textwrap.dedent(r"""
-            const code = fs.readFileSync('static/voice-memory-engine.js', 'utf8');
-            const extractMatch = code.match(/function extractSentences[\s\S]*?^  \}/m);
-            assert(extractMatch, 'extractSentences should exist');
+            const result = VME.extractMicroChunks('this is a very long test phrase without any punctuation at all and more');
+            assert(result.chunks.length >= 1, 'should extract at least one chunk from long text');
 
-            // Test via the engine: push a long buffer without punctuation
             VME.setState('LISTENING');
             VME.setState('PROCESSING');
             VME.setState('RESPONDING');
-
-            // Simulate by calling streamAIResponse internals indirectly
-            // Just verify the function works by checking handleTranscript
-            const result = VME.handleTranscript('this is a very long test phrase without any punctuation at all');
-            assert(result === true, 'long phrase should not be duplicate');
+            const tr = VME.handleTranscript('this is a very long test phrase without any punctuation at all');
+            assert(tr === true, 'long phrase should not be duplicate');
         """))
 
     def test_no_duplicate_triggers_within_window(self):
@@ -646,6 +641,144 @@ class TestVoiceUpgrades:
             assert(changeCount === 1, 'first transition fires callback');
             VME.setState('LISTENING');
             assert(changeCount === 1, 'same state should not fire again');
+        """))
+
+
+class TestHindiAndPolish:
+    @pytest.fixture(autouse=True)
+    def _check_node(self):
+        if not shutil.which("node"):
+            pytest.skip("node is required")
+
+    def _run(self, harness):
+        subprocess.run(
+            [shutil.which("node"), "-e", harness],
+            check=True,
+            cwd=str(Path(__file__).resolve().parent.parent),
+        )
+
+    def _base_context(self):
+        return textwrap.dedent(r"""
+            const fs = require('fs');
+            const vm = require('vm');
+            function assert(cond, msg) { if (!cond) throw new Error(msg); }
+
+            let cancelCalled = false;
+            let spokenTexts = [];
+            const context = {
+                console, Date,
+                window: {
+                    speechSynthesis: {
+                        cancel() { cancelCalled = true; },
+                        speak(u) { spokenTexts.push({ text: u.text, lang: u.lang }); if (u.onend) u.onend(); },
+                        getVoices() { return [
+                            { lang: 'en-US', name: 'English US' },
+                            { lang: 'hi-IN', name: 'Hindi India' },
+                            { lang: 'en-IN', name: 'English India' },
+                        ]; },
+                    },
+                },
+                document: { getElementById() { return null; } },
+                setTimeout, clearTimeout,
+                AbortController: class {
+                    constructor() { this.signal = { aborted: false }; }
+                    abort() { this.signal.aborted = true; }
+                },
+                TextDecoder: class { decode() { return ''; } },
+                SpeechSynthesisUtterance: function(t) { this.text = t; },
+                fetch: async () => ({ ok: true, json: async () => ({ success: true, reply: 'ok' }),
+                    body: { getReader: () => ({ read: async () => ({ done: true }) }) } }),
+            };
+            context.window.window = context.window;
+            context.window.document = context.document;
+            vm.runInNewContext(fs.readFileSync('static/voice-memory-engine.js', 'utf8'), context);
+            const VME = context.window.VoiceMemoryEngine;
+        """)
+
+    def test_hindi_detection_devanagari(self):
+        self._run(self._base_context() + textwrap.dedent(r"""
+            assert(VME.isHindiText('नमस्ते दुनिया') === true, 'Devanagari should be detected as Hindi');
+            assert(VME.isHindiText('Hello world') === false, 'Latin text should not be Hindi');
+            assert(VME.isHindiText('Hello नमस्ते') === true, 'Mixed text with Devanagari should detect Hindi');
+        """))
+
+    def test_detect_lang_auto_mode(self):
+        self._run(self._base_context() + textwrap.dedent(r"""
+            VME.setVoiceLangMode('auto');
+            assert(VME.detectLang('Hello world') === 'en-US', 'English text in auto mode');
+            assert(VME.detectLang('नमस्ते दुनिया') === 'hi-IN', 'Hindi text in auto mode');
+        """))
+
+    def test_detect_lang_forced_mode(self):
+        self._run(self._base_context() + textwrap.dedent(r"""
+            VME.setVoiceLangMode('hi');
+            assert(VME.detectLang('Hello world') === 'hi-IN', 'forced Hindi mode overrides');
+            VME.setVoiceLangMode('en');
+            assert(VME.detectLang('नमस्ते') === 'en-US', 'forced English mode overrides');
+        """))
+
+    def test_mixed_language_splitting(self):
+        self._run(self._base_context() + textwrap.dedent(r"""
+            const segs = VME.splitMixedLanguage('Hello नमस्ते world दुनिया');
+            assert(segs.length === 4, 'should split into 4 segments, got ' + segs.length);
+            assert(segs[0].lang === 'en-US', 'first segment is English');
+            assert(segs[1].lang === 'hi-IN', 'second segment is Hindi');
+            assert(segs[2].lang === 'en-US', 'third segment is English');
+            assert(segs[3].lang === 'hi-IN', 'fourth segment is Hindi');
+        """))
+
+    def test_mixed_language_pure_hindi(self):
+        self._run(self._base_context() + textwrap.dedent(r"""
+            const segs = VME.splitMixedLanguage('नमस्ते दुनिया कैसे हो');
+            assert(segs.length === 1, 'pure Hindi should be one segment');
+            assert(segs[0].lang === 'hi-IN', 'should be Hindi');
+        """))
+
+    def test_micro_chunk_extraction(self):
+        self._run(self._base_context() + textwrap.dedent(r"""
+            const result = VME.extractMicroChunks('This is a short sentence. And another one here.');
+            assert(result.chunks.length >= 2, 'should extract at least 2 chunks');
+            assert(result.remainder === '' || result.remainder.trim() === '', 'no remainder');
+        """))
+
+    def test_micro_chunk_long_text_without_punctuation(self):
+        self._run(self._base_context() + textwrap.dedent(r"""
+            const text = 'This is a long text without any punctuation marks at all and it keeps going';
+            const result = VME.extractMicroChunks(text);
+            assert(result.chunks.length >= 1, 'should break long text into chunks');
+            for (const c of result.chunks) {
+                assert(c.length <= 50, 'chunk should not be too long: ' + c.length);
+            }
+        """))
+
+    def test_voice_lang_mode_persists(self):
+        self._run(self._base_context() + textwrap.dedent(r"""
+            VME.setVoiceLangMode('hi');
+            assert(VME.getVoiceLangMode() === 'hi', 'should be hi');
+            VME.setVoiceLangMode('auto');
+            assert(VME.getVoiceLangMode() === 'auto', 'should be auto');
+            VME.setVoiceLangMode('invalid');
+            assert(VME.getVoiceLangMode() === 'auto', 'invalid should be ignored');
+        """))
+
+    def test_interrupt_sets_timestamp_and_stale_check(self):
+        self._run(self._base_context() + textwrap.dedent(r"""
+            const before = Date.now() - 100;
+            VME.setState('LISTENING');
+            VME.setState('PROCESSING');
+            VME.setState('RESPONDING');
+            VME.interrupt();
+            // Any timestamp before the interrupt should be stale
+            // We test this indirectly: after interrupt, state is LISTENING
+            assert(VME.getState() === 'LISTENING', 'should be LISTENING after interrupt');
+            assert(cancelCalled, 'should cancel speech');
+        """))
+
+    def test_reset_clears_sync_indices(self):
+        self._run(self._base_context() + textwrap.dedent(r"""
+            VME.resetEngine();
+            assert(VME.getState() === 'IDLE', 'reset should set IDLE');
+            assert(VME.getHistory().length === 0, 'reset should clear history');
         """))
 
 

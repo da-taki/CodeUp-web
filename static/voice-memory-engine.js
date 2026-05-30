@@ -17,7 +17,10 @@
     SPEAKING: ['LISTENING', 'IDLE'],
   };
 
-  const engine = {
+  var DEVANAGARI_RE = /[ऀ-ॿ]/;
+  var MICRO_CHUNK_SIZE = 22;
+
+  var engine = {
     state: STATES.IDLE,
     abortController: null,
     requestLock: false,
@@ -26,21 +29,28 @@
     narrationQueue: [],
     narrationActive: false,
     interrupted: false,
+    interruptTimestamp: 0,
     voiceActive: false,
+    voiceLangMode: 'auto',
     conversationHistory: [],
     maxHistory: 20,
     streamBuffer: '',
     streamUpdateThrottle: null,
+    spokenIndex: 0,
+    renderedIndex: 0,
+    fullStreamText: '',
+    stateDebounce: null,
     onStateChange: null,
     onStreamChunk: null,
+    onSyncUpdate: null,
     onResponseComplete: null,
     onError: null,
   };
 
   function setState(newState) {
-    const prev = engine.state;
+    var prev = engine.state;
     if (prev === newState) return;
-    const allowed = VALID_TRANSITIONS[prev];
+    var allowed = VALID_TRANSITIONS[prev];
     if (allowed && !allowed.includes(newState)) {
       return;
     }
@@ -50,8 +60,24 @@
     }
   }
 
+  function setStateDebounced(newState, delayMs) {
+    if (engine.stateDebounce) {
+      clearTimeout(engine.stateDebounce);
+      engine.stateDebounce = null;
+    }
+    if (!delayMs || delayMs <= 0) {
+      setState(newState);
+      return;
+    }
+    engine.stateDebounce = setTimeout(function () {
+      engine.stateDebounce = null;
+      setState(newState);
+    }, delayMs);
+  }
+
   function cancelAllOutput() {
     engine.interrupted = true;
+    engine.interruptTimestamp = Date.now();
     try { window.speechSynthesis.cancel(); } catch (e) {}
     if (engine.abortController) {
       engine.abortController.abort();
@@ -60,9 +86,16 @@
     engine.narrationQueue = [];
     engine.narrationActive = false;
     engine.streamBuffer = '';
+    engine.spokenIndex = 0;
+    engine.renderedIndex = 0;
+    engine.fullStreamText = '';
     if (engine.streamUpdateThrottle) {
       clearTimeout(engine.streamUpdateThrottle);
       engine.streamUpdateThrottle = null;
+    }
+    if (engine.stateDebounce) {
+      clearTimeout(engine.stateDebounce);
+      engine.stateDebounce = null;
     }
   }
 
@@ -72,10 +105,14 @@
     setState(STATES.LISTENING);
   }
 
+  function isStale(timestampBefore) {
+    return timestampBefore < engine.interruptTimestamp;
+  }
+
   function isDuplicate(transcript) {
-    const normalized = transcript.trim().toLowerCase();
+    var normalized = transcript.trim().toLowerCase();
     if (!normalized) return true;
-    const now = Date.now();
+    var now = Date.now();
     if (normalized === engine.lastTranscript && (now - engine.lastTranscriptTime) < 3000) {
       return true;
     }
@@ -86,7 +123,7 @@
 
   function addToHistory(role, content) {
     engine.conversationHistory.push({
-      role,
+      role: role,
       content: content.slice(0, 500),
       timestamp: Date.now(),
     });
@@ -95,19 +132,98 @@
     }
   }
 
-  function speakSentence(text) {
+  function isHindiText(text) {
+    return DEVANAGARI_RE.test(text);
+  }
+
+  function detectLang(text) {
+    if (engine.voiceLangMode === 'en') return 'en-US';
+    if (engine.voiceLangMode === 'hi') return 'hi-IN';
+    return isHindiText(text) ? 'hi-IN' : 'en-US';
+  }
+
+  function pickVoice(lang) {
+    if (!('speechSynthesis' in window)) return null;
+    var voices = window.speechSynthesis.getVoices();
+    if (!voices.length) return null;
+    var prefix = lang.slice(0, 2);
+    var exact = voices.find(function (v) { return v.lang === lang; });
+    if (exact) return exact;
+    var partial = voices.find(function (v) { return v.lang.startsWith(prefix); });
+    if (partial) return partial;
+    if (prefix === 'hi') {
+      var indian = voices.find(function (v) { return v.lang === 'en-IN'; });
+      if (indian) return indian;
+    }
+    return null;
+  }
+
+  function splitMixedLanguage(text) {
+    var segments = [];
+    var current = '';
+    var currentIsHindi = null;
+    var words = text.split(/(\s+)/);
+    for (var i = 0; i < words.length; i++) {
+      var word = words[i];
+      if (!word) continue;
+      if (/^\s+$/.test(word)) {
+        current += word;
+        continue;
+      }
+      var wordIsHindi = DEVANAGARI_RE.test(word);
+      if (currentIsHindi === null) {
+        currentIsHindi = wordIsHindi;
+        current += word;
+      } else if (wordIsHindi === currentIsHindi) {
+        current += word;
+      } else {
+        if (current.trim()) segments.push({ text: current.trim(), lang: currentIsHindi ? 'hi-IN' : 'en-US' });
+        current = word;
+        currentIsHindi = wordIsHindi;
+      }
+    }
+    if (current.trim()) segments.push({ text: current.trim(), lang: currentIsHindi ? 'hi-IN' : 'en-US' });
+    return segments;
+  }
+
+  function speakSegment(text, lang) {
     return new Promise(function (resolve) {
       if (!text || !('speechSynthesis' in window)) {
         resolve();
         return;
       }
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = (document.getElementById('languageSelector') || {}).value === 'hi' ? 'hi-IN' : 'en-US';
+      var utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = lang || 'en-US';
+      var voice = pickVoice(utterance.lang);
+      if (voice) utterance.voice = voice;
       utterance.rate = 1;
-      utterance.onend = resolve;
-      utterance.onerror = resolve;
+      utterance.onend = function () {
+        engine.spokenIndex += text.length;
+        if (engine.onSyncUpdate) engine.onSyncUpdate(engine.spokenIndex, engine.renderedIndex);
+        resolve();
+      };
+      utterance.onerror = function () {
+        engine.spokenIndex += text.length;
+        resolve();
+      };
       window.speechSynthesis.speak(utterance);
     });
+  }
+
+  function speakSentence(text) {
+    if (engine.voiceLangMode !== 'auto') {
+      return speakSegment(text, detectLang(text));
+    }
+    var segments = splitMixedLanguage(text);
+    if (segments.length <= 1) {
+      return speakSegment(text, detectLang(text));
+    }
+    return segments.reduce(function (chain, seg) {
+      return chain.then(function () {
+        if (engine.interrupted) return;
+        return speakSegment(seg.text, seg.lang);
+      });
+    }, Promise.resolve());
   }
 
   async function processNarrationQueue() {
@@ -122,7 +238,7 @@
         engine.narrationQueue = [];
         break;
       }
-      const sentence = engine.narrationQueue.shift();
+      var sentence = engine.narrationQueue.shift();
       await speakSentence(sentence);
     }
     engine.narrationActive = false;
@@ -143,48 +259,68 @@
     }
   }
 
-  function extractSentences(buffer) {
-    const sentences = [];
-    const pattern = /[^.!?\n]+[.!?\n]+/g;
-    let match;
-    let lastIndex = 0;
+  function extractMicroChunks(buffer) {
+    var chunks = [];
+    var pattern = /[^.!?\n]+[.!?\n]+/g;
+    var match;
+    var lastIndex = 0;
     while ((match = pattern.exec(buffer)) !== null) {
-      sentences.push(match[0].trim());
+      var sentence = match[0].trim();
+      if (sentence.length <= MICRO_CHUNK_SIZE * 2) {
+        chunks.push(sentence);
+      } else {
+        var words = sentence.split(/\s+/);
+        var micro = '';
+        for (var i = 0; i < words.length; i++) {
+          var next = micro ? micro + ' ' + words[i] : words[i];
+          if (next.length >= MICRO_CHUNK_SIZE && micro) {
+            chunks.push(micro);
+            micro = words[i];
+          } else {
+            micro = next;
+          }
+        }
+        if (micro) chunks.push(micro);
+      }
       lastIndex = match.index + match[0].length;
     }
-    let remainder = buffer.slice(lastIndex);
-    if (sentences.length === 0 && remainder.length > 40) {
-      const breakPoint = remainder.lastIndexOf(' ', 40);
-      if (breakPoint > 10) {
-        sentences.push(remainder.slice(0, breakPoint).trim());
+    var remainder = buffer.slice(lastIndex);
+    if (chunks.length === 0 && remainder.length > MICRO_CHUNK_SIZE) {
+      var breakPoint = remainder.lastIndexOf(' ', MICRO_CHUNK_SIZE + 8);
+      if (breakPoint > 8) {
+        chunks.push(remainder.slice(0, breakPoint).trim());
         remainder = remainder.slice(breakPoint);
       }
     }
-    return { sentences, remainder };
+    return { chunks: chunks, remainder: remainder };
   }
 
   async function streamAIResponse(prompt, options) {
     if (engine.requestLock) return null;
     engine.requestLock = true;
     engine.interrupted = false;
+    engine.spokenIndex = 0;
+    engine.renderedIndex = 0;
+    engine.fullStreamText = '';
+    var startTs = Date.now();
     setState(STATES.PROCESSING);
 
-    const controller = new AbortController();
+    var controller = new AbortController();
     engine.abortController = controller;
 
-    const lang = (document.getElementById('languageSelector') || {}).value || 'en';
-    const currentHtml = options.currentHtml || '';
+    var langSel = (document.getElementById('languageSelector') || {}).value || 'en';
+    var currentHtml = options.currentHtml || '';
 
     addToHistory('user', prompt);
 
     try {
-      const response = await fetch('/generate-code-stream', {
+      var response = await fetch('/generate-code-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: prompt,
           current_html: currentHtml,
-          language: lang,
+          language: langSel,
         }),
         signal: controller.signal,
       });
@@ -193,49 +329,56 @@
         throw new Error('Stream request failed: ' + response.status);
       }
 
-      setState(STATES.RESPONDING);
+      setStateDebounced(STATES.RESPONDING, 60);
       engine.streamBuffer = '';
-      let fullResponse = '';
-      let finalHtml = '';
+      var fullResponse = '';
+      var finalHtml = '';
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let partialLine = '';
+      var reader = response.body.getReader();
+      var decoder = new TextDecoder();
+      var partialLine = '';
 
       while (true) {
         if (engine.interrupted) break;
-        const { done, value } = await reader.read();
-        if (done) break;
+        var result = await reader.read();
+        if (result.done) break;
         if (controller.signal.aborted) break;
+        if (isStale(startTs)) break;
 
-        const text = decoder.decode(value, { stream: true });
+        var text = decoder.decode(result.value, { stream: true });
         partialLine += text;
-        const lines = partialLine.split('\n');
+        var lines = partialLine.split('\n');
         partialLine = lines.pop() || '';
 
-        for (const line of lines) {
+        for (var li = 0; li < lines.length; li++) {
+          var line = lines[li];
           if (!line.startsWith('data: ')) continue;
-          const payload = line.slice(6);
+          var payload = line.slice(6);
           try {
-            const data = JSON.parse(payload);
+            var data = JSON.parse(payload);
             if (data.chunk) {
               fullResponse += data.chunk;
+              engine.fullStreamText = fullResponse;
               engine.streamBuffer += data.chunk;
 
-              if (engine.onStreamChunk) {
+              if (engine.onStreamChunk && !isStale(startTs)) {
                 if (engine.streamUpdateThrottle) {
                   clearTimeout(engine.streamUpdateThrottle);
                 }
+                var capturedFull = fullResponse;
                 engine.streamUpdateThrottle = setTimeout(function () {
                   engine.streamUpdateThrottle = null;
-                  if (engine.onStreamChunk) engine.onStreamChunk(fullResponse);
+                  if (!isStale(startTs) && engine.onStreamChunk) {
+                    engine.renderedIndex = capturedFull.length;
+                    engine.onStreamChunk(capturedFull, engine.spokenIndex);
+                  }
                 }, 35);
               }
 
-              const { sentences, remainder } = extractSentences(engine.streamBuffer);
-              engine.streamBuffer = remainder;
-              for (const s of sentences) {
-                enqueueSentence(s);
+              var extracted = extractMicroChunks(engine.streamBuffer);
+              engine.streamBuffer = extracted.remainder;
+              for (var ci = 0; ci < extracted.chunks.length; ci++) {
+                enqueueSentence(extracted.chunks[ci]);
               }
             }
             if (data.done) {
@@ -250,7 +393,7 @@
         engine.streamUpdateThrottle = null;
       }
 
-      if (engine.interrupted) {
+      if (engine.interrupted || isStale(startTs)) {
         engine.requestLock = false;
         engine.abortController = null;
         return null;
@@ -262,10 +405,11 @@
       }
 
       if (engine.onStreamChunk) {
-        engine.onStreamChunk(fullResponse);
+        engine.renderedIndex = fullResponse.length;
+        engine.onStreamChunk(fullResponse, engine.spokenIndex);
       }
 
-      setState(STATES.SPEAKING);
+      setStateDebounced(STATES.SPEAKING, 80);
       addToHistory('assistant', fullResponse.slice(0, 500));
 
       if (engine.onResponseComplete) {
@@ -294,36 +438,50 @@
     if (engine.requestLock) return null;
     engine.requestLock = true;
     engine.interrupted = false;
+    engine.spokenIndex = 0;
+    engine.renderedIndex = 0;
+    engine.fullStreamText = '';
+    var startTs = Date.now();
     setState(STATES.PROCESSING);
 
-    const controller = new AbortController();
+    var controller = new AbortController();
     engine.abortController = controller;
-    const lang = (document.getElementById('languageSelector') || {}).value || 'en';
+    var langSel = (document.getElementById('languageSelector') || {}).value || 'en';
 
     addToHistory('user', message);
 
     try {
-      const response = await fetch('/html-chat', {
+      var response = await fetch('/html-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: message,
           html: options.currentHtml || '',
-          language: lang,
+          language: langSel,
         }),
         signal: controller.signal,
       });
 
-      const data = await response.json();
+      var data = await response.json();
       if (!data.success) throw new Error(data.error || 'Chat failed');
 
-      const reply = data.reply || '';
-      setState(STATES.SPEAKING);
+      if (isStale(startTs)) {
+        engine.requestLock = false;
+        engine.abortController = null;
+        return null;
+      }
+
+      var reply = data.reply || '';
+      engine.fullStreamText = reply;
+      setStateDebounced(STATES.SPEAKING, 80);
       addToHistory('assistant', reply.slice(0, 500));
 
-      const sentences = reply.match(/[^.!?\n]+[.!?\n]*/g) || [reply];
-      for (const s of sentences) {
-        enqueueSentence(s);
+      var extracted = extractMicroChunks(reply + '\n');
+      for (var i = 0; i < extracted.chunks.length; i++) {
+        enqueueSentence(extracted.chunks[i]);
+      }
+      if (extracted.remainder.trim()) {
+        enqueueSentence(extracted.remainder);
       }
 
       if (engine.onResponseComplete) {
@@ -349,7 +507,7 @@
   }
 
   async function storeMemoryAfterResponse(userInput, response) {
-    const content = extractMemoryContent(userInput, response);
+    var content = extractMemoryContent(userInput, response);
     if (!content) return;
     try {
       await fetch('/smart-memory', {
@@ -364,7 +522,7 @@
   }
 
   function extractMemoryContent(userInput, response) {
-    const lower = userInput.toLowerCase();
+    var lower = userInput.toLowerCase();
     if (/\b(remember|note|important|always|never|prefer)\b/.test(lower)) {
       return { text: userInput, type: 'instruction' };
     }
@@ -400,6 +558,16 @@
     engine.voiceActive = !!active;
   }
 
+  function setVoiceLangMode(mode) {
+    if (mode === 'en' || mode === 'hi' || mode === 'auto') {
+      engine.voiceLangMode = mode;
+    }
+  }
+
+  function getVoiceLangMode() {
+    return engine.voiceLangMode;
+  }
+
   function resetEngine() {
     cancelAllOutput();
     engine.state = STATES.IDLE;
@@ -410,8 +578,12 @@
     engine.narrationQueue = [];
     engine.narrationActive = false;
     engine.interrupted = false;
+    engine.interruptTimestamp = 0;
     engine.voiceActive = false;
     engine.streamBuffer = '';
+    engine.spokenIndex = 0;
+    engine.renderedIndex = 0;
+    engine.fullStreamText = '';
   }
 
   window.VoiceMemoryEngine = {
@@ -427,13 +599,21 @@
     addToHistory: addToHistory,
     getHistory: getHistory,
     setVoiceActive: setVoiceActive,
+    setVoiceLangMode: setVoiceLangMode,
+    getVoiceLangMode: getVoiceLangMode,
     resetEngine: resetEngine,
+    isHindiText: isHindiText,
+    detectLang: detectLang,
+    splitMixedLanguage: splitMixedLanguage,
+    extractMicroChunks: extractMicroChunks,
     set onStateChange(fn) { engine.onStateChange = fn; },
     set onStreamChunk(fn) { engine.onStreamChunk = fn; },
+    set onSyncUpdate(fn) { engine.onSyncUpdate = fn; },
     set onResponseComplete(fn) { engine.onResponseComplete = fn; },
     set onError(fn) { engine.onError = fn; },
     get onStateChange() { return engine.onStateChange; },
     get onStreamChunk() { return engine.onStreamChunk; },
+    get onSyncUpdate() { return engine.onSyncUpdate; },
     get onResponseComplete() { return engine.onResponseComplete; },
     get onError() { return engine.onError; },
   };
