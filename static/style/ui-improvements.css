@@ -409,3 +409,57 @@ body.theme-night .cu-output-box {
   0%, 100% { border-left-color: var(--accent, #2563eb); }
   50% { border-left-color: transparent; }
 }
+
+/* ------- Typing animation (synced with speech) ------- */
+#output.cu-typing::after {
+  content: '▍';
+  display: inline;
+  animation: typing-blink 0.5s step-end infinite;
+  color: var(--accent, #2563eb);
+  font-weight: 700;
+}
+@keyframes typing-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* ------- Soft fade transition ------- */
+#output.cu-fade-in {
+  animation: fade-in-text 0.3s ease-out;
+}
+@keyframes fade-in-text {
+  from { opacity: 0.4; transform: translateY(4px); }
+  to   { opacity: 1;   transform: translateY(0); }
+}
+
+/* ------- Enhanced listening pulse ------- */
+.cu-button-voice[data-voice-state="LISTENING"] {
+  animation: voice-pulse-enhanced 1.2s ease-in-out infinite;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+@keyframes voice-pulse-enhanced {
+  0%, 100% {
+    box-shadow: 0 0 0 3px var(--accent-soft);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 0 7px var(--accent-soft), 0 0 16px 2px var(--accent-soft);
+    transform: scale(1.02);
+  }
+}
+
+/* ------- Smooth state transitions for voice button ------- */
+.cu-button-voice {
+  transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease, opacity 0.2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #output.cu-streaming,
+  #output.cu-typing::after,
+  #output.cu-fade-in,
+  .cu-button-voice[data-voice-state="LISTENING"],
+  .cu-button-voice[data-voice-state="RESPONDING"],
+  .cu-button-voice[data-voice-state="SPEAKING"] {
+    animation: none;
+  }
+}
