@@ -1257,19 +1257,35 @@
       speak(t('Voice recognition is not supported in this browser. Please use Chrome or Edge.', 'Is browser mein voice recognition support nahi hai. Chrome ya Edge use karein.'));
       return;
     }
-    if (!state.activeVoice || state.paused || state.activeRecognition) return;
+    if (!state.activeVoice || state.paused) return;
+    if (state.activeRecognition) {
+      try { state.activeRecognition.stop(); } catch (e) {}
+      state.activeRecognition = null;
+    }
     const recognition = new SpeechRecognition();
     state.activeRecognition = recognition;
     recognition.continuous = true;
-    recognition.interimResults = false;
+    recognition.interimResults = true;
     recognition.lang = isHindi() ? 'hi-IN' : 'en-US';
     recognition.onstart = () => {
       updateVoiceButton();
       announce(t('Voice command listening.', 'Voice command sun raha hai.'));
     };
     recognition.onresult = (event) => {
+      const result = event.results[event.results.length - 1];
+      if (!result) return;
+      if (!result.isFinal) {
+        if (window.VoiceMemoryEngine) {
+          const vmeState = window.VoiceMemoryEngine.getState();
+          if (vmeState === 'SPEAKING' || vmeState === 'RESPONDING') {
+            window.VoiceMemoryEngine.interrupt();
+          }
+        }
+        return;
+      }
+      const transcript = result[0] ? result[0].transcript : '';
       cancelSpeech();
-      handleVoiceCommandWithInterrupt(transcriptFromEvent(event));
+      handleVoiceCommandWithInterrupt(transcript);
     };
     recognition.onerror = () => updateVoiceButton();
     recognition.onend = () => {
@@ -1277,9 +1293,7 @@
       state.activeRecognition = null;
       updateVoiceButton();
       if (state.activeVoice && !state.paused) {
-        setTimeout(() => {
-          startActiveRecognition();
-        }, 400);
+        setTimeout(startActiveRecognition, 150);
       }
     };
     try {
@@ -1288,6 +1302,7 @@
       if (state.activeRecognition === recognition) state.activeRecognition = null;
       state.activeVoice = false;
       state.paused = false;
+      if (window.VoiceMemoryEngine) window.VoiceMemoryEngine.setVoiceActive(false);
       updateVoiceButton();
       speak(t('Could not start voice.', 'Voice start nahi ho payi.'));
       startWakeListener();
@@ -1309,6 +1324,7 @@
     state.activeVoice = true;
     state.paused = false;
     state.wakeUntil = Date.now() + 45000;
+    if (window.VoiceMemoryEngine) window.VoiceMemoryEngine.setVoiceActive(true);
     updateVoiceButton();
     startActiveRecognition();
     if (!options.silent) {
@@ -1365,6 +1381,7 @@
     const wasActive = state.activeVoice || state.paused;
     state.activeVoice = false;
     state.paused = false;
+    if (window.VoiceMemoryEngine) window.VoiceMemoryEngine.setVoiceActive(false);
     stopActiveRecognition();
     updateVoiceButton();
     startWakeListener();
@@ -1521,8 +1538,28 @@
     if (!window.VoiceMemoryEngine) return;
     const VME = window.VoiceMemoryEngine;
 
-    VME.onStateChange = function (newState) {
+    VME.onStateChange = function (newState, prevState) {
       updateStateIndicator(newState);
+      const output = $('output');
+      if (newState === 'LISTENING' && output) {
+        if (prevState === 'SPEAKING' || prevState === 'RESPONDING') {
+          output.textContent = t('Listening...', 'Sun raha hoon...');
+          output.classList.remove('cu-streaming');
+        }
+        if (state.activeVoice && !state.paused && !state.activeRecognition) {
+          setTimeout(startActiveRecognition, 100);
+        }
+      }
+      if (newState === 'PROCESSING' && output) {
+        output.textContent = t('Thinking...', 'Soch raha hoon...');
+        output.classList.remove('cu-streaming');
+      }
+      if (newState === 'RESPONDING' && output) {
+        output.classList.add('cu-streaming');
+      }
+      if (newState === 'IDLE' && output) {
+        output.classList.remove('cu-streaming');
+      }
     };
 
     VME.onStreamChunk = function (fullText) {
@@ -1534,7 +1571,6 @@
     };
 
     VME.onResponseComplete = function (response, prompt) {
-      updateStateIndicator('IDLE');
     };
 
     VME.onError = function (error) {
