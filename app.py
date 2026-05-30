@@ -17,7 +17,7 @@ from html import escape
 from typing import Any
 from urllib.parse import urlparse
 
-from flask import Flask, g, jsonify, render_template, request, send_from_directory, session
+from flask import Flask, Response, g, jsonify, render_template, request, send_from_directory, session, stream_with_context
 
 __version__ = "1.0.0-html"
 
@@ -234,7 +234,7 @@ def _delete_stale_hosted_pages(site_dir: str, intended_filenames: set[str]) -> N
 def _load_html_memory(session_id: str | None = None) -> dict[str, Any]:
     path = _html_memory_path(session_id)
     if not os.path.exists(path):
-        return {"history": [], "last_html": "", "last_url": "", "last_review": ""}
+        return {"history": [], "last_html": "", "last_url": "", "last_review": "", "smart_memory": [], "_hashes": []}
     try:
         with open(path, "r", encoding="utf-8") as handle:
             data = json.load(handle)
@@ -244,10 +244,12 @@ def _load_html_memory(session_id: str | None = None) -> dict[str, Any]:
                 "last_html": str(data.get("last_html", "")),
                 "last_url": str(data.get("last_url", "")),
                 "last_review": str(data.get("last_review", "")),
+                "smart_memory": data.get("smart_memory", []) if isinstance(data.get("smart_memory"), list) else [],
+                "_hashes": data.get("_hashes", []) if isinstance(data.get("_hashes"), list) else [],
             }
     except Exception:
         pass
-    return {"history": [], "last_html": "", "last_url": "", "last_review": ""}
+    return {"history": [], "last_html": "", "last_url": "", "last_review": "", "smart_memory": [], "_hashes": []}
 
 
 def _save_html_memory(data: dict[str, Any], session_id: str | None = None) -> None:
@@ -1086,6 +1088,257 @@ def fix():
     fixed = _wrap_html(html) if _is_ai_unavailable(raw) else _extract_html(raw)
     _append_memory(note="Polished HTML", html=fixed)
     return jsonify({"success": True, "code": fixed, "language": "html"})
+
+
+MAX_MEMORY_ENTRIES = 100
+MEMORY_TYPES = {"fact", "instruction", "context"}
+
+
+def _hash_content(content: str) -> str:
+    import hashlib
+    return hashlib.sha256(content.strip().lower().encode()).hexdigest()[:16]
+
+
+def _is_meaningful_memory(content: str) -> bool:
+    stripped = content.strip()
+    if len(stripped) < 5:
+        return False
+    filler_patterns = (
+        "um", "uh", "like", "you know", "okay", "ok", "hmm", "hm",
+        "yeah", "yes", "no", "hey", "hi", "hello",
+    )
+    if stripped.lower() in filler_patterns:
+        return False
+    return True
+
+
+def _deduplicate_memory_entry(memory: dict, content: str) -> bool:
+    content_hash = _hash_content(content)
+    hashes = memory.get("_hashes", [])
+    if content_hash in hashes:
+        return True
+    return False
+
+
+def _build_context(session_id: str, user_input: str) -> str:
+    memory = _load_html_memory(session_id)
+    history = memory.get("history", [])
+    recent = history[-15:]
+    relevant = []
+    input_words = set(user_input.lower().split())
+    for entry in recent:
+        entry_text = str(entry.get("prompt") or entry.get("note") or "")
+        if not entry_text:
+            continue
+        entry_words = set(entry_text.lower().split())
+        if input_words & entry_words or len(relevant) < 5:
+            relevant.append(entry_text)
+    smart_entries = memory.get("smart_memory", [])
+    relevant_smart = []
+    for entry in smart_entries[-20:]:
+        entry_content = entry.get("content", "")
+        entry_words = set(entry_content.lower().split())
+        if input_words & entry_words:
+            relevant_smart.append(f"[{entry.get('type', 'context')}] {entry_content}")
+    context_parts = []
+    if relevant_smart:
+        context_parts.append("Remembered context:\n" + "\n".join(relevant_smart[-5:]))
+    if relevant:
+        context_parts.append("Recent interactions:\n" + "\n".join(f"- {r}" for r in relevant[-8:]))
+    context = "\n\n".join(context_parts)
+    if len(context) > 2000:
+        context = context[:2000]
+    return context
+
+
+def _store_smart_memory(
+    session_id: str,
+    content: str,
+    memory_type: str = "context",
+) -> dict:
+    if not _is_meaningful_memory(content):
+        return _load_html_memory(session_id)
+    if memory_type not in MEMORY_TYPES:
+        memory_type = "context"
+    safe_session = _sanitize_id(session_id)
+    with _memory_lock(safe_session):
+        memory = _load_html_memory(safe_session)
+        if _deduplicate_memory_entry(memory, content):
+            return memory
+        content_hash = _hash_content(content)
+        hashes = memory.get("_hashes", [])
+        hashes.append(content_hash)
+        memory["_hashes"] = hashes[-200:]
+        smart_entries = memory.get("smart_memory", [])
+        smart_entries.append({
+            "type": memory_type,
+            "content": content.strip()[:500],
+            "timestamp": time.time(),
+        })
+        if len(smart_entries) > MAX_MEMORY_ENTRIES:
+            smart_entries = smart_entries[-MAX_MEMORY_ENTRIES:]
+        memory["smart_memory"] = smart_entries
+        _save_html_memory(memory, safe_session)
+        return memory
+
+
+@app.route("/generate-code-stream", methods=["POST"])
+def generate_code_stream():
+    body = safejson()
+    prompt = str(body.get("prompt") or body.get("task") or "").strip()
+    current_html = str(body.get("code") or body.get("html") or body.get("current_html") or "")
+    language = str(body.get("language") or "en")
+
+    if not prompt:
+        return jsonify({"success": False, "error": "Prompt cannot be empty"}), 400
+    if len(prompt) > MAX_MESSAGE_SIZE or len(current_html) > MAX_HTML_SIZE:
+        return jsonify({"success": False, "error": "Request too large"}), 413
+
+    session_id = get_session_id()
+    context = _build_context(session_id, prompt)
+
+    memory = _load_html_memory(session_id)
+    system = (
+        "You are CodeUp HTML's website generator for blind school students. "
+        "Return one complete accessible single-file HTML document with embedded CSS and small JavaScript only when useful. "
+        "Use semantic landmarks, headings, labels, readable contrast, responsive layout, and clear visible content. "
+        "Do not return markdown fences or explanations."
+    )
+    if context:
+        system += f"\n\nContext from previous interactions:\n{context}"
+
+    user = (
+        f"Build request:\n{prompt}\n\n"
+        f"Existing HTML, if this is an edit:\n```html\n{(current_html or memory.get('last_html', ''))[:MAX_HTML_SIZE]}\n```"
+    )
+
+    def generate():
+        if not _cloud_ai_enabled():
+            fallback = _fallback_site(prompt)
+            yield f"data: {json.dumps({'chunk': fallback, 'done': True})}\n\n"
+            _store_smart_memory(session_id, f"Built website: {prompt}", "instruction")
+            _append_memory(prompt=prompt, note="Generated website (stream)", html=fallback, session_id=session_id)
+            return
+
+        xai_key = os.environ.get("XAI_API_KEY") or os.environ.get("GROK_API_KEY")
+        groq_key = os.environ.get("GROQ_API_KEY")
+        if not xai_key and not groq_key:
+            fallback = _fallback_site(prompt)
+            yield f"data: {json.dumps({'chunk': fallback, 'done': True})}\n\n"
+            _store_smart_memory(session_id, f"Built website: {prompt}", "instruction")
+            _append_memory(prompt=prompt, note="Generated website (stream)", html=fallback, session_id=session_id)
+            return
+
+        if not _ai_semaphore.acquire(blocking=False):
+            fallback = _fallback_site(prompt)
+            yield f"data: {json.dumps({'chunk': fallback, 'done': True})}\n\n"
+            _append_memory(prompt=prompt, note="Generated website (stream-busy)", html=fallback, session_id=session_id)
+            return
+
+        full_response = ""
+        try:
+            import requests as req_lib
+            if xai_key:
+                resp = req_lib.post(
+                    os.environ.get("XAI_API_URL", "https://api.x.ai/v1/chat/completions"),
+                    headers={"Authorization": f"Bearer {xai_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": os.environ.get("XAI_MODEL", os.environ.get("GROK_MODEL", "grok-3-mini")),
+                        "messages": [
+                            {"role": "system", "content": system if language != "hi" else f"Reply in natural Hindi or Hinglish for a blind student. {system}"},
+                            {"role": "user", "content": user},
+                        ],
+                        "temperature": 0.35,
+                        "max_tokens": 4096,
+                        "stream": True,
+                    },
+                    timeout=AI_TIMEOUT,
+                    stream=True,
+                )
+                resp.raise_for_status()
+                for line in resp.iter_lines(decode_unicode=True):
+                    if not line or not line.startswith("data: "):
+                        continue
+                    payload = line[6:]
+                    if payload.strip() == "[DONE]":
+                        break
+                    try:
+                        chunk_data = json.loads(payload)
+                        delta = chunk_data.get("choices", [{}])[0].get("delta", {})
+                        content = delta.get("content", "")
+                        if content:
+                            full_response += content
+                            yield f"data: {json.dumps({'chunk': content, 'done': False})}\n\n"
+                    except (json.JSONDecodeError, IndexError, KeyError):
+                        continue
+            else:
+                from groq import Groq
+                stream = Groq(api_key=groq_key).chat.completions.create(
+                    model=os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
+                    messages=[
+                        {"role": "system", "content": system if language != "hi" else f"Reply in natural Hindi or Hinglish for a blind student. {system}"},
+                        {"role": "user", "content": user},
+                    ],
+                    temperature=0.35,
+                    max_tokens=4096,
+                    stream=True,
+                )
+                for chunk in stream:
+                    content = chunk.choices[0].delta.content or ""
+                    if content:
+                        full_response += content
+                        yield f"data: {json.dumps({'chunk': content, 'done': False})}\n\n"
+        except Exception:
+            if not full_response:
+                fallback = _fallback_site(prompt)
+                yield f"data: {json.dumps({'chunk': fallback, 'done': True})}\n\n"
+                _append_memory(prompt=prompt, note="Generated website (stream-fallback)", html=fallback, session_id=session_id)
+                return
+        finally:
+            _ai_semaphore.release()
+
+        html = _extract_html(full_response) if full_response else _fallback_site(prompt)
+        yield f"data: {json.dumps({'done': True, 'html': html})}\n\n"
+        _store_smart_memory(session_id, f"Built website: {prompt}", "instruction")
+        _append_memory(prompt=prompt, note="Generated website (stream)", html=html, session_id=session_id)
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.route("/smart-memory", methods=["GET", "POST"])
+def smart_memory_route():
+    session_id = get_session_id()
+    if request.method == "GET":
+        memory = _load_html_memory(session_id)
+        return jsonify({
+            "success": True,
+            "smart_memory": memory.get("smart_memory", []),
+            "context": _build_context(session_id, ""),
+        })
+
+    body = safejson()
+    content = str(body.get("content") or "").strip()
+    memory_type = str(body.get("type") or "context").strip()
+    if not content:
+        return jsonify({"success": False, "error": "Content cannot be empty"}), 400
+    if len(content) > 1000:
+        return jsonify({"success": False, "error": "Content too large"}), 413
+
+    memory = _store_smart_memory(session_id, content, memory_type)
+    return jsonify({"success": True, "smart_memory": memory.get("smart_memory", [])})
+
+
+@app.route("/build-context", methods=["POST"])
+def build_context_route():
+    body = safejson()
+    user_input = str(body.get("input") or "").strip()
+    session_id = get_session_id()
+    context = _build_context(session_id, user_input)
+    return jsonify({"success": True, "context": context})
 
 
 @app.route("/voice-command", methods=["POST"])
