@@ -93,6 +93,71 @@ In this mode, CodeUp still:
 - Per-session memory for recent prompts, current HTML, preview URL, and latest
   visual review
 
+## Voice Engine
+
+The voice system uses a strict state machine with validated transitions:
+
+```
+IDLE -> LISTENING -> PROCESSING -> RESPONDING -> SPEAKING -> LISTENING
+```
+
+Interrupt from any active state jumps back to LISTENING instantly.
+
+### Real-Time Streaming
+
+AI responses stream live from the server via SSE. Text appears in the UI
+immediately as chunks arrive (throttled at ~35ms). Narration begins early using
+micro-chunk extraction (~22 character word-boundary phrases) instead of waiting
+for full sentences.
+
+### Instant Interrupt (Barge-In)
+
+When the user starts speaking during a response:
+
+1. `speechSynthesis.cancel()` fires immediately
+2. The active AI fetch is aborted via `AbortController`
+3. The narration queue and stream buffer are cleared
+4. An interrupt timestamp is recorded so any stale async callbacks are dropped
+5. State resets to LISTENING
+
+Interim speech results trigger interrupt before the user even finishes their
+word, so the perceived latency is near-zero.
+
+### Text + Speech Sync
+
+The engine tracks `spokenIndex` and `renderedIndex` so the UI knows how much
+text has been spoken vs displayed. Each micro-chunk advances `spokenIndex` on
+utterance completion. The `onSyncUpdate` callback fires after every spoken
+segment.
+
+### Hindi TTS (First-Class)
+
+Hindi is a first-class voice, not a fallback:
+
+- **Auto-detection**: Devanagari characters (Unicode `U+0900`-`U+097F`) trigger
+  Hindi voice selection automatically
+- **Mixed language**: text like "Hello नमस्ते world दुनिया" is split into
+  segments, each spoken with the correct voice (`en-US` or `hi-IN`)
+- **Voice selection**: `pickVoice()` finds the best matching
+  `speechSynthesis` voice for the target language, falling back to `en-IN` for
+  Hindi if no `hi-IN` voice is available
+- **Voice language mode**: users can force Auto, English, or Hindi via voice
+  command or `setVoiceLangMode()`. The setting persists in `localStorage`
+- **Recognition language**: `recognition.lang` follows the voice language mode
+  so Hindi input is recognized natively
+
+### State Transitions
+
+Transitions are validated against an allowlist. Invalid jumps (e.g.
+IDLE to SPEAKING) are silently rejected. Debounced transitions
+(60-80ms) between PROCESSING/RESPONDING/SPEAKING prevent UI jitter while
+keeping interrupts instant (debounce timers are cleared on interrupt).
+
+### Duplicate Prevention
+
+Transcripts are deduplicated within a 3-second window. The `requestLock` flag
+prevents overlapping AI requests.
+
 ## Voice Commands
 
 English examples:
@@ -116,6 +181,9 @@ English examples:
 - `pause voice`
 - `resume voice`
 - `stop speaking`
+- `voice language Hindi`
+- `voice language English`
+- `voice language auto`
 
 Hindi/Hinglish examples:
 
@@ -129,6 +197,7 @@ Hindi/Hinglish examples:
 - `HTML polish karo`
 - `pause voice`
 - `resume voice`
+- `भाषा Hindi`
 
 ## AI Configuration
 
@@ -192,8 +261,14 @@ python app.py
 ```text
 python -m py_compile app.py
 python -m pytest -q
+node --check static/voice-memory-engine.js
 node --check static/codeup-html.js
 ```
+
+The test suite (42 tests) covers the streaming endpoint, smart memory,
+voice engine state machine, Hindi detection, mixed-language splitting,
+micro-chunk extraction, interrupt behavior, duplicate prevention,
+and concurrency safety. JS engine tests run via Node `vm` sandboxes.
 
 ## Why This Sister Project Exists
 
