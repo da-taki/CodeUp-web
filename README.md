@@ -2,9 +2,9 @@
 
 CodeUp HTML is a blind-first website builder for students who want to create
 real HTML websites through conversation, keyboard, and voice. This sister
-project is focused only on websites: build a page, preview it locally, hear a
-visual review, apply improvements, audit accessibility, and export the final
-HTML file.
+project is focused only on websites: build pages, save named projects, preview
+locally, hear a visual review, apply improvements, audit accessibility, and
+export either a single HTML file or a multi-page ZIP.
 
 ## Demo Flow
 
@@ -72,14 +72,16 @@ In this mode, CodeUp still:
 - audits accessibility,
 - outlines the page structure,
 - polishes/wraps HTML,
-- exports the website as an `.html` file.
+- exports the website as an `.html` file or project ZIP.
 
 ## Student Features
 
 - Conversational guide for questions like `what can I do here?`
 - Natural-language website generation from `Build a website for ...`
+- Named project save/load, duplication, autosave, and server-side versions
 - Local preview at `/student-site/<session-id>/`
 - Sighted-guide review loop for `what is missing?` and `add that`
+- Guided audit fixes with before/after version snapshots
 - Audio explanation of what the site looks like
 - Hindi/Hinglish and English voice workflows
 - `pause voice`, `resume voice`, and `stop speaking`
@@ -87,7 +89,7 @@ In this mode, CodeUp still:
 - HTML sonification with different tones for page structure
 - Accessibility audit with a score and fix list
 - Page outline from headings
-- One-click HTML export
+- One-click single-page HTML export and multi-page ZIP export
 - Demo Mode for larger, calmer classroom presentation
 - Reset session for the next student
 - Per-session memory for recent prompts, current HTML, preview URL, and latest
@@ -107,9 +109,10 @@ CodeUp-web/
 │   ├── storage.py          # Storage abstraction (JSON file backend)
 │   ├── routes/             # Flask blueprints
 │   │   ├── core.py         # Home, healthz, voice-command
-│   │   ├── site.py         # Publish, preview, audit, reset
+│   │   ├── site.py         # Publish, preview, audit, autofix, export, reset
 │   │   ├── ai_routes.py    # Generate, chat, review, explain, fix, stream
-│   │   └── memory.py       # HTML memory, smart memory, build context
+│   │   ├── memory.py       # HTML memory, smart memory, build context
+│   │   └── projects.py     # Named projects and persisted versions
 │   └── services/           # Business logic
 │       ├── ai_service.py   # AI provider integration (xAI, Groq, Ollama)
 │       ├── fallbacks.py    # Offline fallback responses
@@ -135,6 +138,35 @@ I/O so the backing store can be swapped without changing route handlers.
 
 Session artifacts (memory JSON files and hosted student sites) are cleaned
 up automatically based on `SESSION_ARTIFACT_MAX_AGE` (default: 7 days).
+
+Runtime data lives under `instance/data` by default, or under `DATA_DIR` when
+configured. The data directory is organized into `projects/`, `html_memory/`,
+`student_sites/`, `exports/`, and `tmp/`; these paths are runtime artifacts and
+are ignored by Git. Older repo-root `html_memory/` files are read and copied
+into the configured data directory when first accessed.
+
+## Projects And Versions
+
+CodeUp HTML now separates temporary session state from named projects. A session
+still owns the current browser interaction and hosted preview, while a project
+is a persisted entity with a name, page set, audit history, and version list.
+
+Project routes:
+
+```text
+GET  /projects
+POST /projects
+GET  /projects/<project_id>
+PATCH /projects/<project_id>
+POST /projects/<project_id>/autosave
+POST /projects/<project_id>/duplicate
+GET  /projects/<project_id>/versions
+POST /projects/<project_id>/versions
+POST /projects/<project_id>/versions/<version_id>/restore
+```
+
+Automated edits return deterministic change summaries and store those summaries
+in version metadata when a project is active.
 
 ## Voice Engine
 
@@ -329,14 +361,25 @@ pip install -r requirements-dev.txt
 ### Running Tests
 
 ```text
-python -m pytest -q
+python -m pytest -q --timeout=120
 ```
 
-The test suite (106 tests) covers backend routes, session security, storage
-abstraction, cleanup logic, typed models, streaming, smart memory, voice engine
+The test suite covers backend routes, session security, project/version
+persistence, storage layout, cleanup logic, ZIP export, parser-backed audits,
+guided autofix snapshots, typed models, streaming, smart memory, voice engine
 state machine, Hindi detection, mixed-language splitting, micro-chunk
-extraction, interrupt behavior, duplicate prevention, and concurrency safety.
-JS engine tests run via Node `vm` sandboxes.
+extraction, interrupt behavior, duplicate prevention, concurrency safety, and a
+browser-level project/audit/export flow. JS engine tests run via Node `vm`
+sandboxes.
+
+Browser E2E uses Playwright. Install the pinned dev dependency, then either
+install Playwright Chromium or use an installed Chrome/Edge browser:
+
+```text
+pip install -r requirements-dev.txt
+python -m playwright install chromium
+python -m pytest tests/test_e2e_browser.py -q --timeout=120
+```
 
 ### Linting
 
@@ -366,6 +409,7 @@ For production deployment:
    CODEUP_ENV=production
    FLASK_SECRET_KEY=<generate a long random secret>
    SESSION_COOKIE_SECURE=true
+   DATA_DIR=/var/lib/codeup-html
    ```
 
 2. Set at least one AI provider key (or run with `AI_CLOUD_ENABLED=0`).
@@ -380,13 +424,15 @@ For production deployment:
    ```
 
 5. Session artifacts are cleaned up based on `SESSION_ARTIFACT_MAX_AGE`
-   (default: 7 days). Adjust via the environment variable if needed.
+   (default: 7 days). Project JSON files persist until explicitly removed or
+   migrated by an operator.
 
 ## Contributing
 
 1. Fork the repo and create a feature branch.
 2. Install dev dependencies: `pip install -r requirements-dev.txt`
-3. Run `ruff check` and `pytest` before submitting a PR.
+3. Run `ruff check`, `ruff format --check`, `pytest`, and JS syntax checks
+   before submitting a PR.
 4. CI must pass before merge.
 
 ## Why This Sister Project Exists

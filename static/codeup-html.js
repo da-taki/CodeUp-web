@@ -76,6 +76,10 @@
     versions: [],
     pages: {},
     currentPage: 'home',
+    projectId: '',
+    projectName: 'Untitled Project',
+    autosaveTimer: null,
+    lastAudit: null,
   };
 
   const pageTemplates = {
@@ -134,19 +138,37 @@
   function getEditor() { return $('htmlEditor'); }
   function getHtml() { return (getEditor() || {}).value || ''; }
 
-  function snapshotVersion(note) {
+  function activePages() {
+    state.pages[state.currentPage] = getHtml();
+    return Object.fromEntries(Object.entries(state.pages).filter(([, value]) => value && value.trim()));
+  }
+
+  function updateProjectUi() {
+    const name = $('projectNameInput');
+    if (name && name.value !== state.projectName) name.value = state.projectName;
+    const select = $('projectSelect');
+    if (select && state.projectId) select.value = state.projectId;
+  }
+
+  function snapshotVersion(note, summary) {
     const html = getHtml();
     if (!html) return;
     const last = state.versions[state.versions.length - 1];
     if (last && last.html === html) return;
-    state.versions.push({
+    const version = {
+      id: '',
       html,
       note: note || 'Edited website',
+      label: note || 'Edited website',
+      source: 'frontend',
       page: state.currentPage,
       timestamp: new Date().toISOString(),
-    });
+      summary: summary || [],
+    };
+    state.versions.push(version);
     state.versions = state.versions.slice(-25);
     persistVersions();
+    saveVersionToServer(version);
   }
 
   function setHtml(html) {
@@ -155,6 +177,7 @@
       editor.value = html;
       try { sessionStorage.setItem('codeup_html_draft', html); } catch (error) {}
       state.pages[state.currentPage] = html;
+      scheduleAutosave();
     }
   }
 
@@ -167,6 +190,130 @@
 
   function persistVersions() {
     try { sessionStorage.setItem('codeup_versions', JSON.stringify(state.versions)); } catch (error) {}
+  }
+
+  async function apiJson(url, options = {}) {
+    const response = await fetch(url, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    });
+    const data = await response.json();
+    if (!data.success) throw new Error(data.error || 'Request failed.');
+    return data;
+  }
+
+  async function refreshProjectList() {
+    try {
+      const data = await apiJson('/projects');
+      const select = $('projectSelect');
+      if (!select) return data.projects || [];
+      select.innerHTML = '';
+      for (const project of data.projects || []) {
+        const option = document.createElement('option');
+        option.value = project.id;
+        option.textContent = project.name;
+        select.appendChild(option);
+      }
+      updateProjectUi();
+      return data.projects || [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  async function openProject(projectId) {
+    if (!projectId) return;
+    const data = await apiJson(`/projects/${encodeURIComponent(projectId)}`);
+    const project = data.project;
+    state.projectId = project.id;
+    state.projectName = project.name || 'Untitled Project';
+    state.pages = project.pages || {};
+    state.currentPage = project.current_page || Object.keys(state.pages)[0] || 'home';
+    if (!state.pages[state.currentPage]) state.pages[state.currentPage] = starterHtml;
+    setHtml(state.pages[state.currentPage]);
+    state.versions = (project.versions || []).map((version) => ({
+      id: version.id,
+      html: (version.pages || {})[version.current_page || state.currentPage] || Object.values(version.pages || {})[0] || '',
+      pages: version.pages || {},
+      note: version.label,
+      label: version.label,
+      source: version.source,
+      page: version.current_page || 'home',
+      timestamp: version.timestamp,
+      summary: version.summary || [],
+    })).filter(item => item.html);
+    persistVersions();
+    updateProjectUi();
+    writeOutput(`Opened project: ${state.projectName}.`, false);
+  }
+
+  async function ensureProject() {
+    const projects = await refreshProjectList();
+    if (state.projectId) return;
+    if (projects.length) {
+      await openProject(projects[0].id);
+      return;
+    }
+    const data = await apiJson('/projects', {
+      method: 'POST',
+      body: JSON.stringify({ name: state.projectName, html: getHtml() || starterHtml, current_page: state.currentPage }),
+    });
+    state.projectId = data.project.id;
+    state.projectName = data.project.name;
+    state.pages = data.project.pages || { home: getHtml() || starterHtml };
+    await refreshProjectList();
+    updateProjectUi();
+  }
+
+  function scheduleAutosave() {
+    if (!state.projectId) return;
+    clearTimeout(state.autosaveTimer);
+    state.autosaveTimer = setTimeout(() => {
+      saveProjectDraft().catch(() => {});
+    }, 700);
+  }
+
+  async function saveProjectDraft() {
+    if (!state.projectId) return;
+    const pages = activePages();
+    const name = ($('projectNameInput') || {}).value || state.projectName;
+    const data = await apiJson(`/projects/${encodeURIComponent(state.projectId)}/autosave`, {
+      method: 'POST',
+      body: JSON.stringify({ pages, current_page: state.currentPage, name }),
+    });
+    state.projectName = data.project.name || state.projectName;
+    updateProjectUi();
+  }
+
+  async function saveVersionToServer(version) {
+    if (!state.projectId) return;
+    try {
+      const data = await apiJson(`/projects/${encodeURIComponent(state.projectId)}/versions`, {
+        method: 'POST',
+        body: JSON.stringify({
+          label: version.label || version.note,
+          source: version.source || 'frontend',
+          pages: activePages(),
+          current_page: state.currentPage,
+          summary: version.summary || [],
+        }),
+      });
+      version.id = data.version.id;
+    } catch (error) {}
+  }
+
+  async function restoreVersionFromServer(versionId) {
+    if (!state.projectId || !versionId) return false;
+    try {
+      const data = await apiJson(`/projects/${encodeURIComponent(state.projectId)}/versions/${encodeURIComponent(versionId)}/restore`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+      await openProject(data.project.id);
+      return true;
+    } catch (error) {
+      return false;
+    }
   }
 
   function normalizeHtmlDocument(html) {
@@ -230,6 +377,7 @@
     editor.addEventListener('input', () => {
       try { sessionStorage.setItem('codeup_html_draft', editor.value); } catch (error) {}
       state.pages[state.currentPage] = editor.value;
+      scheduleAutosave();
     });
     editor.addEventListener('keydown', (event) => {
       if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
@@ -308,8 +456,10 @@
 
   async function publish(html) {
     state.pages[state.currentPage] = html;
-    const activePages = Object.fromEntries(Object.entries(state.pages).filter(([, value]) => value && value.trim()));
-    const payload = Object.keys(activePages).length > 1 ? { html, pages: activePages } : { html };
+    const pages = activePages();
+    const payload = Object.keys(pages).length > 1 ? { html, pages } : { html };
+    if (state.projectId) payload.project_id = state.projectId;
+    payload.current_page = state.currentPage;
     const response = await fetch('/publish-site', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -388,7 +538,7 @@
     Object.keys(state.pages).forEach((key) => { state.pages[key] = applyPageLinks(state.pages[key]); });
     setHtml(state.pages.home);
     snapshotVersion('Created multi-page website');
-    speak('Created a homepage, about page, and contact page. You are editing the homepage.');
+    writeOutput('Created a homepage, about page, and contact page. You are editing the homepage.', true);
   }
 
   function switchPage(pageName) {
@@ -411,8 +561,35 @@
     writeOutput(`Loaded ${name} template.`, true);
   }
 
-  function exportHtml() {
+  async function exportHtml() {
     const html = getHtml();
+    const pages = activePages();
+    if (Object.keys(pages).length > 1 || state.projectId) {
+      try {
+        const response = await fetch('/export-site.zip', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project_id: state.projectId, pages, html, name: state.projectName }),
+        });
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.error || 'ZIP export failed.');
+        }
+        const blob = await response.blob();
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = slugify(state.projectName || 'codeup-site') + '.zip';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(link.href), 500);
+        writeOutput(t('Project ZIP exported.', 'Project ZIP export ho gayi.'), true);
+        return;
+      } catch (error) {
+        writeOutput(error.message, true);
+        return;
+      }
+    }
     const title = (html.match(/<title>\s*([^<]+)/i) || [])[1] || 'codeup-site';
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     const link = document.createElement('a');
@@ -581,7 +758,7 @@
     return true;
   }
 
-  function undoByVoice(command) {
+  async function undoByVoice(command) {
     const match = command.toLowerCase().match(/(?:back|undo)\s+(\d+)/);
     const words = { one: 1, two: 2, three: 3, four: 4, five: 5 };
     const wordMatch = command.toLowerCase().match(/(?:back|undo)\s+(one|two|three|four|five)/);
@@ -592,6 +769,10 @@
     }
     const target = Math.max(0, state.versions.length - 1 - steps);
     const version = state.versions[target];
+    if (version.id && await restoreVersionFromServer(version.id)) {
+      writeOutput(`Restored version: ${version.note || version.label}.`, true);
+      return true;
+    }
     state.versions = state.versions.slice(0, target + 1);
     persistVersions();
     setHtml(version.html);
@@ -632,8 +813,19 @@
     state.lastUrl = '';
     state.pages = {};
     state.currentPage = 'home';
+    state.projectId = '';
+    state.projectName = 'Untitled Project';
     try { sessionStorage.removeItem('codeup_html_draft'); } catch (error) {}
     setHtml(starterHtml);
+    try {
+      const data = await apiJson('/projects', {
+        method: 'POST',
+        body: JSON.stringify({ name: state.projectName, html: starterHtml, current_page: state.currentPage }),
+      });
+      state.projectId = data.project.id;
+      state.projectName = data.project.name;
+      await refreshProjectList();
+    } catch (error) {}
     const frame = $('sitePreviewFrame');
     if (frame) frame.removeAttribute('src');
     const link = $('sitePreviewLink');
@@ -647,17 +839,132 @@
       const response = await fetch('/html-audit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ html: getHtml() }),
+        body: JSON.stringify({ html: getHtml(), project_id: state.projectId }),
       });
       const data = await response.json();
       if (!data.success) throw new Error(data.error || 'Audit failed.');
       const audit = data.audit;
+      state.lastAudit = audit;
       const checks = audit.checks.map(item => `${item.passed ? 'PASS' : 'FIX'} - ${item.label}`).join('\n');
+      const issues = (audit.issues || []).map(item => `${item.severity.toUpperCase()} - ${item.id}: ${item.description}\n  Fix: ${item.suggested_fix}`).join('\n');
       const suggestions = audit.suggestions.map(item => `- ${item}`).join('\n');
       const contrast = (audit.contrast_pairs || []).map(item => `${item.passes_aa ? 'PASS' : 'FIX'} - ${item.selector}: ${item.ratio}:1`).join('\n');
       const transcript = (audit.screen_reader_transcript || []).slice(0, 12).map(item => `- ${item.announcement}`).join('\n');
-      const message = `Accessibility score: ${audit.score}/100\n\n${checks}\n\nContrast:\n${contrast || 'No color pairs found.'}\n\nScreen reader transcript preview:\n${transcript || 'No readable announcements found.'}\n\nSuggestions:\n${suggestions}`;
+      const message = `Accessibility score: ${audit.score}/100\n\n${checks}\n\nIssues:\n${issues || 'No structured issues found.'}\n\nContrast:\n${contrast || 'No color pairs found.'}\n\nScreen reader transcript preview:\n${transcript || 'No readable announcements found.'}\n\nSuggestions:\n${suggestions}`;
+      const one = $('auditFixOneBtn');
+      const all = $('auditFixAllBtn');
+      const fixable = (audit.issues || []).filter(item => item.autofix);
+      if (one) one.disabled = fixable.length === 0;
+      if (all) all.disabled = fixable.length === 0;
       writeOutput(message, shouldSpeak);
+    } catch (error) {
+      writeOutput(error.message, true);
+    }
+  }
+
+  async function applyAuditFix(issueId, shouldSpeak = true) {
+    const html = getHtml();
+    writeOutput(issueId ? `Applying fix ${issueId}...` : 'Applying safe audit fixes...', shouldSpeak);
+    try {
+      const response = await fetch('/audit-autofix', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          html,
+          project_id: state.projectId,
+          current_page: state.currentPage,
+          issue_id: issueId || '',
+          fix_all: !issueId,
+        }),
+      });
+      const data = await response.json();
+      if (!data.success) throw new Error(data.error || 'Audit autofix failed.');
+      snapshotVersion('Before audit autofix');
+      setHtml(data.code);
+      snapshotVersion('Applied audit autofix', data.summary || []);
+      state.lastAudit = data.audit;
+      await publish(data.code);
+      const fixed = (data.fixed || []).join(', ') || 'nothing';
+      writeOutput(`Applied safe audit fixes: ${fixed}.\n${(data.summary || []).join('\n')}`, shouldSpeak);
+    } catch (error) {
+      writeOutput(error.message, true);
+    }
+  }
+
+  async function applyFirstAuditFix() {
+    const issue = ((state.lastAudit || {}).issues || []).find(item => item.autofix);
+    if (!issue) {
+      writeOutput('No safe autofix is available. Run Audit first.', true);
+      return;
+    }
+    await applyAuditFix(issue.id, true);
+  }
+
+  async function applyAllAuditFixes() {
+    await applyAuditFix('', true);
+  }
+
+  async function createNamedProject() {
+    const requested = (($('projectNameInput') || {}).value || 'Untitled Project').trim() || 'Untitled Project';
+    try {
+      const data = await apiJson('/projects', {
+        method: 'POST',
+        body: JSON.stringify({ name: requested, pages: activePages(), current_page: state.currentPage }),
+      });
+      state.projectId = data.project.id;
+      state.projectName = data.project.name;
+      await refreshProjectList();
+      updateProjectUi();
+      writeOutput(`Created project: ${state.projectName}.`, true);
+    } catch (error) {
+      writeOutput(error.message, true);
+    }
+  }
+
+  async function renameProject() {
+    if (!state.projectId) {
+      await createNamedProject();
+      return;
+    }
+    const requested = (($('projectNameInput') || {}).value || state.projectName).trim() || state.projectName;
+    try {
+      const data = await apiJson(`/projects/${encodeURIComponent(state.projectId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name: requested, pages: activePages(), current_page: state.currentPage }),
+      });
+      state.projectName = data.project.name;
+      await refreshProjectList();
+      writeOutput(`Saved project: ${state.projectName}.`, true);
+    } catch (error) {
+      writeOutput(error.message, true);
+    }
+  }
+
+  async function duplicateCurrentProject() {
+    if (!state.projectId) {
+      await createNamedProject();
+      return;
+    }
+    try {
+      await saveProjectDraft();
+      const data = await apiJson(`/projects/${encodeURIComponent(state.projectId)}/duplicate`, {
+        method: 'POST',
+        body: JSON.stringify({ name: `${state.projectName} Copy` }),
+      });
+      await refreshProjectList();
+      await openProject(data.project.id);
+      writeOutput(`Duplicated project: ${data.project.name}.`, true);
+    } catch (error) {
+      writeOutput(error.message, true);
+    }
+  }
+
+  async function openSelectedProject() {
+    const selected = ($('projectSelect') || {}).value;
+    if (!selected) return;
+    try {
+      await openProject(selected);
+      await previewHtml(false);
     } catch (error) {
       writeOutput(error.message, true);
     }
@@ -750,18 +1057,20 @@
           instruction: instruction || 'Apply the latest review suggestions',
           review,
           language: lang(),
+          project_id: state.projectId,
         }),
       });
       const data = await response.json();
       if (!data.success || !data.code) throw new Error(data.error || 'Could not apply review suggestions.');
       snapshotVersion('Before applying review');
       setHtml(data.code);
+      snapshotVersion('Applied review suggestions', data.summary || []);
       if (data.memory) state.memory = data.memory;
       const url = await publish(data.code);
       const nextReview = await reviewWebsite(false);
       const message = t(
-        `I added the review improvements, republished the website at ${url}, and reviewed the new version. ${nextReview}`,
-        `Review improvements add ho gaye, website ${url} par republish ho gayi, aur naya version review ho gaya. ${nextReview}`
+        `I added the review improvements, republished the website at ${url}, and reviewed the new version.\nChanges: ${(data.summary || []).join(' ')}\n${nextReview}`,
+        `Review improvements add ho gaye, website ${url} par republish ho gayi.\nChanges: ${(data.summary || []).join(' ')}\n${nextReview}`
       );
       if (shouldSpeak) speak(message);
     } catch (error) {
@@ -821,6 +1130,7 @@
           prompt: normalized,
           language: lang(),
           current_html: getHtml(),
+          project_id: state.projectId,
         }),
       });
       const data = await response.json();
@@ -834,8 +1144,8 @@
       await saveMemory({ prompt: normalized, html: data.code, url });
       const review = await reviewWebsite(false);
       const message = t(
-        `Website built and hosted locally at ${url}. Here is the first review. ${review}`,
-        `Website ban gayi aur local URL ${url} par host ho gayi. Pehla review yeh hai. ${review}`
+        `Website built and hosted locally at ${url}.\nChanges: ${(data.summary || []).join(' ')}\nHere is the first review. ${review}`,
+        `Website ban gayi aur local URL ${url} par host ho gayi.\nChanges: ${(data.summary || []).join(' ')}\nPehla review yeh hai. ${review}`
       );
       if (shouldSpeak) speak(message);
     } catch (error) {
@@ -849,15 +1159,18 @@
       const response = await fetch('/fix', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: getHtml(), language: lang() }),
+        body: JSON.stringify({ code: getHtml(), language: lang(), project_id: state.projectId }),
       });
       const data = await response.json();
       if (!data.success || !data.code) throw new Error(data.error || 'Could not polish the HTML.');
       snapshotVersion('Before polishing HTML');
       setHtml(data.code);
-      snapshotVersion('Polished HTML');
+      snapshotVersion('Polished HTML', data.summary || []);
       await publish(data.code);
-      writeOutput(t('HTML polished and preview updated.', 'HTML polish ho gaya aur preview update ho gaya.'), true);
+      writeOutput(t(
+        `HTML polished and preview updated.\nChanges: ${(data.summary || []).join(' ')}`,
+        `HTML polish ho gaya aur preview update ho gaya.\nChanges: ${(data.summary || []).join(' ')}`
+      ), true);
     } catch (error) {
       writeOutput(error.message, true);
     }
@@ -1035,6 +1348,83 @@
     );
   }
 
+  async function routeIntent(command) {
+    try {
+      const data = await apiJson('/voice-command', {
+        method: 'POST',
+        body: JSON.stringify({ text: command }),
+      });
+      return data;
+    } catch (error) {
+      return { action: 'chat', confidence: 0.1, slots: {}, text: command };
+    }
+  }
+
+  function addSectionFromIntent(command, slots = {}) {
+    const label = slots.section || command.replace(/^(add|insert|new)\s+section/i, '').trim() || 'New Section';
+    snapshotVersion('Before adding section');
+    insertAtCursor(`\n<section aria-labelledby="${slugify(label)}-heading">\n  <h2 id="${slugify(label)}-heading">${label}</h2>\n  <p>Add details for ${label.toLowerCase()} here.</p>\n</section>\n`);
+    writeOutput(`Added section: ${label}.`, true);
+    return true;
+  }
+
+  function addContactPage() {
+    state.pages[state.currentPage] = getHtml();
+    state.pages.contact = state.pages.contact || makeTemplateHtml('club page').replace(/Club Page/g, 'Contact');
+    state.currentPage = 'contact';
+    setHtml(state.pages.contact);
+    snapshotVersion('Added contact page');
+    writeOutput('Added and opened the contact page.', true);
+    return true;
+  }
+
+  async function dispatchIntent(routed, command) {
+    if (routed.needs_clarification) {
+      writeOutput(routed.message || 'Please clarify what action you want.', true);
+      return true;
+    }
+    const action = routed.action;
+    const slots = routed.slots || {};
+    if (action === 'chat') return false;
+    if (action === 'set_wake_word') {
+      state.wakeWord = command.toLowerCase().replace(/^set wake word to |^change wake word to /, '').trim() || 'hey codeup';
+      localStorage.setItem('codeup_wake_word', state.wakeWord);
+      state.wakeUntil = Date.now() + 45000;
+      writeOutput(`Wake word changed to ${state.wakeWord}.`, true);
+      return true;
+    }
+    if (action === 'pause_voice') { pauseVoice(); return true; }
+    if (action === 'resume_voice') { resumeVoice(); return true; }
+    if (action === 'stop_speaking') { cancelSpeech(); announce('Speech stopped'); return true; }
+    if (action === 'set_voice_language') return false;
+    if (action === 'navigate_page' || action === 'read_current_section' || action === 'read_next_section') { navigatePreview(command); return true; }
+    if (action === 'darken_theme') { applyCssEdit('change the background dark'); return true; }
+    if (action === 'lighten_theme') { applyCssEdit('change the background white'); return true; }
+    if (action === 'edit_css' && applyCssEdit(command)) return true;
+    if (action === 'announce_contrast') { announceContrast(); return true; }
+    if (action === 'explain_concept' && explainConcept(command)) return true;
+    if (action === 'undo_version') { await undoByVoice(command); return true; }
+    if (action === 'review_changes') { snapshotVersion('Current version for comparison'); reviewChanges(); return true; }
+    if (action === 'create_multipage_site') { createMultiPageSite(command); return true; }
+    if (action === 'add_contact_page') return addContactPage();
+    if (action === 'switch_page') { switchPage(slots.page || command); return true; }
+    if (action === 'add_section') return addSectionFromIntent(command, slots);
+    if (action === 'use_template') { useTemplate(command); return true; }
+    if (action === 'apply_audit_fixes') { await applyAllAuditFixes(); return true; }
+    if (action === 'apply_review') { await applyReviewSuggestion(command, true); return true; }
+    if (action === 'review_site') { await reviewWebsite(true); return true; }
+    if (action === 'preview_site') { await previewHtml(true); return true; }
+    if (action === 'audit_site') { await auditWebsite(true); return true; }
+    if (action === 'outline_site') { outlineWebsite(true); return true; }
+    if (action === 'export_site') { await exportHtml(); return true; }
+    if (action === 'reset_session') { await resetSession(); return true; }
+    if (action === 'explain_site') { await explainWebsite(true); return true; }
+    if (action === 'sonify_site') { sonifyHtml(); return true; }
+    if (action === 'polish_html') { await polishHtml(); return true; }
+    if (action === 'build_site') { await buildWebsite(slots.prompt || command, true); return true; }
+    return false;
+  }
+
   async function handleVoiceCommand(raw) {
     const command = raw.trim();
     if (!command) return;
@@ -1102,6 +1492,8 @@
       await chatWithAI(command, true);
       return;
     }
+    const routed = await routeIntent(command);
+    if (await dispatchIntent(routed, command)) return;
     if (lower.includes('next heading') || lower.includes('previous heading') || lower.includes('next section') || lower.includes('previous section') || /read paragraph\s+\d+/i.test(command)) {
       navigatePreview(command);
       return;
@@ -1113,7 +1505,7 @@
     }
     if ((lower.includes('what is') || lower.includes('what does') || lower.includes('explain concept')) && explainConcept(command)) return;
     if (lower.includes('go back') || lower.startsWith('undo')) {
-      undoByVoice(command);
+      await undoByVoice(command);
       return;
     }
     if (lower.includes('what changed') || lower.includes('compare versions') || lower.includes('review changes')) {
@@ -1192,6 +1584,11 @@
     }
     state.wakeUntil = Date.now() + 45000;
     const lower = text.toLowerCase();
+    const routed = await routeIntent(text);
+    if (routed.action !== 'chat' || routed.needs_clarification) {
+      await handleVoiceCommand(text);
+      return;
+    }
     const isBuildRequest = isBuildIntent(text);
     if (isBuildRequest) {
       await handleVoiceCommand(text);
@@ -1486,7 +1883,7 @@
     replaceButton('fixBtn', 'Polish', 'Polish HTML accessibility and layout', polishHtml);
     replaceButton('auditBtn', 'Audit', 'Audit accessibility and page quality', () => auditWebsite(true));
     replaceButton('outlineBtn', 'Outline', 'Summarize the website outline', () => outlineWebsite(true));
-    replaceButton('exportBtn', 'Export', 'Export website as an HTML file', exportHtml);
+    replaceButton('exportBtn', 'Export', 'Export website as HTML or project ZIP', exportHtml);
     replaceButton('resetBtn', 'Reset', 'Reset this session', resetSession);
     replaceButton('voiceButton', 'Voice Off', 'Toggle voice control', toggleVoice);
     replaceButton('helpBtn', 'Help', 'Hear HTML voice commands', () => writeOutput(helpText(), true));
@@ -1517,6 +1914,10 @@
     window.outlineWebsite = outlineWebsite;
     window.exportHtml = exportHtml;
     window.resetSession = resetSession;
+    window.createNamedProject = createNamedProject;
+    window.openSelectedProject = openSelectedProject;
+    window.applyFirstAuditFix = applyFirstAuditFix;
+    window.applyAllAuditFixes = applyAllAuditFixes;
     window.generateCode = (prompt) => buildWebsite(prompt, true);
     window.chatWithAI = (message) => chatWithAI(message, true);
     window.submitCommand = submitCommandFromInput;
@@ -1557,6 +1958,14 @@
       }
     });
     $('demoModeBtn')?.addEventListener('click', toggleDemoMode);
+    $('projectSaveBtn')?.addEventListener('click', renameProject);
+    $('projectNewBtn')?.addEventListener('click', createNamedProject);
+    $('projectDuplicateBtn')?.addEventListener('click', duplicateCurrentProject);
+    $('projectOpenBtn')?.addEventListener('click', openSelectedProject);
+    $('projectSelect')?.addEventListener('change', openSelectedProject);
+    $('projectNameInput')?.addEventListener('change', renameProject);
+    $('auditFixOneBtn')?.addEventListener('click', applyFirstAuditFix);
+    $('auditFixAllBtn')?.addEventListener('click', applyAllAuditFixes);
 
     document.body.dataset.htmlModeReady = 'true';
   }
@@ -1672,9 +2081,10 @@
     await loadMemory();
     restoreVersions();
     setupUi();
-    initVoiceMemoryEngine();
     state.pages.home = getHtml();
-    snapshotVersion('Initial version');
+    await ensureProject();
+    initVoiceMemoryEngine();
+    if (!state.versions.length) snapshotVersion('Initial version');
     await previewHtml(false);
     setTimeout(startWakeListener, 600);
     speak(t(
