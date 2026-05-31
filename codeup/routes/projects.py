@@ -82,8 +82,10 @@ def projects_autosave(project_id: str):
     raw_pages = body.get("pages")
     pages = {str(key): str(value or "") for key, value in raw_pages.items()} if isinstance(raw_pages, dict) else None
     html = str(body.get("html") or "")
+    name = str(body.get("name")).strip() if "name" in body else None
     project = update_project(
         project_id,
+        name=name,
         pages=pages,
         html=html,
         current_page=str(body.get("current_page") or "") or None,

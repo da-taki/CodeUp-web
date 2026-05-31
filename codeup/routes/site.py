@@ -80,8 +80,10 @@ def publish_site():
     delete_stale_hosted_pages(session_id, intended_filenames)
     page_urls = {}
     last_html = ""
+    all_warnings: list[str] = []
     for name, filename, page_html in plan:
-        wrapped = sanitize_hosted_html(wrap_html(page_html))
+        wrapped, warnings = sanitize_hosted_html(wrap_html(page_html))
+        all_warnings.extend(warnings)
         write_student_page(session_id, filename, wrapped)
         page_urls[name] = f"/student-site/{session_id}/{'' if filename == 'index.html' else filename}"
         if filename == "index.html" or not last_html:
@@ -98,7 +100,10 @@ def publish_site():
             current_page=str(body.get("current_page") or "home"),
             summary=[f"Published {len(pages)} page(s) locally."],
         )
-    return jsonify({"success": True, "url": url, "pages": page_urls})
+    result: dict = {"success": True, "url": url, "pages": page_urls}
+    if all_warnings:
+        result["warnings"] = all_warnings
+    return jsonify(result)
 
 
 @site_bp.route("/student-site/<session_id>/")
@@ -196,7 +201,8 @@ def export_site_zip():
         for _, filename, page_html in plan:
             if len(page_html) > MAX_HTML_SIZE:
                 return jsonify({"success": False, "error": f"Page {filename} too large"}), 413
-            bundle.writestr(filename, sanitize_hosted_html(wrap_html(page_html)))
+            sanitized, _warnings = sanitize_hosted_html(wrap_html(page_html))
+            bundle.writestr(filename, sanitized)
         bundle.writestr("manifest.json", json.dumps(manifest, indent=2))
     archive.seek(0)
     filename = safe_page_filename(str(body.get("name") or "codeup-site"))[:-5] + ".zip"
