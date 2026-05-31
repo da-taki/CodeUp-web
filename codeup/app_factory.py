@@ -17,6 +17,7 @@ from codeup.config import (
 from codeup.logging import setup_logging
 from codeup.routes import ALL_BLUEPRINTS
 from codeup.security import register_security_middleware
+from codeup.storage import init_data_dirs
 
 
 def create_app() -> Flask:
@@ -37,6 +38,7 @@ def create_app() -> Flask:
 
     setup_logging(app)
     register_security_middleware(app)
+    init_data_dirs()
 
     for bp in ALL_BLUEPRINTS:
         app.register_blueprint(bp)

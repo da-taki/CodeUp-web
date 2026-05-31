@@ -43,7 +43,7 @@ class AuditResult:
     passed: int
     total: int
     checks: list[dict[str, Any]]
-    issues: list[str]
+    issues: list[dict[str, Any]]
     suggestions: list[str]
     contrast_pairs: list[dict[str, Any]]
     screen_reader_checks: list[dict[str, Any]]
@@ -60,4 +60,79 @@ class AuditResult:
             "contrast_pairs": self.contrast_pairs,
             "screen_reader_checks": self.screen_reader_checks,
             "screen_reader_transcript": self.screen_reader_transcript,
+        }
+
+
+@dataclass
+class ProjectVersion:
+    id: str
+    timestamp: str
+    label: str
+    source: str
+    pages: dict[str, str]
+    current_page: str = "home"
+    summary: list[str] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ProjectVersion:
+        pages = data.get("pages", {})
+        return cls(
+            id=str(data.get("id") or ""),
+            timestamp=str(data.get("timestamp") or ""),
+            label=str(data.get("label") or "Saved version"),
+            source=str(data.get("source") or "manual"),
+            pages={str(key): str(value) for key, value in pages.items()} if isinstance(pages, dict) else {},
+            current_page=str(data.get("current_page") or "home"),
+            summary=[str(item) for item in data.get("summary", [])] if isinstance(data.get("summary"), list) else [],
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "timestamp": self.timestamp,
+            "label": self.label,
+            "source": self.source,
+            "pages": self.pages,
+            "current_page": self.current_page,
+            "summary": self.summary,
+        }
+
+
+@dataclass
+class Project:
+    id: str
+    name: str
+    created_at: str
+    updated_at: str
+    pages: dict[str, str] = field(default_factory=dict)
+    current_page: str = "home"
+    versions: list[ProjectVersion] = field(default_factory=list)
+    audit_history: list[dict[str, Any]] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Project:
+        pages = data.get("pages", {})
+        versions = data.get("versions", [])
+        audit_history = data.get("audit_history", [])
+        return cls(
+            id=str(data.get("id") or ""),
+            name=str(data.get("name") or "Untitled Project"),
+            created_at=str(data.get("created_at") or ""),
+            updated_at=str(data.get("updated_at") or ""),
+            pages={str(key): str(value) for key, value in pages.items()} if isinstance(pages, dict) else {},
+            current_page=str(data.get("current_page") or "home"),
+            versions=[ProjectVersion.from_dict(item) for item in versions if isinstance(item, dict)],
+            audit_history=audit_history if isinstance(audit_history, list) else [],
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "pages": self.pages,
+            "current_page": self.current_page,
+            "versions": [version.to_dict() for version in self.versions],
+            "audit_history": self.audit_history,
         }

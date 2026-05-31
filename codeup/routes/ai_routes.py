@@ -16,9 +16,9 @@ from codeup.services.fallbacks import (
     fallback_explanation,
     fallback_review,
 )
-from codeup.services.html_utils import extract_html, fallback_site, wrap_html
+from codeup.services.html_utils import extract_html, fallback_site, summarize_html_changes, wrap_html
 from codeup.services.memory_service import build_context, store_smart_memory
-from codeup.storage import append_memory, load_html_memory
+from codeup.storage import append_memory, create_project_version, load_html_memory
 
 ai_bp = Blueprint("ai", __name__)
 
@@ -67,6 +67,7 @@ def apply_review():
         return jsonify({"success": False, "error": "Request too large", "code": ""}), 413
 
     session_id = get_session_id()
+    project_id = str(body.get("project_id") or "").strip()
     memory = load_html_memory(session_id)
     latest_review = review or memory.last_review
     system = (
@@ -81,8 +82,17 @@ def apply_review():
     )
     raw = call_ai(system, user, temperature=0.25, language=language)
     fixed = fallback_apply_review(html, instruction, latest_review) if is_ai_unavailable(raw) else extract_html(raw)
+    summary = summarize_html_changes(html, fixed)
     mem = append_memory(session_id, prompt=instruction, note="Applied review suggestions", html=fixed)
-    return jsonify({"success": True, "code": fixed, "language": "html", "memory": mem})
+    if project_id:
+        create_project_version(
+            project_id,
+            label="Applied review suggestions",
+            source="review-edit",
+            html=fixed,
+            summary=summary,
+        )
+    return jsonify({"success": True, "code": fixed, "language": "html", "memory": mem, "summary": summary})
 
 
 @ai_bp.route("/html-chat", methods=["POST"])
@@ -129,6 +139,7 @@ def generate_code():
     prompt = str(body.get("prompt") or body.get("task") or "").strip()
     current_html = str(body.get("code") or body.get("html") or body.get("current_html") or "")
     language = str(body.get("language") or "en")
+    project_id = str(body.get("project_id") or "").strip()
 
     if not prompt:
         return jsonify({"success": False, "error": "Prompt cannot be empty", "code": ""}), 400
@@ -149,8 +160,12 @@ def generate_code():
     )
     raw = call_ai(system, user, temperature=0.35, language=language)
     html = fallback_site(prompt) if is_ai_unavailable(raw) else extract_html(raw)
+    previous = current_html or memory.last_html
+    summary = summarize_html_changes(previous, html)
     append_memory(session_id, prompt=prompt, note="Generated website", html=html)
-    return jsonify({"success": True, "code": html, "language": "html"})
+    if project_id:
+        create_project_version(project_id, label="Generated website", source="generate", html=html, summary=summary)
+    return jsonify({"success": True, "code": html, "language": "html", "summary": summary})
 
 
 @ai_bp.route("/analyze", methods=["POST"])
@@ -191,8 +206,12 @@ def fix():
     raw = call_ai(system, f"```html\n{html[:MAX_HTML_SIZE]}\n```", temperature=0.2, language=language)
     fixed = wrap_html(html) if is_ai_unavailable(raw) else extract_html(raw)
     session_id = get_session_id()
+    summary = summarize_html_changes(html, fixed)
     append_memory(session_id, note="Polished HTML", html=fixed)
-    return jsonify({"success": True, "code": fixed, "language": "html"})
+    project_id = str(body.get("project_id") or "").strip()
+    if project_id:
+        create_project_version(project_id, label="Polished HTML", source="polish", html=fixed, summary=summary)
+    return jsonify({"success": True, "code": fixed, "language": "html", "summary": summary})
 
 
 @ai_bp.route("/generate-code-stream", methods=["POST"])
@@ -201,6 +220,7 @@ def generate_code_stream():
     prompt = str(body.get("prompt") or body.get("task") or "").strip()
     current_html = str(body.get("code") or body.get("html") or body.get("current_html") or "")
     language = str(body.get("language") or "en")
+    project_id = str(body.get("project_id") or "").strip()
 
     if not prompt:
         return jsonify({"success": False, "error": "Prompt cannot be empty"}), 400
@@ -327,7 +347,12 @@ def generate_code_stream():
             _ai_semaphore.release()
 
         html = extract_html(full_response) if full_response else fallback_site(prompt)
-        yield f"data: {json.dumps({'done': True, 'html': html})}\n\n"
+        summary = summarize_html_changes(current_html or memory.last_html, html)
+        if project_id:
+            create_project_version(
+                project_id, label="Generated website (stream)", source="generate-stream", html=html, summary=summary
+            )
+        yield f"data: {json.dumps({'done': True, 'html': html, 'summary': summary})}\n\n"
         store_smart_memory(session_id, f"Built website: {prompt}", "instruction")
         append_memory(session_id, prompt=prompt, note="Generated website (stream)", html=html)
 
