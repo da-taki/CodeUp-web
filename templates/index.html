@@ -38,6 +38,14 @@
       <button id="nightToggle" class="theme-toggle" aria-pressed="false">Night Mode</button>
       <button id="demoModeBtn" class="theme-toggle" aria-pressed="false">Demo Mode</button>
     </div>
+    <div class="cu-project-controls" role="group" aria-label="Project controls">
+      <input id="projectNameInput" type="text" value="Untitled Project" aria-label="Project name">
+      <button id="projectSaveBtn" class="theme-toggle" type="button">Save Project</button>
+      <button id="projectNewBtn" class="theme-toggle" type="button">New Project</button>
+      <button id="projectDuplicateBtn" class="theme-toggle" type="button">Duplicate</button>
+      <select id="projectSelect" class="theme-selector" aria-label="Open saved project"></select>
+      <button id="projectOpenBtn" class="theme-toggle" type="button">Open</button>
+    </div>
   </header>
 
   <main class="cu-main">
@@ -65,6 +73,10 @@
         <span>OUTPUT</span>
       </div>
       <pre id="output" class="cu-output-box" tabindex="0" aria-live="polite"></pre>
+      <div class="cu-audit-actions" role="group" aria-label="Audit autofix actions">
+        <button id="auditFixOneBtn" class="cu-button" type="button" disabled>Fix First Issue</button>
+        <button id="auditFixAllBtn" class="cu-button" type="button" disabled>Apply Safe Fixes</button>
+      </div>
       <div class="cu-command-row">
         <input id="commandInput" type="text"
                placeholder="Ask what you can do, or build a website for a school science fair..."

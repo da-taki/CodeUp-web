@@ -9,6 +9,8 @@ This project is the HTML website-building edition of CodeUp.
 3. Press `Ask / Build`, press `Ctrl+Enter`, or use voice.
 4. CodeUp generates a complete single-file HTML website, publishes it locally,
    previews it in the IDE, and explains what was built.
+5. Save the work as a named project. Projects persist pages, audit history, and
+   server-side versions across browser sessions.
 
 `Ctrl+Enter` previews the current HTML and hosts it at `/student-site/<session>/`.
 Hosted session pages are HTML-only: CodeUp serves generated `.html` pages from
@@ -18,6 +20,10 @@ Keep page CSS and JavaScript inline in the generated HTML.
 Publishing replaces the hosted HTML set for the current signed session. If a
 student republishes fewer pages, stale generated `.html` files from the earlier
 publish are removed from that session directory.
+
+Multi-page projects export through `/export-site.zip`. The ZIP contains
+`index.html`, additional normalized page filenames such as `about.html`, and a
+small `manifest.json` mapping project page names to exported filenames.
 
 ## AI Keys
 
@@ -39,6 +45,16 @@ stored in Flask's signed session cookie. Do not expose the app in production
 without setting `CODEUP_ENV=production` and a long random `FLASK_SECRET_KEY`.
 Production mode also defaults `SESSION_COOKIE_SECURE` to true unless overridden.
 
+Runtime files are stored under `instance/data` by default, or under `DATA_DIR`
+when configured. The data directory contains `projects/`, `html_memory/`,
+`student_sites/`, `exports/`, and `tmp/`. Source checkouts should not contain
+runtime JSON, hosted preview files, or exported ZIPs.
+
+Sessions are temporary interaction state. Projects are named persisted entities
+with pages, versions, audit history, and exportable artifacts. Browser
+sessionStorage is only a cache for responsiveness; project versions are stored
+server-side.
+
 ## Security
 
 All responses include security headers (CSP, X-Content-Type-Options,
@@ -53,3 +69,8 @@ Browser speech recognition and speech synthesis are part of the student-facing
 HTML mode. Students can build, preview, explain, polish, and sonify a website in
 English or Hindi. AI speech is cancelled when a new command starts, and `pause
 voice` pauses voice commands.
+
+The accessibility audit returns structured issues with severity, selector,
+suggested fix, and autofix availability. Safe autofixes create version
+snapshots before and after the edit, then return a deterministic change summary
+for the student.

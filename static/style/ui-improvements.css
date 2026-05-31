@@ -278,6 +278,35 @@ body.theme-night .cu-output-box {
   outline-offset: 1px;
 }
 
+.cu-project-controls,
+.cu-audit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+#projectNameInput {
+  min-width: 180px;
+  flex: 1 1 220px;
+  padding: 9px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-main);
+  color: var(--text-main);
+  font-family: var(--font-main);
+}
+
+#projectSelect {
+  min-width: 180px;
+  flex: 1 1 220px;
+}
+
+.cu-audit-actions {
+  margin-bottom: 10px;
+}
+
 /* ------- HTML builder preview ------- */
 .cu-site-preview {
   margin-top: 14px;
