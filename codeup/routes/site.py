@@ -183,10 +183,6 @@ def audit_autofix():
 def export_site_zip():
     body = safejson()
     pages, project_id = _pages_from_body(body)
-    if project_id and not pages:
-        project = load_project(project_id)
-        if project:
-            pages = project.pages.copy()
     if not pages:
         return jsonify({"success": False, "error": "No pages to export"}), 400
     plan, collisions = publish_page_plan(pages)
@@ -220,6 +216,6 @@ def reset_session():
     session_id = get_session_id()
     with memory_lock(session_id):
         remove_html_memory_file(session_id)
+        remove_student_site(session_id)
         memory = load_html_memory(session_id)
-    remove_student_site(session_id)
     return jsonify({"success": True, "memory": memory.to_dict()})
