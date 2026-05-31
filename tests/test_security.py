@@ -1,5 +1,3 @@
-"""Tests for security middleware, CSP headers, and HTML sanitization."""
-
 import pytest
 
 

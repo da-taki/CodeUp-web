@@ -1,5 +1,3 @@
-"""Smart memory service for session context and deduplication."""
-
 from __future__ import annotations
 
 import hashlib

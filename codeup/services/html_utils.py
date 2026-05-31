@@ -1,5 +1,3 @@
-"""HTML parsing, wrapping, sanitization, and audit utilities."""
-
 from __future__ import annotations
 
 import re
@@ -169,9 +167,6 @@ def title_from_prompt(prompt: str) -> str:
     words = [word.strip(" ,.-_") for word in cleaned.split() if word.strip(" ,.-_")]
     title = " ".join(words[:8]).strip() or "My CodeUp Website"
     return title.title()
-
-
-# --- Contrast and accessibility ---
 
 
 def contrast_ratio(foreground: str, background: str) -> float:

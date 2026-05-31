@@ -1,5 +1,3 @@
-"""Offline fallback responses when AI is unavailable."""
-
 from __future__ import annotations
 
 import re

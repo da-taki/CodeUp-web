@@ -1,38 +1,22 @@
-/* ==========================================================
-   CodeUp — accessibility.css (paper rewrite)
-   Drop-in replacement. Color-vision modes, dyslexia, reduced
-   motion, high contrast — all kept, but retuned to feel
-   coherent with the paper aesthetic.
-   ========================================================== */
-
-/* ------- Color-vision adjustments -------
-   These swap the rust accent for a hue that's distinguishable
-   in each mode while keeping the parchment background. */
-
 body.theme-protanopia,
 body.cvd-protanopia {
-  --accent:       #1d3a5f;   /* ledger blue — safe for red-blind */
-  --accent-hover: #122847;
+  --accent:       #1d3a5f;   --accent-hover: #122847;
   --accent-soft:  rgba(29, 58, 95, 0.12);
   --danger:       #2c1d10;
 }
 
 body.theme-deuteranopia,
 body.cvd-deuteranopia {
-  --accent:       #2d4f8a;   /* shifted blue — safe for green-blind */
-  --accent-hover: #1a3766;
+  --accent:       #2d4f8a;   --accent-hover: #1a3766;
   --accent-soft:  rgba(45, 79, 138, 0.12);
-  --success:      #6e1f0a;   /* swap success to rust */
-}
+  --success:      #6e1f0a;   }
 
 body.theme-tritanopia,
 body.cvd-tritanopia {
-  --accent:       #8b1a05;   /* deeper rust — safe for blue-blind */
-  --accent-hover: #5a0e02;
+  --accent:       #8b1a05;   --accent-hover: #5a0e02;
   --accent-soft:  rgba(139, 26, 5, 0.12);
 }
 
-/* ------- High contrast — pure black/white, no grain ------- */
 body.theme-high-contrast,
 body.cvd-high-contrast {
   --bg-main:  #ffffff;
@@ -67,9 +51,6 @@ body.cvd-high-contrast *:focus-visible {
   outline-offset: 2px !important;
 }
 
-/* ------- Dyslexia mode -------
-   Atkinson Hyperlegible is already the default; here we add
-   line-height + tracking + word-spacing per Bionic-style guidance. */
 body.theme-dyslexia {
   font-family: "Atkinson Hyperlegible", system-ui, sans-serif;
   letter-spacing: 0.02em;
@@ -90,7 +71,6 @@ body.theme-dyslexia .cu-subtitle-info {
   max-width: 70ch;
 }
 
-/* ------- Reduced motion ------- */
 body.theme-reduced-motion *,
 body.theme-reduced-motion *::before,
 body.theme-reduced-motion *::after {
@@ -100,14 +80,12 @@ body.theme-reduced-motion *::after {
   scroll-behavior: auto !important;
 }
 
-/* ------- Focus indicator (always strong, rust by default) ------- */
 *:focus-visible {
   outline: 3px solid var(--accent);
   outline-offset: 2px;
   border-radius: 4px;
 }
 
-/* ------- Screen reader only ------- */
 .sr-only {
   position: absolute !important;
   width: 1px !important; height: 1px !important;
@@ -116,7 +94,6 @@ body.theme-reduced-motion *::after {
   white-space: nowrap !important; border: 0 !important;
 }
 
-/* ------- Skip-to-content link ------- */
 .skip-link {
   position: absolute; left: -9999px; top: 0; z-index: 10000;
   padding: 12px 20px;

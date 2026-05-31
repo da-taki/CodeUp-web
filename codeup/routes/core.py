@@ -1,5 +1,3 @@
-"""Core routes: home, healthz, voice-command."""
-
 from __future__ import annotations
 
 from flask import Blueprint, jsonify, render_template

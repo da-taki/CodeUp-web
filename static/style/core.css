@@ -1,12 +1,4 @@
-/* ==========================================================
-   CodeUp — core.css (paper rewrite)
-   Drop-in replacement. Same selectors, same class names,
-   same DOM. Just paper aesthetic + rust accent + key-cap
-   buttons + sturdy type. No logic affected.
-   ========================================================== */
-
 :root {
-  /* Paper — warm parchment, near-black ink, rust signal */
   --bg-main:  #ede1c8;
   --bg-panel: #f6ecd5;
   --bg-soft:  #e2d2b1;
@@ -60,7 +52,6 @@ body.theme-night {
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { width: 100%; height: 100%; }
 
-/* Paper grain overlay (skipped in reduced motion / high contrast) */
 body.cu-body::before {
   content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.08  0 0 0 0 0.05  0 0 0 0 0.02  0 0 0 0.5 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/></svg>");
@@ -80,7 +71,6 @@ body.cu-body.cvd-high-contrast::before { display: none; }
 }
 .cu-header, .cu-main, .cu-output-wrapper { position: relative; z-index: 1; }
 
-/* Header */
 .cu-header {
   padding: 22px 5% 18px;
   background: var(--bg-panel);
@@ -111,13 +101,11 @@ body.cu-body.cvd-high-contrast::before { display: none; }
 }
 .cu-theme-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
-/* Main layout */
 .cu-main {
   flex: 1; display: flex; gap: var(--gap-lg);
   padding: 20px 5% 10px; align-items: stretch;
 }
 
-/* Panels */
 .cu-panel {
   background: var(--bg-panel);
   border-radius: var(--radius-lg);
@@ -125,7 +113,6 @@ body.cu-body.cvd-high-contrast::before { display: none; }
   padding: 14px;
 }
 
-/* Snippets */
 .cu-snippets { width: 250px; min-width: 220px; display: flex; flex-direction: column; }
 .cu-panel-title {
   font-size: 0.78rem; font-weight: 700;
@@ -143,7 +130,6 @@ body.cu-body.cvd-high-contrast::before { display: none; }
 .snippet-item:hover { background: var(--accent-soft); border-color: var(--accent); }
 .snippet-name { font-size: 0.85rem; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Editor wrapper */
 .cu-editor-wrapper { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--gap-md); }
 .cu-editor-region {
   flex: 1; min-height: 400px;
@@ -153,10 +139,8 @@ body.cu-body.cvd-high-contrast::before { display: none; }
 }
 .cu-editor { width: 100%; height: 100%; }
 
-/* Command bar */
 .cu-command-bar { display: flex; flex-wrap: wrap; gap: var(--gap-sm); align-items: center; }
 
-/* Buttons — key-cap aesthetic */
 .cu-button, .cu-button-secondary, .cu-button-voice,
 .theme-toggle, .theme-selector {
   padding: 9px 16px; font-size: 0.85rem; font-weight: 600;
@@ -183,7 +167,6 @@ body.cu-body.cvd-high-contrast::before { display: none; }
   outline: 3px solid var(--accent); outline-offset: 2px;
 }
 
-/* Primary — Run button is rust */
 .cu-button-primary {
   background: var(--accent); color: #fff;
   border-color: var(--accent); font-weight: 700;
@@ -210,7 +193,6 @@ body.theme-night .cu-button-voice.cu-button-voice--paused {
 
 .cu-language-selector { padding: 9px 14px; }
 
-/* Output */
 .cu-output-wrapper { margin: 10px 5% 14px; padding: 14px; }
 .cu-output {
   width: 100%; min-height: 90px; max-height: 400px;
@@ -230,7 +212,6 @@ body.theme-night .cu-output { background: #06030a; }
   color: var(--accent);
 }
 
-/* Voice console */
 .cu-voice-console { margin-top: 12px; display: flex; gap: 10px; align-items: center; }
 .cu-voice-input {
   flex: 1; padding: 10px 12px;
@@ -241,7 +222,6 @@ body.theme-night .cu-output { background: #06030a; }
 }
 .cu-voice-input:focus { outline: none; border-color: var(--accent); background: var(--bg-panel); }
 
-/* Structure */
 .cu-structure { width: 260px; min-width: 240px; display: flex; flex-direction: column; max-height: calc(100vh - 200px); }
 .cu-structure-content { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem; }
 .structure-info { color: var(--text-dim); font-style: italic; margin: 10px 0; }
@@ -261,11 +241,9 @@ body.theme-night .cu-output { background: #06030a; }
   text-transform: uppercase; padding: 6px 10px 4px; letter-spacing: 0.12em;
 }
 
-/* Breakpoints */
 .bp-line { background: rgba(139, 26, 5, 0.14) !important; }
 .bp-glyph { width: 10px; height: 10px; margin-left: 6px; margin-top: 4px; background: var(--danger); border-radius: 50%; }
 
-/* Responsive */
 @media (max-width: 900px) {
   .cu-main { flex-direction: column; }
   .cu-snippets, .cu-structure { width: 100%; max-height: 300px; }

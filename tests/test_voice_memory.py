@@ -604,8 +604,6 @@ class TestVoiceUpgrades:
             VME.setState('PROCESSING');
             VME.setState('RESPONDING');
             VME.setState('SPEAKING');
-            // When narration queue empties in SPEAKING with voiceActive=true,
-            // it should go to LISTENING. Test via interrupt path:
             VME.interrupt();
             assert(VME.getState() === 'LISTENING', 'with voiceActive should go to LISTENING');
 
@@ -807,8 +805,6 @@ class TestHindiAndPolish:
             VME.setState('PROCESSING');
             VME.setState('RESPONDING');
             VME.interrupt();
-            // Any timestamp before the interrupt should be stale
-            // We test this indirectly: after interrupt, state is LISTENING
             assert(VME.getState() === 'LISTENING', 'should be LISTENING after interrupt');
             assert(cancelCalled, 'should cancel speech');
         """)

@@ -1,5 +1,3 @@
-"""Tests for the storage abstraction layer and cleanup logic."""
-
 import os
 import time
 

@@ -1,5 +1,3 @@
-"""AI-powered routes: generate, chat, review, explain, fix, stream."""
-
 from __future__ import annotations
 
 import json

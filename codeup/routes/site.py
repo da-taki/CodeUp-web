@@ -1,5 +1,3 @@
-"""Site publish, preview, audit, and reset routes."""
-
 from __future__ import annotations
 
 import io
