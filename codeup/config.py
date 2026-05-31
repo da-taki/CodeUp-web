@@ -17,6 +17,7 @@ MAX_MEMORY_ENTRIES = 100
 MAX_PROJECT_VERSIONS = 50
 MEMORY_TYPES = {"fact", "instruction", "context"}
 
+
 def env_int(name: str, default: int, minimum: int = 1) -> int:
     raw = os.environ.get(name)
     if raw is None:
