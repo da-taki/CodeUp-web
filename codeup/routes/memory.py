@@ -1,5 +1,3 @@
-"""Memory routes: html-memory, smart-memory, build-context."""
-
 from __future__ import annotations
 
 from flask import Blueprint, jsonify, request

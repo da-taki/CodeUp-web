@@ -1,5 +1,3 @@
-"""Structured voice and text intent routing."""
-
 from __future__ import annotations
 
 import re

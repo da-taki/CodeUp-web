@@ -1,5 +1,3 @@
-"""AI provider integration (xAI/Grok, Groq, Ollama)."""
-
 from __future__ import annotations
 
 import os

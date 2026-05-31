@@ -1,5 +1,3 @@
-"""Route blueprints for CodeUp HTML."""
-
 from codeup.routes.ai_routes import ai_bp
 from codeup.routes.core import core_bp
 from codeup.routes.memory import memory_bp

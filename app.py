@@ -1,10 +1,3 @@
-"""CodeUp HTML - entry point.
-
-This module provides backward-compatible imports for the test suite and
-serves as the ``python app.py`` entry point.  All logic lives in the
-``codeup`` package.
-"""
-
 from __future__ import annotations
 
 from dotenv import load_dotenv

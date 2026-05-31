@@ -1,10 +1,3 @@
-/* ==========================================================
-   CodeUp — ui-improvements.css (paper rewrite)
-   Drop-in replacement. Modals, command palette, tutorial,
-   start gate — all reskinned to match paper + rust + key-cap.
-   ========================================================== */
-
-/* ------- Generic modal (API key + future modals) ------- */
 .modal {
   position: fixed; inset: 0; z-index: 9000;
   display: flex; align-items: center; justify-content: center;
@@ -41,7 +34,6 @@
 .api-key-input:focus { outline: 3px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
 .modal-buttons { display: flex; gap: 10px; }
 
-/* ------- Command palette ------- */
 .command-palette-overlay {
   position: fixed; inset: 0; z-index: 9500;
   display: flex; align-items: flex-start; justify-content: center;
@@ -95,7 +87,6 @@
 }
 .command-palette-results > *:last-child { border-bottom: 0; }
 
-/* ------- Tutorial overlay ------- */
 #tutorialOverlay {
   background: var(--bg-panel) !important;
   border: 1px solid var(--border-strong) !important;
@@ -114,7 +105,6 @@
 }
 #tutorialSkipBtn:hover { color: var(--accent) !important; }
 
-/* ------- Start gate (language picker) ------- */
 #startGate {
   background: rgba(21, 10, 2, 0.62) !important;
   backdrop-filter: blur(6px);
@@ -145,14 +135,12 @@
   letter-spacing: 0.01em;
 }
 
-/* ------- Inputs panel polish ------- */
 #inputsPanelList > div {
   padding: 7px 10px !important;
   border-radius: 6px !important;
   font-family: var(--font-mono); font-size: 0.82rem;
 }
 
-/* ------- Snippet save row ------- */
 .cu-snippet-save input,
 #inputAddField,
 #snippetNameInput {
@@ -166,8 +154,6 @@
   outline-offset: 1px !important;
 }
 
-/* ------- "Open the IDE" badge link inside the IDE
-   (optional small home affordance if you add a cu-back-home link) ------- */
 .cu-back-home {
   display: inline-flex; align-items: center; gap: 6px;
   font-family: var(--font-mono); font-size: 0.78rem; font-weight: 600;
@@ -179,11 +165,9 @@
 }
 .cu-back-home:hover { background: var(--text-main); color: var(--bg-main); }
 
-/* ------- Output diff highlights (existing classes from app.js) ------- */
 .diff-add { background: rgba(74, 99, 33, 0.18); color: var(--success); }
 .diff-rem { background: rgba(139, 26, 5, 0.18); color: var(--danger); text-decoration: line-through; }
 
-/* ------- HTML builder workspace ------- */
 .cu-main {
   display: grid;
   grid-template-columns: minmax(420px, 1.1fr) minmax(380px, 0.9fr);
@@ -307,7 +291,6 @@ body.theme-night .cu-output-box {
   margin-bottom: 10px;
 }
 
-/* ------- HTML builder preview ------- */
 .cu-site-preview {
   margin-top: 14px;
   padding-top: 12px;
@@ -398,7 +381,6 @@ body.theme-night .cu-output-box {
   }
 }
 
-/* ------- Voice state indicators ------- */
 .cu-button-voice[data-voice-state="LISTENING"] {
   animation: voice-pulse 1.5s ease-in-out infinite;
   box-shadow: 0 0 0 3px var(--accent-soft);
@@ -429,7 +411,6 @@ body.theme-night .cu-output-box {
   50% { transform: scale(1.03); }
 }
 
-/* ------- Streaming text effect ------- */
 #output.cu-streaming {
   border-left: 3px solid var(--accent, #2563eb);
   animation: stream-cursor 0.6s step-end infinite;
@@ -439,7 +420,6 @@ body.theme-night .cu-output-box {
   50% { border-left-color: transparent; }
 }
 
-/* ------- Typing animation (synced with speech) ------- */
 #output.cu-typing::after {
   content: '▍';
   display: inline;
@@ -452,7 +432,6 @@ body.theme-night .cu-output-box {
   50% { opacity: 0; }
 }
 
-/* ------- Soft fade transition ------- */
 #output.cu-fade-in {
   animation: fade-in-text 0.3s ease-out;
 }
@@ -461,7 +440,6 @@ body.theme-night .cu-output-box {
   to   { opacity: 1;   transform: translateY(0); }
 }
 
-/* ------- Enhanced listening pulse ------- */
 .cu-button-voice[data-voice-state="LISTENING"] {
   animation: voice-pulse-enhanced 1.2s ease-in-out infinite;
   box-shadow: 0 0 0 3px var(--accent-soft);
@@ -477,7 +455,6 @@ body.theme-night .cu-output-box {
   }
 }
 
-/* ------- Smooth state transitions for voice button ------- */
 .cu-button-voice {
   transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease, opacity 0.2s ease;
 }

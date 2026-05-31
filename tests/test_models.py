@@ -1,5 +1,3 @@
-"""Tests for typed domain models."""
-
 from codeup.models import AuditResult, HtmlMemory
 
 

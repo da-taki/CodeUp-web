@@ -1,9 +1,3 @@
-"""Storage abstraction layer for session data and student sites.
-
-Decouples the backend from raw JSON file operations so the storage
-backend can be swapped (e.g. to a database) without changing callers.
-"""
-
 from __future__ import annotations
 
 import json
@@ -81,9 +75,6 @@ def project_lock(project_id: str) -> threading.RLock:
         return lock
 
 
-# --- HTML memory ---
-
-
 def _html_memory_path(session_id: str) -> str:
     return _data_path("html_memory", f"{session_id}.json")
 
@@ -133,9 +124,6 @@ def append_memory(
             memory.last_review = review
         save_html_memory(memory, session_id)
         return memory.to_dict()
-
-
-# --- Student sites ---
 
 
 def student_site_path(session_id: str) -> str:
@@ -199,9 +187,6 @@ def remove_html_memory_file(session_id: str) -> None:
             os.remove(path)
     except OSError:
         pass
-
-
-# --- Projects / versions ---
 
 
 def _project_path(project_id: str) -> str:
@@ -393,14 +378,7 @@ def append_project_audit(project_id: str, audit: dict[str, Any]) -> Project | No
         return project
 
 
-# --- Cleanup / retention ---
-
-
 def cleanup_expired_sessions() -> int:
-    """Remove session artifacts older than SESSION_ARTIFACT_MAX_AGE_SECONDS.
-
-    Returns the number of sessions cleaned up.
-    """
     cutoff = time.time() - _config.SESSION_ARTIFACT_MAX_AGE_SECONDS
     cleaned = 0
 

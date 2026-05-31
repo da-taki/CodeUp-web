@@ -1,5 +1,3 @@
-"""Security middleware: CSP headers, origin checking, HTML sanitization."""
-
 from __future__ import annotations
 
 import re
@@ -33,8 +31,6 @@ def get_session_id() -> str:
 
 
 def register_security_middleware(app: Flask) -> None:
-    """Register before_request and after_request handlers for security."""
-
     @app.before_request
     def validate_request_size():
         if request.content_length and request.content_length > MAX_REQUEST_SIZE:
@@ -107,12 +103,6 @@ def register_security_middleware(app: Flask) -> None:
 
 
 def sanitize_hosted_html(html: str) -> str:
-    """Remove dangerous elements from student-generated HTML before serving.
-
-    Strips <script> tags that reference external sources and ensures no
-    event handlers inject unexpected JavaScript from generated content.
-    Inline scripts are preserved since students use them for interactivity.
-    """
     sanitized = re.sub(
         r'<script\b[^>]*\bsrc\s*=\s*["\'][^"\']*["\'][^>]*>.*?</script>',
         "",

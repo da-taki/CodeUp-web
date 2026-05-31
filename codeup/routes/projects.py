@@ -1,5 +1,3 @@
-"""Project and persistent version routes."""
-
 from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
