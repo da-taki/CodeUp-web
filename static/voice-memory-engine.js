@@ -17,7 +17,7 @@
     SPEAKING: ['LISTENING', 'IDLE'],
   };
 
-  var DEVANAGARI_RE = /[ऀ-ॿ]/;
+  var DEVANAGARI_RE = /[\u0900-\u097F]/;
   var MICRO_CHUNK_SIZE = 22;
 
   var engine = {

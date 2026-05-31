@@ -19,14 +19,25 @@ MAX_MEMORY_ENTRIES = 100
 MAX_PROJECT_VERSIONS = 50
 MEMORY_TYPES = {"fact", "instruction", "context"}
 
-AI_TIMEOUT = int(os.environ.get("AI_TIMEOUT", "30"))
-AI_MAX_CONCURRENT = int(os.environ.get("AI_MAX_CONCURRENT", "3"))
+def env_int(name: str, default: int, minimum: int = 1) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw.strip())
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, value)
+
+
+AI_TIMEOUT = env_int("AI_TIMEOUT", 30)
+AI_MAX_CONCURRENT = env_int("AI_MAX_CONCURRENT", 3)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATA_DIR = REPO_ROOT / "instance" / "data"
 DATA_DIR = os.environ.get("DATA_DIR", str(DEFAULT_DATA_DIR))
 
-SESSION_ARTIFACT_MAX_AGE_SECONDS = int(os.environ.get("SESSION_ARTIFACT_MAX_AGE", str(7 * 24 * 3600)))
+SESSION_ARTIFACT_MAX_AGE_SECONDS = env_int("SESSION_ARTIFACT_MAX_AGE", 7 * 24 * 3600)
 
 
 def env_enabled(name: str, default: bool = False) -> bool:

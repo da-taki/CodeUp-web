@@ -6,7 +6,7 @@ import json
 
 from flask import Blueprint, Response, jsonify, stream_with_context
 
-from codeup.config import MAX_HTML_SIZE, MAX_MESSAGE_SIZE, cloud_ai_enabled
+from codeup.config import AI_TIMEOUT, MAX_HTML_SIZE, MAX_MESSAGE_SIZE, cloud_ai_enabled
 from codeup.routes.helpers import safejson
 from codeup.security import get_session_id
 from codeup.services.ai_service import call_ai, is_ai_unavailable
@@ -295,7 +295,7 @@ def generate_code_stream():
                         "max_tokens": 4096,
                         "stream": True,
                     },
-                    timeout=int(os.environ.get("AI_TIMEOUT", "30")),
+                    timeout=AI_TIMEOUT,
                     stream=True,
                 )
                 resp.raise_for_status()

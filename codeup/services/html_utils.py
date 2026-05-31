@@ -588,14 +588,59 @@ def _ensure_head_tag(html: str) -> str:
 
 def _add_or_replace_lang(html: str) -> str:
     document = wrap_html(html)
-    if re.search(r"<html\b[^>]*\blang\s*=", document, re.I):
+    match = re.search(r"<html\b[^>]*>", document, re.I)
+    if not match:
         return document
-    return re.sub(r"<html\b", '<html lang="en"', document, count=1, flags=re.I)
+
+    tag = match.group(0)
+    lang_match = re.search(r'\blang\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]*)', tag, re.I)
+    if lang_match:
+        value = lang_match.group(1).strip("\"'")
+        if value.strip():
+            return document
+        replacement = tag[: lang_match.start()] + 'lang="en"' + tag[lang_match.end() :]
+    else:
+        replacement = tag[:-1].rstrip() + ' lang="en">'
+    return document[: match.start()] + replacement + document[match.end() :]
+
+
+def _add_or_replace_title(html: str) -> str:
+    document = _ensure_head_tag(html)
+    title_match = re.search(r"<title\b[^>]*>(.*?)</title\s*>", document, re.I | re.S)
+    if not title_match:
+        return _insert_head_child(document, "<title>CodeUp Project</title>")
+    if title_match.group(1).strip():
+        return document
+    replacement = "<title>CodeUp Project</title>"
+    return document[: title_match.start()] + replacement + document[title_match.end() :]
 
 
 def _insert_head_child(html: str, markup: str) -> str:
     document = _ensure_head_tag(html)
     return re.sub(r"</head\s*>", f"{markup}\n</head>", document, count=1, flags=re.I)
+
+
+def _missing_form_label_targets(html: str) -> set[tuple[str, int]]:
+    root = parse_html(html)
+    labels = iter_nodes(root, {"label"})
+    label_targets = {label.attrs.get("for", "") for label in labels if label.attrs.get("for")}
+    targets: set[tuple[str, int]] = set()
+    for control in iter_nodes(root, {"input", "textarea", "select"}):
+        control_id = control.attrs.get("id", "")
+        if accessible_name(control) or (control_id and control_id in label_targets):
+            continue
+        targets.add((control.tag, control.index))
+    return targets
+
+
+def _add_or_replace_aria_label(tag: str, label: str = "Input field") -> str:
+    aria_match = re.search(r'\baria-label\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]*)', tag, re.I)
+    if aria_match:
+        value = aria_match.group(1).strip("\"'")
+        if value.strip():
+            return tag
+        return tag[: aria_match.start()] + f'aria-label="{label}"' + tag[aria_match.end() :]
+    return re.sub(r"^<([a-zA-Z][\w:-]*)\b", rf'<\1 aria-label="{label}"', tag, count=1)
 
 
 def apply_audit_fixes(
@@ -615,13 +660,17 @@ def apply_audit_fixes(
         updated = "<!doctype html>\n" + updated.lstrip()
         fixed.append("missing_doctype")
     if "missing_lang" in selected_ids:
+        previous = updated
         updated = _add_or_replace_lang(updated)
-        fixed.append("missing_lang")
+        if updated != previous:
+            fixed.append("missing_lang")
     if "missing_title" in selected_ids and not (
         first_node(parse_html(updated), "title") and first_node(parse_html(updated), "title").text
     ):
-        updated = _insert_head_child(updated, "<title>CodeUp Project</title>")
-        fixed.append("missing_title")
+        previous = updated
+        updated = _add_or_replace_title(updated)
+        if updated != previous:
+            fixed.append("missing_title")
     if (
         "missing_viewport" in selected_ids
         and 'name="viewport"' not in updated.lower()
@@ -639,12 +688,20 @@ def apply_audit_fixes(
 
         def add_alt(match: re.Match[str]) -> str:
             tag = match.group(0)
+            alt_match = re.search(r'\balt\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]*)', tag, re.I)
+            if alt_match:
+                value = alt_match.group(1).strip("\"'")
+                if value.strip():
+                    return tag
+                return tag[: alt_match.start()] + 'alt="Describe this image"' + tag[alt_match.end() :]
             if re.search(r"\balt\s*=", tag, re.I):
                 return tag
             return tag[:-1].rstrip(" /") + ' alt="Describe this image">'
 
+        previous = updated
         updated = re.sub(r"<img\b[^>]*>", add_alt, updated, flags=re.I)
-        fixed.append("missing_image_alt")
+        if updated != previous:
+            fixed.append("missing_image_alt")
     if "unnamed_button" in selected_ids:
         updated = re.sub(r"<button\b([^>]*)>\s*</button>", r"<button\1>Button</button>", updated, flags=re.I)
         fixed.append("unnamed_button")
@@ -661,13 +718,20 @@ def apply_audit_fixes(
             updated = f"<main>\n{updated}\n</main>"
         fixed.append("missing_landmarks")
     if "missing_form_label" in selected_ids:
-        updated = re.sub(
-            r"<input\b(?![^>]*(?:aria-label|title|placeholder))([^>]*)>",
-            r'<input aria-label="Input field"\1>',
-            updated,
-            flags=re.I,
-        )
-        fixed.append("missing_form_label")
+        targets = _missing_form_label_targets(updated)
+        counts: dict[str, int] = {}
+
+        def label_control(match: re.Match[str]) -> str:
+            tag_name = match.group(1).lower()
+            counts[tag_name] = counts.get(tag_name, 0) + 1
+            if (tag_name, counts[tag_name]) not in targets:
+                return match.group(0)
+            return _add_or_replace_aria_label(match.group(0))
+
+        previous = updated
+        updated = re.sub(r"<(input|textarea|select)\b[^>]*>", label_control, updated, flags=re.I)
+        if updated != previous:
+            fixed.append("missing_form_label")
 
     return updated, sorted(set(fixed)), audit_html(updated)
 
