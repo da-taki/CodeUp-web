@@ -4,9 +4,107 @@ from __future__ import annotations
 
 import re
 from html import escape
+from html.parser import HTMLParser
 from typing import Any
 
 from codeup.models import AuditResult
+
+
+class HtmlNode:
+    def __init__(self, tag: str, attrs: dict[str, str] | None = None, parent: HtmlNode | None = None) -> None:
+        self.tag = tag.lower()
+        self.attrs = attrs or {}
+        self.parent = parent
+        self.children: list[HtmlNode] = []
+        self.text_parts: list[str] = []
+        self.index = 0
+
+    @property
+    def text(self) -> str:
+        chunks = list(self.text_parts)
+        for child in self.children:
+            chunks.append(child.text)
+        return re.sub(r"\s+", " ", " ".join(chunks)).strip()
+
+    def selector(self) -> str:
+        if self.attrs.get("id"):
+            return f"#{self.attrs['id']}"
+        label = self.attrs.get("aria-label") or self.attrs.get("alt") or self.text
+        suffix = f"[{label[:32]}]" if label else f":nth-of-type({self.index})"
+        return f"{self.tag}{suffix}"
+
+
+class _TreeBuilder(HTMLParser):
+    VOID_TAGS = {
+        "area",
+        "base",
+        "br",
+        "col",
+        "embed",
+        "hr",
+        "img",
+        "input",
+        "link",
+        "meta",
+        "param",
+        "source",
+        "track",
+        "wbr",
+    }
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.root = HtmlNode("document")
+        self.stack = [self.root]
+        self.counts: dict[str, int] = {}
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        clean_attrs = {name.lower(): value or "" for name, value in attrs}
+        node = HtmlNode(tag, clean_attrs, self.stack[-1])
+        self.counts[node.tag] = self.counts.get(node.tag, 0) + 1
+        node.index = self.counts[node.tag]
+        self.stack[-1].children.append(node)
+        if node.tag not in self.VOID_TAGS:
+            self.stack.append(node)
+
+    def handle_endtag(self, tag: str) -> None:
+        lowered = tag.lower()
+        for index in range(len(self.stack) - 1, 0, -1):
+            if self.stack[index].tag == lowered:
+                del self.stack[index:]
+                break
+
+    def handle_data(self, data: str) -> None:
+        if data.strip():
+            self.stack[-1].text_parts.append(data)
+
+
+def parse_html(html: str) -> HtmlNode:
+    parser = _TreeBuilder()
+    try:
+        parser.feed(html or "")
+        parser.close()
+    except Exception:
+        pass
+    return parser.root
+
+
+def iter_nodes(root: HtmlNode, tags: set[str] | None = None) -> list[HtmlNode]:
+    found = []
+
+    def visit(node: HtmlNode) -> None:
+        if tags is None or node.tag in tags:
+            found.append(node)
+        for child in node.children:
+            visit(child)
+
+    visit(root)
+    return found
+
+
+def first_node(root: HtmlNode, tag: str) -> HtmlNode | None:
+    nodes = iter_nodes(root, {tag})
+    return nodes[0] if nodes else None
 
 
 def wrap_html(fragment: str) -> str:
@@ -36,9 +134,8 @@ def extract_html(text: str) -> str:
 
 
 def html_text(html: str) -> str:
-    text = re.sub(r"<(script|style)\b[^>]*>.*?</\1>", " ", html, flags=re.IGNORECASE | re.DOTALL)
-    text = re.sub(r"<[^>]+>", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
+    root = parse_html(re.sub(r"<(script|style)\b[^>]*>.*?</\1>", " ", html, flags=re.IGNORECASE | re.DOTALL))
+    return root.text
 
 
 def safe_page_filename(name: str) -> str:
@@ -139,19 +236,13 @@ def contrast_pairs(html: str) -> list[dict[str, Any]]:
 
 
 def screen_reader_checks(html: str) -> list[dict[str, Any]]:
-    lowered = html.lower()
-    headings = [int(level) for level in re.findall(r"<h([1-6])\b", html, flags=re.IGNORECASE)]
+    root = parse_html(html)
+    headings = [int(node.tag[1]) for node in iter_nodes(root) if re.fullmatch(r"h[1-6]", node.tag)]
     skipped_heading = any(next_level - level > 1 for level, next_level in zip(headings, headings[1:], strict=False))
-    controls = re.findall(
-        r"<(button|a|input|textarea|select)\b([^>]*)>(.*?)</\1>|<(input)\b([^>]*)>",
-        html,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
+    controls = iter_nodes(root, {"button", "a", "input", "textarea", "select"})
     unnamed = 0
-    for match in controls:
-        attrs = (match[1] or "") + " " + (match[4] or "")
-        text = html_text(match[2] or "")
-        if not text and not re.search(r"\b(aria-label|title|placeholder|alt)\s*=", attrs, re.IGNORECASE):
+    for node in controls:
+        if not accessible_name(node):
             unnamed += 1
     return [
         {
@@ -163,7 +254,7 @@ def screen_reader_checks(html: str) -> list[dict[str, Any]]:
         },
         {
             "pattern": "JAWS landmark navigation",
-            "passed": any(tag in lowered for tag in ("<main", "<nav", "<header", "<footer")),
+            "passed": bool(iter_nodes(root, {"main", "nav", "header", "footer"})),
             "note": "Semantic landmarks are present.",
         },
         {
@@ -177,12 +268,7 @@ def screen_reader_checks(html: str) -> list[dict[str, Any]]:
 
 
 def screen_reader_transcript(html: str) -> list[dict[str, str]]:
-    body = re.search(r"<body\b[^>]*>(.*?)</body>", html, flags=re.IGNORECASE | re.DOTALL)
-    source = body.group(1) if body else html
-    token_pattern = re.compile(
-        r"<(header|nav|main|footer|section|article|form|h[1-6]|a|button|img|input|textarea|select)\b([^>]*)>",
-        flags=re.IGNORECASE,
-    )
+    root = parse_html(html)
     role_names = {
         "header": "banner",
         "nav": "navigation",
@@ -199,21 +285,25 @@ def screen_reader_transcript(html: str) -> list[dict[str, str]]:
         "select": "menu",
     }
     transcript = []
-    for match in token_pattern.finditer(source):
-        tag = match.group(1).lower()
-        attrs = match.group(2) or ""
-        inner = ""
-        if tag not in {"img", "input"}:
-            close = re.search(rf"</{tag}>", source[match.end() :], flags=re.IGNORECASE)
-            if close:
-                inner = source[match.end() : match.end() + close.start()]
-        text = (
-            re.search(r"\baria-label\s*=\s*['\"]([^'\"]+)", attrs, re.IGNORECASE)
-            or re.search(r"\balt\s*=\s*['\"]([^'\"]*)", attrs, re.IGNORECASE)
-            or re.search(r"\bplaceholder\s*=\s*['\"]([^'\"]+)", attrs, re.IGNORECASE)
-            or re.search(r"\btitle\s*=\s*['\"]([^'\"]+)", attrs, re.IGNORECASE)
-        )
-        name = text.group(1).strip() if text else html_text(inner)
+    tags = {
+        "header",
+        "nav",
+        "main",
+        "footer",
+        "section",
+        "article",
+        "form",
+        "a",
+        "button",
+        "img",
+        "input",
+        "textarea",
+        "select",
+    }
+    tags.update({f"h{level}" for level in range(1, 7)})
+    for node in iter_nodes(root, tags):
+        tag = node.tag
+        name = accessible_name(node)
         if tag.startswith("h") and len(tag) == 2:
             role = f"heading level {tag[1]}"
             announcement = f"{role}, {name or 'unnamed'}"
@@ -230,37 +320,194 @@ def screen_reader_transcript(html: str) -> list[dict[str, str]]:
     return transcript
 
 
+def accessible_name(node: HtmlNode) -> str:
+    for attr in ("aria-label", "alt", "placeholder", "title", "value"):
+        if node.attrs.get(attr):
+            return node.attrs[attr].strip()
+    return node.text
+
+
+def _issue(
+    issue_id: str,
+    severity: str,
+    description: str,
+    suggestion: str,
+    selector: str = "document",
+    autofix: bool = False,
+) -> dict[str, Any]:
+    return {
+        "id": issue_id,
+        "severity": severity,
+        "description": description,
+        "selector": selector,
+        "suggested_fix": suggestion,
+        "autofix": autofix,
+    }
+
+
 def audit_html(html: str) -> AuditResult:
+    root = parse_html(html)
     lowered = html.lower()
-    images = re.findall(r"<img\b[^>]*>", html, flags=re.IGNORECASE)
-    links = re.findall(r"<a\b[^>]*>(.*?)</a>", html, flags=re.IGNORECASE | re.DOTALL)
-    buttons = re.findall(r"<button\b[^>]*>(.*?)</button>", html, flags=re.IGNORECASE | re.DOTALL)
-    headings = re.findall(r"<h([1-6])\b[^>]*>(.*?)</h\1>", html, flags=re.IGNORECASE | re.DOTALL)
+    html_node = first_node(root, "html")
+    images = iter_nodes(root, {"img"})
+    links = iter_nodes(root, {"a"})
+    buttons = iter_nodes(root, {"button"})
+    headings = [node for node in iter_nodes(root) if re.fullmatch(r"h[1-6]", node.tag)]
+    labels = iter_nodes(root, {"label"})
+    inputs = iter_nodes(root, {"input", "textarea", "select"})
+    label_targets = {label.attrs.get("for", "") for label in labels if label.attrs.get("for")}
+    landmark_nodes = iter_nodes(root, {"main", "section", "article", "header", "footer", "nav"})
+    form_label_ok = True
+    for control in inputs:
+        control_id = control.attrs.get("id", "")
+        if accessible_name(control) or (control_id and control_id in label_targets):
+            continue
+        form_label_ok = False
+        break
     checks = [
         ("Document starts with doctype", lowered.lstrip().startswith("<!doctype html")),
-        ("Page has a language attribute", bool(re.search(r"<html\b[^>]*\blang=", html, re.IGNORECASE))),
-        ("Page has a title", bool(re.search(r"<title>\s*[^<]+", html, re.IGNORECASE))),
+        ("Page has a language attribute", bool(html_node and html_node.attrs.get("lang"))),
+        ("Page has a title", bool(first_node(root, "title") and first_node(root, "title").text)),
         ("Page has a viewport meta tag", 'name="viewport"' in lowered or "name='viewport'" in lowered),
-        ("Page has an h1 heading", bool(re.search(r"<h1\b", html, re.IGNORECASE))),
+        ("Page has an h1 heading", any(node.tag == "h1" for node in headings)),
         (
             "Images have alt text",
-            all(re.search(r"\balt\s*=\s*['\"][^'\"]+['\"]", img, re.IGNORECASE) for img in images),
+            all(bool(image.attrs.get("alt", "").strip()) for image in images),
         ),
-        ("Buttons have readable labels", all(html_text(btn) for btn in buttons)),
-        ("Links have readable labels", all(html_text(link) for link in links)),
+        ("Buttons have readable labels", all(accessible_name(button) for button in buttons)),
+        ("Links have readable labels", all(accessible_name(link) for link in links)),
         (
             "Uses semantic sections",
-            any(tag in lowered for tag in ("<main", "<section", "<article", "<header", "<footer")),
+            bool(landmark_nodes),
         ),
+        ("Form controls have labels", form_label_ok),
     ]
     passed = sum(1 for _, ok in checks if ok)
-    issues = [label for label, ok in checks if not ok]
+    issues = []
+    if not lowered.lstrip().startswith("<!doctype html"):
+        issues.append(
+            _issue(
+                "missing_doctype",
+                "medium",
+                "Document does not start with a doctype.",
+                "Add <!doctype html> at the top.",
+                autofix=True,
+            )
+        )
+    if not (html_node and html_node.attrs.get("lang")):
+        issues.append(
+            _issue(
+                "missing_lang",
+                "high",
+                "The html element has no language attribute.",
+                'Add lang="en" to the html element.',
+                "html",
+                True,
+            )
+        )
+    title = first_node(root, "title")
+    if not (title and title.text):
+        issues.append(
+            _issue(
+                "missing_title",
+                "high",
+                "The page has no readable title.",
+                "Add a short title in the head.",
+                "title",
+                True,
+            )
+        )
+    if 'name="viewport"' not in lowered and "name='viewport'" not in lowered:
+        issues.append(
+            _issue(
+                "missing_viewport",
+                "medium",
+                "The page has no viewport meta tag.",
+                "Add a responsive viewport meta tag.",
+                "head",
+                True,
+            )
+        )
+    if not any(node.tag == "h1" for node in headings):
+        issues.append(
+            _issue("missing_h1", "high", "The page has no h1 heading.", "Add one h1 that names the page.", "body", True)
+        )
+    for image in images:
+        if not image.attrs.get("alt", "").strip():
+            issues.append(
+                _issue(
+                    "missing_image_alt",
+                    "high",
+                    "An image is missing alt text.",
+                    "Add meaningful alt text.",
+                    image.selector(),
+                    True,
+                )
+            )
+    for button in buttons:
+        if not accessible_name(button):
+            issues.append(
+                _issue(
+                    "unnamed_button",
+                    "high",
+                    "A button has no readable label.",
+                    "Add visible text or an aria-label.",
+                    button.selector(),
+                    True,
+                )
+            )
+    for link in links:
+        if not accessible_name(link):
+            issues.append(
+                _issue(
+                    "unnamed_link",
+                    "high",
+                    "A link has no readable label.",
+                    "Add link text or an aria-label.",
+                    link.selector(),
+                    True,
+                )
+            )
+    if not landmark_nodes:
+        issues.append(
+            _issue(
+                "missing_landmarks",
+                "medium",
+                "The page does not use semantic landmark sections.",
+                "Wrap body content in main and section landmarks.",
+                "body",
+                True,
+            )
+        )
+    if not form_label_ok:
+        issues.append(
+            _issue(
+                "missing_form_label",
+                "high",
+                "A form control has no accessible label.",
+                "Add a label or aria-label.",
+                "form",
+                True,
+            )
+        )
+    heading_levels = [int(node.tag[1]) for node in headings]
+    if any(next_level - level > 1 for level, next_level in zip(heading_levels, heading_levels[1:], strict=False)):
+        issues.append(
+            _issue(
+                "heading_skip",
+                "medium",
+                "Heading levels skip in a way that can confuse navigation.",
+                "Use heading levels in order.",
+                "headings",
+                False,
+            )
+        )
     suggestions: list[str] = []
     if not headings:
         suggestions.append("Add headings so screen reader users can skim the page.")
-    if images and "Images have alt text" in issues:
+    if any(issue["id"] == "missing_image_alt" for issue in issues):
         suggestions.append("Add meaningful alt text to every image.")
-    if "Uses semantic sections" in issues:
+    if any(issue["id"] == "missing_landmarks" for issue in issues):
         suggestions.append("Use main, section, header, and footer landmarks.")
     if not suggestions:
         suggestions.append("Preview the page on mobile and ask a student to describe what they hear.")
@@ -268,6 +515,16 @@ def audit_html(html: str) -> AuditResult:
     src = screen_reader_checks(html)
     srt = screen_reader_transcript(html)
     if any(not pair["passes_aa"] for pair in cp):
+        issues.append(
+            _issue(
+                "low_contrast",
+                "high",
+                "At least one text/background color pair misses WCAG AA contrast.",
+                "Increase contrast to at least 4.5:1.",
+                "style",
+                False,
+            )
+        )
         suggestions.append("Increase text/background contrast until each normal text pair is at least 4.5:1.")
     if any(not check["passed"] for check in src):
         suggestions.append(
@@ -284,6 +541,135 @@ def audit_html(html: str) -> AuditResult:
         screen_reader_checks=src,
         screen_reader_transcript=srt,
     )
+
+
+def summarize_html_changes(before: str, after: str) -> list[str]:
+    before_root = parse_html(before)
+    after_root = parse_html(after)
+
+    def counts(root: HtmlNode) -> dict[str, int]:
+        tags = [node.tag for node in iter_nodes(root)]
+        return {
+            "headings": sum(1 for tag in tags if re.fullmatch(r"h[1-6]", tag)),
+            "buttons": tags.count("button"),
+            "links": tags.count("a"),
+            "images": tags.count("img"),
+            "forms": tags.count("form"),
+            "landmarks": sum(1 for tag in tags if tag in {"main", "nav", "header", "footer", "section", "article"}),
+        }
+
+    before_counts = counts(before_root)
+    after_counts = counts(after_root)
+    summary = []
+    for label, after_count in after_counts.items():
+        before_count = before_counts[label]
+        if after_count > before_count:
+            summary.append(f"Added {after_count - before_count} {label}.")
+        elif after_count < before_count:
+            summary.append(f"Removed {before_count - after_count} {label}.")
+
+    before_titles = {node.text for node in iter_nodes(before_root) if re.fullmatch(r"h[1-6]", node.tag)}
+    after_titles = {node.text for node in iter_nodes(after_root) if re.fullmatch(r"h[1-6]", node.tag)}
+    added_headings = sorted(title for title in after_titles - before_titles if title)
+    removed_headings = sorted(title for title in before_titles - after_titles if title)
+    if added_headings:
+        summary.append("New headings: " + ", ".join(added_headings[:5]) + ".")
+    if removed_headings:
+        summary.append("Removed headings: " + ", ".join(removed_headings[:5]) + ".")
+    return summary or ["No major structural changes detected."]
+
+
+def _ensure_head_tag(html: str) -> str:
+    document = wrap_html(html)
+    if not re.search(r"<head\b", document, re.I):
+        document = re.sub(r"(<html\b[^>]*>)", r"\1\n<head></head>", document, count=1, flags=re.I)
+    return document
+
+
+def _add_or_replace_lang(html: str) -> str:
+    document = wrap_html(html)
+    if re.search(r"<html\b[^>]*\blang\s*=", document, re.I):
+        return document
+    return re.sub(r"<html\b", '<html lang="en"', document, count=1, flags=re.I)
+
+
+def _insert_head_child(html: str, markup: str) -> str:
+    document = _ensure_head_tag(html)
+    return re.sub(r"</head\s*>", f"{markup}\n</head>", document, count=1, flags=re.I)
+
+
+def apply_audit_fixes(
+    html: str, issue_id: str | None = None, fix_all: bool = False
+) -> tuple[str, list[str], AuditResult]:
+    audit = audit_html(html)
+    selected = [issue for issue in audit.issues if issue.get("autofix")]
+    if issue_id:
+        selected = [issue for issue in selected if issue["id"] == issue_id]
+    elif not fix_all:
+        selected = selected[:1]
+    selected_ids = {issue["id"] for issue in selected}
+    updated = html
+    fixed: list[str] = []
+
+    if "missing_doctype" in selected_ids and not updated.lstrip().lower().startswith("<!doctype html"):
+        updated = "<!doctype html>\n" + updated.lstrip()
+        fixed.append("missing_doctype")
+    if "missing_lang" in selected_ids:
+        updated = _add_or_replace_lang(updated)
+        fixed.append("missing_lang")
+    if "missing_title" in selected_ids and not (
+        first_node(parse_html(updated), "title") and first_node(parse_html(updated), "title").text
+    ):
+        updated = _insert_head_child(updated, "<title>CodeUp Project</title>")
+        fixed.append("missing_title")
+    if (
+        "missing_viewport" in selected_ids
+        and 'name="viewport"' not in updated.lower()
+        and "name='viewport'" not in updated.lower()
+    ):
+        updated = _insert_head_child(updated, '<meta name="viewport" content="width=device-width, initial-scale=1">')
+        fixed.append("missing_viewport")
+    if "missing_h1" in selected_ids and not any(node.tag == "h1" for node in iter_nodes(parse_html(updated))):
+        if re.search(r"<body\b[^>]*>", updated, re.I):
+            updated = re.sub(r"(<body\b[^>]*>)", r"\1\n<h1>Untitled Page</h1>", updated, count=1, flags=re.I)
+        else:
+            updated = f"<h1>Untitled Page</h1>\n{updated}"
+        fixed.append("missing_h1")
+    if "missing_image_alt" in selected_ids:
+
+        def add_alt(match: re.Match[str]) -> str:
+            tag = match.group(0)
+            if re.search(r"\balt\s*=", tag, re.I):
+                return tag
+            return tag[:-1].rstrip(" /") + ' alt="Describe this image">'
+
+        updated = re.sub(r"<img\b[^>]*>", add_alt, updated, flags=re.I)
+        fixed.append("missing_image_alt")
+    if "unnamed_button" in selected_ids:
+        updated = re.sub(r"<button\b([^>]*)>\s*</button>", r"<button\1>Button</button>", updated, flags=re.I)
+        fixed.append("unnamed_button")
+    if "unnamed_link" in selected_ids:
+        updated = re.sub(r"<a\b([^>]*)>\s*</a>", r'<a\1 aria-label="Link">Link</a>', updated, flags=re.I)
+        fixed.append("unnamed_link")
+    if "missing_landmarks" in selected_ids and not iter_nodes(
+        parse_html(updated), {"main", "section", "article", "header", "footer", "nav"}
+    ):
+        if re.search(r"<body\b[^>]*>", updated, re.I):
+            updated = re.sub(r"(<body\b[^>]*>)", r"\1\n<main>", updated, count=1, flags=re.I)
+            updated = re.sub(r"</body\s*>", r"</main>\n</body>", updated, count=1, flags=re.I)
+        else:
+            updated = f"<main>\n{updated}\n</main>"
+        fixed.append("missing_landmarks")
+    if "missing_form_label" in selected_ids:
+        updated = re.sub(
+            r"<input\b(?![^>]*(?:aria-label|title|placeholder))([^>]*)>",
+            r'<input aria-label="Input field"\1>',
+            updated,
+            flags=re.I,
+        )
+        fixed.append("missing_form_label")
+
+    return updated, sorted(set(fixed)), audit_html(updated)
 
 
 def fallback_site(prompt: str) -> str:

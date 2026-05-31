@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 __version__ = "1.0.0-html"
 
@@ -15,12 +16,15 @@ MAX_REQUEST_SIZE = 1_000_000
 MAX_HTML_SIZE = 100_000
 MAX_MESSAGE_SIZE = 20_000
 MAX_MEMORY_ENTRIES = 100
+MAX_PROJECT_VERSIONS = 50
 MEMORY_TYPES = {"fact", "instruction", "context"}
 
 AI_TIMEOUT = int(os.environ.get("AI_TIMEOUT", "30"))
 AI_MAX_CONCURRENT = int(os.environ.get("AI_MAX_CONCURRENT", "3"))
 
-DATA_DIR = os.environ.get("DATA_DIR", ".")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_DATA_DIR = REPO_ROOT / "instance" / "data"
+DATA_DIR = os.environ.get("DATA_DIR", str(DEFAULT_DATA_DIR))
 
 SESSION_ARTIFACT_MAX_AGE_SECONDS = int(os.environ.get("SESSION_ARTIFACT_MAX_AGE", str(7 * 24 * 3600)))
 

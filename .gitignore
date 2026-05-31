@@ -8,8 +8,12 @@ venv/
 dist/
 build/
 .env
+instance/
 html_memory/
 student_sites/
+projects/
+exports/
+tmp/
 *.tmp
 .mypy_cache/
 .ruff_cache/

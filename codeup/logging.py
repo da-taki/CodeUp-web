@@ -7,7 +7,6 @@ from flask import g, has_request_context, request
 
 
 class RequestContextFilter(logging.Filter):
-
     def filter(self, record: logging.LogRecord) -> bool:
         if has_request_context():
             record.request_id = getattr(g, "request_id", "-")
