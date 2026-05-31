@@ -197,7 +197,12 @@
       ...options,
       headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
     });
-    const data = await response.json();
+    let data;
+    try {
+      data = await response.json();
+    } catch (e) {
+      throw new Error(`Server error (${response.status}). Please try again.`);
+    }
     if (!data.success) throw new Error(data.error || 'Request failed.');
     return data;
   }
@@ -1973,6 +1978,18 @@
       document.body.classList.remove('cvd-protanopia', 'cvd-deuteranopia', 'cvd-tritanopia', 'cvd-high-contrast');
       if (mode !== 'default') document.body.classList.add('cvd-' + mode);
     });
+    $('nightToggle')?.addEventListener('click', function () {
+      const active = document.body.classList.toggle('theme-night');
+      this.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    $('dyslexiaToggle')?.addEventListener('click', function () {
+      const active = document.body.classList.toggle('theme-dyslexia');
+      this.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    $('motionToggle')?.addEventListener('click', function () {
+      const active = document.body.classList.toggle('theme-reduced-motion');
+      this.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
     $('demoModeBtn')?.addEventListener('click', toggleDemoMode);
     $('projectSaveBtn')?.addEventListener('click', renameProject);
     $('projectNewBtn')?.addEventListener('click', createNamedProject);
@@ -2101,7 +2118,7 @@
     await ensureProject();
     initVoiceMemoryEngine();
     if (!state.versions.length) snapshotVersion('Initial version');
-    await previewHtml(false);
+    try { await previewHtml(false); } catch (e) {}
     setTimeout(startWakeListener, 600);
     speak(t(
       `CodeUp HTML ready. Say ${state.wakeWord} to start voice commands, or use the Voice button.`,

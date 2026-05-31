@@ -68,7 +68,8 @@ body.cu-body::before {
 }
 body.cu-body.theme-night::before { mix-blend-mode: screen; opacity: 0.16; }
 body.cu-body.theme-reduced-motion::before,
-body.cu-body.theme-high-contrast::before { display: none; }
+body.cu-body.theme-high-contrast::before,
+body.cu-body.cvd-high-contrast::before { display: none; }
 
 .cu-body {
   min-height: 100vh; background: var(--bg-main);
