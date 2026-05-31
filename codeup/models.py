@@ -1,5 +1,3 @@
-"""Typed domain models for request/response data and session memory."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
