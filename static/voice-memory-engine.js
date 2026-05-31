@@ -310,6 +310,7 @@
 
     var langSel = (document.getElementById('languageSelector') || {}).value || 'en';
     var currentHtml = options.currentHtml || '';
+    var projectId = options.projectId || '';
 
     addToHistory('user', prompt);
 
@@ -321,6 +322,7 @@
           prompt: prompt,
           current_html: currentHtml,
           language: langSel,
+          project_id: projectId,
         }),
         signal: controller.signal,
       });

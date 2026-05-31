@@ -577,12 +577,13 @@
         }
         const blob = await response.blob();
         const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
+        const objectUrl = URL.createObjectURL(blob);
+        link.href = objectUrl;
         link.download = slugify(state.projectName || 'codeup-site') + '.zip';
         document.body.appendChild(link);
         link.click();
         link.remove();
-        setTimeout(() => URL.revokeObjectURL(link.href), 500);
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 500);
         writeOutput(t('Project ZIP exported.', 'Project ZIP export ho gayi.'), true);
         return;
       } catch (error) {
@@ -593,12 +594,13 @@
     const title = (html.match(/<title>\s*([^<]+)/i) || [])[1] || 'codeup-site';
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
+    const objectUrl = URL.createObjectURL(blob);
+    link.href = objectUrl;
     link.download = slugify(title) + '.html';
     document.body.appendChild(link);
     link.click();
     link.remove();
-    setTimeout(() => URL.revokeObjectURL(link.href), 500);
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 500);
     writeOutput(t('HTML file exported.', 'HTML file export ho gayi.'), true);
   }
 
@@ -883,6 +885,11 @@
       setHtml(data.code);
       snapshotVersion('Applied audit autofix', data.summary || []);
       state.lastAudit = data.audit;
+      const fixableRemaining = (data.audit.issues || []).filter(item => item.autofix);
+      const one = $('auditFixOneBtn');
+      const all = $('auditFixAllBtn');
+      if (one) one.disabled = fixableRemaining.length === 0;
+      if (all) all.disabled = fixableRemaining.length === 0;
       await publish(data.code);
       const fixed = (data.fixed || []).join(', ') || 'nothing';
       writeOutput(`Applied safe audit fixes: ${fixed}.\n${(data.summary || []).join('\n')}`, shouldSpeak);
@@ -1096,6 +1103,7 @@
       updateStateIndicator('PROCESSING');
       const result = await window.VoiceMemoryEngine.streamAIResponse(normalized, {
         currentHtml: getHtml(),
+        projectId: state.projectId,
       });
       if (result) {
         const html = result.indexOf('<') !== -1 ? result : '';
@@ -1547,7 +1555,7 @@
       return;
     }
     if (lower.includes('export') || lower.includes('download')) {
-      exportHtml();
+      await exportHtml();
       return;
     }
     if (lower.includes('reset session') || lower === 'reset') {
@@ -1579,7 +1587,10 @@
   async function handleStudentText(raw) {
     const text = raw.trim();
     if (!text) {
-      await chatWithAI(text, true);
+      writeOutput(t(
+        'Type or say what you want to build, or ask a question about your website.',
+        'Aap kya banana chahte hain likhiye ya apni website ke baare mein poochiye.'
+      ), true);
       return;
     }
     state.wakeUntil = Date.now() + 45000;
@@ -1956,6 +1967,11 @@
         stopWakeListener();
         setTimeout(startWakeListener, 300);
       }
+    });
+    $('colorVisionMode')?.addEventListener('change', function () {
+      const mode = this.value;
+      document.body.classList.remove('cvd-protanopia', 'cvd-deuteranopia', 'cvd-tritanopia', 'cvd-high-contrast');
+      if (mode !== 'default') document.body.classList.add('cvd-' + mode);
     });
     $('demoModeBtn')?.addEventListener('click', toggleDemoMode);
     $('projectSaveBtn')?.addEventListener('click', renameProject);

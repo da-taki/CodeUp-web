@@ -9,28 +9,32 @@
    These swap the rust accent for a hue that's distinguishable
    in each mode while keeping the parchment background. */
 
-body.theme-protanopia {
+body.theme-protanopia,
+body.cvd-protanopia {
   --accent:       #1d3a5f;   /* ledger blue — safe for red-blind */
   --accent-hover: #122847;
   --accent-soft:  rgba(29, 58, 95, 0.12);
   --danger:       #2c1d10;
 }
 
-body.theme-deuteranopia {
+body.theme-deuteranopia,
+body.cvd-deuteranopia {
   --accent:       #2d4f8a;   /* shifted blue — safe for green-blind */
   --accent-hover: #1a3766;
   --accent-soft:  rgba(45, 79, 138, 0.12);
   --success:      #6e1f0a;   /* swap success to rust */
 }
 
-body.theme-tritanopia {
+body.theme-tritanopia,
+body.cvd-tritanopia {
   --accent:       #8b1a05;   /* deeper rust — safe for blue-blind */
   --accent-hover: #5a0e02;
   --accent-soft:  rgba(139, 26, 5, 0.12);
 }
 
 /* ------- High contrast — pure black/white, no grain ------- */
-body.theme-high-contrast {
+body.theme-high-contrast,
+body.cvd-high-contrast {
   --bg-main:  #ffffff;
   --bg-panel: #ffffff;
   --bg-soft:  #f4f4f4;
@@ -49,13 +53,16 @@ body.theme-high-contrast {
   --danger:  #8b0000;
   --warning: #6b3a00;
 }
-body.theme-high-contrast .cu-button-primary {
+body.theme-high-contrast .cu-button-primary,
+body.cvd-high-contrast .cu-button-primary {
   background: #000; color: #fff; border-color: #000;
 }
-body.theme-high-contrast .cu-output {
+body.theme-high-contrast .cu-output,
+body.cvd-high-contrast .cu-output {
   background: #000; color: #fff;
 }
-body.theme-high-contrast *:focus-visible {
+body.theme-high-contrast *:focus-visible,
+body.cvd-high-contrast *:focus-visible {
   outline: 4px solid #ff8a00 !important;
   outline-offset: 2px !important;
 }
