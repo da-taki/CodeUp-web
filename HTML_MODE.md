@@ -39,6 +39,14 @@ stored in Flask's signed session cookie. Do not expose the app in production
 without setting `CODEUP_ENV=production` and a long random `FLASK_SECRET_KEY`.
 Production mode also defaults `SESSION_COOKIE_SECURE` to true unless overridden.
 
+## Security
+
+All responses include security headers (CSP, X-Content-Type-Options,
+X-Frame-Options, Referrer-Policy). Student-hosted pages receive a restrictive
+CSP that blocks external script/stylesheet loading and form submissions.
+External `<script src>` and remote `<link>` tags are stripped from generated
+HTML before serving.
+
 ## Accessibility
 
 Browser speech recognition and speech synthesis are part of the student-facing

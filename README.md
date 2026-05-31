@@ -93,6 +93,49 @@ In this mode, CodeUp still:
 - Per-session memory for recent prompts, current HTML, preview URL, and latest
   visual review
 
+## Architecture
+
+```
+CodeUp-web/
+├── app.py                  # Entry point (thin wrapper)
+├── codeup/                 # Backend package
+│   ├── app_factory.py      # Flask app factory (create_app)
+│   ├── config.py           # Environment config and constants
+│   ├── logging.py          # Structured logging with request/session IDs
+│   ├── models.py           # Typed domain models (HtmlMemory, AuditResult)
+│   ├── security.py         # CSRF, CSP headers, HTML sanitization
+│   ├── storage.py          # Storage abstraction (JSON file backend)
+│   ├── routes/             # Flask blueprints
+│   │   ├── core.py         # Home, healthz, voice-command
+│   │   ├── site.py         # Publish, preview, audit, reset
+│   │   ├── ai_routes.py    # Generate, chat, review, explain, fix, stream
+│   │   └── memory.py       # HTML memory, smart memory, build context
+│   └── services/           # Business logic
+│       ├── ai_service.py   # AI provider integration (xAI, Groq, Ollama)
+│       ├── fallbacks.py    # Offline fallback responses
+│       ├── html_utils.py   # HTML parsing, audit, accessibility checks
+│       └── memory_service.py  # Smart memory deduplication and context
+├── static/
+│   ├── codeup-html.js      # Main frontend application
+│   ├── voice-memory-engine.js  # Voice state machine and streaming
+│   └── style/              # CSS modules
+├── templates/
+│   └── index.html          # Single-page app template
+├── tests/                  # Test suite (100+ tests)
+├── .github/workflows/ci.yml  # GitHub Actions CI
+├── requirements.txt        # Runtime dependencies
+├── requirements-dev.txt    # Dev dependencies (includes linting)
+└── pyproject.toml          # Ruff linter and pytest config
+```
+
+The backend uses the **app factory pattern** (`create_app`) with Flask
+blueprints. Routes are organized by domain (core, site, AI, memory).
+Business logic lives in service modules. The storage layer abstracts file
+I/O so the backing store can be swapped without changing route handlers.
+
+Session artifacts (memory JSON files and hosted student sites) are cleaned
+up automatically based on `SESSION_ARTIFACT_MAX_AGE` (default: 7 days).
+
 ## Voice Engine
 
 The voice system uses a strict state machine with validated transitions:
@@ -228,7 +271,9 @@ AI_CLOUD_ENABLED=0
 The older `GEMINI_ENABLED=0` flag is still accepted as a compatibility alias,
 but new deployments should use `AI_CLOUD_ENABLED`.
 
-## Security Configuration
+## Security
+
+### Session Security
 
 For local development, CodeUp uses a development-only Flask secret if
 `FLASK_SECRET_KEY` is not set. For production, set:
@@ -243,9 +288,26 @@ When `CODEUP_ENV=production`, startup fails without `FLASK_SECRET_KEY`.
 `SESSION_COOKIE_SECURE` defaults to true in production and false for local HTTP
 development unless explicitly set.
 
+### Content Security Policy
+
+All responses include security headers (`X-Content-Type-Options`,
+`X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`).
+
+Student-hosted pages at `/student-site/` receive a restrictive CSP that blocks
+external script and stylesheet loading, prevents form submissions, and limits
+framing to same-origin. External `<script src="...">` and `<link>` tags
+referencing remote URLs are stripped before serving.
+
+### Cross-Origin Protection
+
+Mutating requests (POST/PUT/DELETE/PATCH) are validated against the `Origin`
+or `Referer` header. Requests from unlisted origins are rejected with 403.
+Additional allowed origins can be configured via the `ALLOWED_ORIGINS`
+environment variable (comma-separated).
+
 ## Quickstart
 
-Requirements: Python 3.8 or newer.
+Requirements: Python 3.10 or newer.
 
 ```text
 git clone https://github.com/da-taki/CodeUp-web.git
@@ -256,19 +318,76 @@ pip install -r requirements.txt
 python app.py
 ```
 
-## Development Checks
+## Development
+
+Install dev dependencies:
 
 ```text
-python -m py_compile app.py
+pip install -r requirements-dev.txt
+```
+
+### Running Tests
+
+```text
 python -m pytest -q
+```
+
+The test suite (106 tests) covers backend routes, session security, storage
+abstraction, cleanup logic, typed models, streaming, smart memory, voice engine
+state machine, Hindi detection, mixed-language splitting, micro-chunk
+extraction, interrupt behavior, duplicate prevention, and concurrency safety.
+JS engine tests run via Node `vm` sandboxes.
+
+### Linting
+
+```text
+ruff check codeup/ app.py tests/
+ruff format --check codeup/ app.py tests/
+```
+
+### Frontend Checks
+
+```text
 node --check static/voice-memory-engine.js
 node --check static/codeup-html.js
 ```
 
-The test suite (42 tests) covers the streaming endpoint, smart memory,
-voice engine state machine, Hindi detection, mixed-language splitting,
-micro-chunk extraction, interrupt behavior, duplicate prevention,
-and concurrency safety. JS engine tests run via Node `vm` sandboxes.
+### CI
+
+GitHub Actions runs lint, format checks, Python tests, and JS syntax validation
+on every push and PR to `main`. See `.github/workflows/ci.yml`.
+
+## Deployment
+
+For production deployment:
+
+1. Set required environment variables:
+   ```text
+   CODEUP_ENV=production
+   FLASK_SECRET_KEY=<generate a long random secret>
+   SESSION_COOKIE_SECURE=true
+   ```
+
+2. Set at least one AI provider key (or run with `AI_CLOUD_ENABLED=0`).
+
+3. Run behind a reverse proxy (nginx, Caddy) with HTTPS termination.
+   The app listens on port 5000 by default.
+
+4. For production WSGI, use gunicorn:
+   ```text
+   pip install gunicorn
+   gunicorn "codeup.app_factory:create_app()" --bind 0.0.0.0:5000
+   ```
+
+5. Session artifacts are cleaned up based on `SESSION_ARTIFACT_MAX_AGE`
+   (default: 7 days). Adjust via the environment variable if needed.
+
+## Contributing
+
+1. Fork the repo and create a feature branch.
+2. Install dev dependencies: `pip install -r requirements-dev.txt`
+3. Run `ruff check` and `pytest` before submitting a PR.
+4. CI must pass before merge.
 
 ## Why This Sister Project Exists
 
@@ -276,3 +395,9 @@ The original CodeUp experience taught coding through a different language and
 workflow. CodeUp HTML exists so blind and visually impaired students can build
 websites directly: the output is visual, local, explainable, reviewable,
 exportable, and easy to share in a classroom pilot.
+
+---
+
+*Note: AI assistance was used for portions of the codebase restructuring and
+reorganization. The project's main writing, framing, and initial README
+direction were authored by me.*

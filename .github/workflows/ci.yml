@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Lint Python with ruff
+        run: ruff check codeup/ app.py tests/
+
+      - name: Check Python formatting
+        run: ruff format --check codeup/ app.py tests/
+
+      - name: Compile check
+        run: python -m py_compile app.py
+
+      - name: Run Python tests
+        env:
+          FLASK_TESTING: "true"
+          GEMINI_ENABLED: "0"
+        run: python -m pytest -q --timeout=30
+
+      - name: Check JS syntax
+        run: |
+          node --check static/voice-memory-engine.js
+          node --check static/codeup-html.js
