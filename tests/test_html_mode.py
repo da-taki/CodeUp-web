@@ -157,6 +157,17 @@ def test_flask_debug_is_env_driven(monkeypatch):
     assert app_module._flask_debug_enabled() is False
 
 
+def test_env_int_falls_back_for_invalid_values(monkeypatch):
+    import codeup.config as config_module
+
+    monkeypatch.setenv("AI_TIMEOUT", "not-a-number")
+    assert config_module.env_int("AI_TIMEOUT", 30) == 30
+    monkeypatch.setenv("AI_TIMEOUT", "0")
+    assert config_module.env_int("AI_TIMEOUT", 30) == 1
+    monkeypatch.setenv("AI_TIMEOUT", "45")
+    assert config_module.env_int("AI_TIMEOUT", 30) == 45
+
+
 def test_publish_site_wraps_fragment_and_serves_locally(client):
     response = client.post("/publish-site", json={"html": "<h1>Science Fair</h1>"})
     data = response.get_json()

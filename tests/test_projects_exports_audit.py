@@ -137,10 +137,50 @@ def test_parser_audit_reports_structured_issues_and_autofix_snapshots(client):
     assert "<button>Button</button>" in fixed["code"]
     assert fixed["fixed"]
     assert fixed["summary"]
+    remaining_ids = {issue["id"] for issue in fixed["audit"]["issues"]}
+    assert "missing_title" not in remaining_ids
+    assert "missing_image_alt" not in remaining_ids
 
     versions = client.get(f"/projects/{project['id']}/versions").get_json()["versions"]
     assert versions[-2]["source"] == "audit-autofix-before"
     assert versions[-1]["source"] == "audit-autofix-after"
+
+
+def test_audit_autofix_repairs_empty_existing_lang_title_and_alt(client):
+    html = (
+        "<!doctype html><html lang=''><head><title> </title>"
+        "<meta name='viewport' content='width=device-width'></head>"
+        "<body><main><h1>Gallery</h1><img src='hero.png' alt='  '></main></body></html>"
+    )
+
+    fixed = client.post("/audit-autofix", json={"html": html, "fix_all": True}).get_json()
+    remaining_ids = {issue["id"] for issue in fixed["audit"]["issues"]}
+
+    assert fixed["success"] is True
+    assert 'lang="en"' in fixed["code"]
+    assert "<title>CodeUp Project</title>" in fixed["code"]
+    assert 'alt="Describe this image"' in fixed["code"]
+    assert {"missing_lang", "missing_title", "missing_image_alt"}.isdisjoint(remaining_ids)
+
+
+def test_audit_autofix_labels_only_unlabeled_form_controls(client):
+    html = (
+        "<!doctype html><html lang='en'><head><title>Form</title>"
+        "<meta name='viewport' content='width=device-width'></head>"
+        "<body><main><h1>Form</h1>"
+        "<label for='named'>Name</label><input id='named'>"
+        "<textarea></textarea><select aria-label='  '><option>One</option></select>"
+        "</main></body></html>"
+    )
+
+    fixed = client.post("/audit-autofix", json={"html": html, "fix_all": True}).get_json()
+    remaining_ids = {issue["id"] for issue in fixed["audit"]["issues"]}
+
+    assert fixed["success"] is True
+    assert "<input id='named'>" in fixed["code"]
+    assert '<textarea aria-label="Input field">' in fixed["code"]
+    assert '<select aria-label="Input field">' in fixed["code"]
+    assert "missing_form_label" not in remaining_ids
 
 
 def test_voice_command_uses_structured_intent_router(client):
