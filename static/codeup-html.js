@@ -478,6 +478,12 @@
     if (frame) frame.src = data.url + '?t=' + Date.now();
     const link = $('sitePreviewLink');
     if (link) link.href = data.url;
+    if (data.warnings && data.warnings.length) {
+      const warningText = 'Preview note: ' + data.warnings.join('; ') + '. Only inline scripts and styles are supported in the hosted preview.';
+      announce(warningText);
+      const output = $('output');
+      if (output) output.textContent = warningText + '\n' + (output.textContent || '');
+    }
     await saveMemory({ html, url: data.url, note: 'Published local preview' });
     return data.url;
   }

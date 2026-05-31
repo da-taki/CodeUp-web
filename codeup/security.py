@@ -82,8 +82,8 @@ def register_security_middleware(app: Flask) -> None:
                 "default-src 'none'; "
                 "style-src 'unsafe-inline'; "
                 "script-src 'unsafe-inline'; "
-                "img-src data: blob:; "
-                "font-src data:; "
+                "img-src 'self' data: blob:; "
+                "font-src 'self' data:; "
                 "form-action 'none'; "
                 "frame-ancestors 'self'"
             )
@@ -102,12 +102,26 @@ def register_security_middleware(app: Flask) -> None:
         return response
 
 
-def sanitize_hosted_html(html: str) -> str:
+def sanitize_hosted_html(html: str) -> tuple[str, list[str]] | str:
+    warnings: list[str] = []
+    external_scripts = re.findall(
+        r'<script\b[^>]*\bsrc\s*=\s*["\']([^"\']*)["\'][^>]*>.*?</script>',
+        html,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
     sanitized = re.sub(
         r'<script\b[^>]*\bsrc\s*=\s*["\'][^"\']*["\'][^>]*>.*?</script>',
         "",
         html,
         flags=re.IGNORECASE | re.DOTALL,
+    )
+    for src in external_scripts:
+        warnings.append(f"Removed external script: {src}")
+
+    external_stylesheets = re.findall(
+        r'<link\b[^>]*\brel\s*=\s*["\']stylesheet["\'][^>]*\bhref\s*=\s*["\'](https?://[^"\']*)["\'][^>]*/?>',
+        sanitized,
+        flags=re.IGNORECASE,
     )
     sanitized = re.sub(
         r'<link\b[^>]*\brel\s*=\s*["\']stylesheet["\'][^>]*\bhref\s*=\s*["\']https?://[^"\']*["\'][^>]*/?>',
@@ -115,4 +129,7 @@ def sanitize_hosted_html(html: str) -> str:
         sanitized,
         flags=re.IGNORECASE,
     )
-    return sanitized
+    for href in external_stylesheets:
+        warnings.append(f"Removed external stylesheet: {href}")
+
+    return sanitized, warnings

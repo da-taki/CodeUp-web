@@ -80,6 +80,39 @@ def test_project_create_list_update_duplicate_and_versions(client, tmp_path):
     assert all("versions" in item and item["versions"] == [] for item in listing)
 
 
+def test_autosave_persists_name_change(client):
+    created = client.post(
+        "/projects",
+        json={"name": "Original Name", "pages": {"home": "<h1>Home</h1>"}, "current_page": "home"},
+    )
+    project_id = created.get_json()["project"]["id"]
+
+    autosaved = client.post(
+        f"/projects/{project_id}/autosave",
+        json={"name": "Renamed via Autosave", "pages": {"home": "<h1>Updated</h1>"}, "current_page": "home"},
+    )
+    assert autosaved.status_code == 200
+    assert autosaved.get_json()["project"]["name"] == "Renamed via Autosave"
+
+    loaded = client.get(f"/projects/{project_id}").get_json()["project"]
+    assert loaded["name"] == "Renamed via Autosave"
+    assert loaded["pages"]["home"] == "<h1>Updated</h1>"
+
+
+def test_autosave_without_name_preserves_existing_name(client):
+    created = client.post(
+        "/projects",
+        json={"name": "Keep This Name", "pages": {"home": "<h1>Home</h1>"}, "current_page": "home"},
+    )
+    project_id = created.get_json()["project"]["id"]
+
+    autosaved = client.post(
+        f"/projects/{project_id}/autosave",
+        json={"pages": {"home": "<h1>Changed</h1>"}, "current_page": "home"},
+    )
+    assert autosaved.get_json()["project"]["name"] == "Keep This Name"
+
+
 def test_publish_updates_project_version_and_zip_export_contains_pages(client):
     project = client.post(
         "/projects",
@@ -117,6 +150,28 @@ def test_publish_updates_project_version_and_zip_export_contains_pages(client):
         assert "href='about.html'" in archive.read("index.html").decode("utf-8")
         manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
         assert manifest["pages"]["home"] == "index.html"
+
+
+def test_publish_returns_warnings_when_external_resources_stripped(client):
+    html_with_external = (
+        '<html><head>'
+        '<link rel="stylesheet" href="https://cdn.example.com/style.css">'
+        '</head><body>'
+        '<script src="https://cdn.example.com/app.js"></script>'
+        '<h1>Hello</h1></body></html>'
+    )
+    result = client.post("/publish-site", json={"html": html_with_external}).get_json()
+    assert result["success"] is True
+    assert "warnings" in result
+    assert len(result["warnings"]) == 2
+    assert any("style.css" in w for w in result["warnings"])
+    assert any("app.js" in w for w in result["warnings"])
+
+
+def test_publish_no_warnings_for_clean_html(client):
+    result = client.post("/publish-site", json={"html": "<h1>Clean</h1>"}).get_json()
+    assert result["success"] is True
+    assert "warnings" not in result
 
 
 def test_parser_audit_reports_structured_issues_and_autofix_snapshots(client):
