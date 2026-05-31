@@ -1,5 +1,3 @@
-"""Structured logging with request/session ID context."""
-
 from __future__ import annotations
 
 import logging
@@ -9,7 +7,6 @@ from flask import g, has_request_context, request
 
 
 class RequestContextFilter(logging.Filter):
-    """Inject request_id and session_id into every log record."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         if has_request_context():
