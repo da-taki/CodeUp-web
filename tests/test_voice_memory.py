@@ -1,9 +1,7 @@
-import hashlib
 import json
 import shutil
 import subprocess
 import textwrap
-import threading
 from concurrent.futures import ThreadPoolExecutor
 from http.cookies import SimpleCookie
 from pathlib import Path
@@ -16,8 +14,9 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setenv("FLASK_TESTING", "true")
     monkeypatch.setenv("GEMINI_ENABLED", "0")
     import app as app_module
+    import codeup.config as config_module
 
-    monkeypatch.setattr(app_module, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(config_module, "DATA_DIR", str(tmp_path))
     app_module.app.config.update(TESTING=True)
     return app_module.app.test_client()
 
@@ -38,11 +37,7 @@ class TestStreamingEndpoint:
         )
         data = response.get_data(as_text=True)
         assert "data:" in data
-        events = [
-            json.loads(line[6:])
-            for line in data.strip().split("\n")
-            if line.startswith("data: ")
-        ]
+        events = [json.loads(line[6:]) for line in data.strip().split("\n") if line.startswith("data: ")]
         assert any(event.get("done") for event in events)
         html_event = next(e for e in events if e.get("done"))
         content = html_event.get("chunk") or html_event.get("html", "")
@@ -53,9 +48,7 @@ class TestStreamingEndpoint:
         assert response.status_code == 400
 
     def test_stream_too_large_prompt_returns_error(self, client):
-        response = client.post(
-            "/generate-code-stream", json={"prompt": "x" * 30000}
-        )
+        response = client.post("/generate-code-stream", json={"prompt": "x" * 30000})
         assert response.status_code == 413
 
 
@@ -85,9 +78,7 @@ class TestSmartMemory:
         assert response.status_code == 400
 
     def test_too_large_content_is_rejected(self, client):
-        response = client.post(
-            "/smart-memory", json={"content": "x" * 1500, "type": "fact"}
-        )
+        response = client.post("/smart-memory", json={"content": "x" * 1500, "type": "fact"})
         assert response.status_code == 413
 
     def test_filler_text_is_not_stored(self, client):
@@ -97,9 +88,9 @@ class TestSmartMemory:
         assert len(memory["smart_memory"]) == 0
 
     def test_memory_limit_caps_entries(self, client, monkeypatch):
-        import app as app_module
+        import codeup.config as config_module
 
-        monkeypatch.setattr(app_module, "MAX_MEMORY_ENTRIES", 5)
+        monkeypatch.setattr(config_module, "MAX_MEMORY_ENTRIES", 5)
         for i in range(10):
             client.post(
                 "/smart-memory",
@@ -120,9 +111,7 @@ class TestSmartMemory:
         import app as app_module
 
         seed = client.get("/smart-memory")
-        signed_cookie = SimpleCookie(seed.headers["Set-Cookie"])[
-            app_module.SESSION_COOKIE_NAME
-        ].value
+        signed_cookie = SimpleCookie(seed.headers["Set-Cookie"])[app_module.SESSION_COOKIE_NAME].value
 
         def store_memory(i):
             worker = app_module.app.test_client()
@@ -165,12 +154,8 @@ class TestMemoryWriteOnlyAfterResponse:
         import app as app_module
 
         seed = client.get("/smart-memory")
-        signed_cookie = SimpleCookie(seed.headers["Set-Cookie"])[
-            app_module.SESSION_COOKIE_NAME
-        ].value
-        serializer = app_module.app.session_interface.get_signing_serializer(
-            app_module.app
-        )
+        signed_cookie = SimpleCookie(seed.headers["Set-Cookie"])[app_module.SESSION_COOKIE_NAME].value
+        serializer = app_module.app.session_interface.get_signing_serializer(app_module.app)
         session_id = serializer.loads(signed_cookie)["session_id"]
 
         response = client.post(
@@ -520,7 +505,8 @@ class TestVoiceUpgrades:
         )
 
     def _base_context(self, extras=""):
-        return textwrap.dedent(r"""
+        return textwrap.dedent(
+            r"""
             const fs = require('fs');
             const vm = require('vm');
             function assert(cond, msg) { if (!cond) throw new Error(msg); }
@@ -545,16 +531,21 @@ class TestVoiceUpgrades:
                 SpeechSynthesisUtterance: function(t) { this.text = t; },
                 fetch: async () => ({ ok: true, json: async () => ({ success: true, reply: 'ok' }),
                     body: { getReader: () => ({ read: async () => ({ done: true }) }) } }),
-        """ + extras + r"""
+        """
+            + extras
+            + r"""
             };
             context.window.window = context.window;
             context.window.document = context.document;
             vm.runInNewContext(fs.readFileSync('static/voice-memory-engine.js', 'utf8'), context);
             const VME = context.window.VoiceMemoryEngine;
-        """)
+        """
+        )
 
     def test_state_validation_rejects_invalid_transitions(self):
-        self._run(self._base_context() + textwrap.dedent(r"""
+        self._run(
+            self._base_context()
+            + textwrap.dedent(r"""
             assert(VME.getState() === 'IDLE', 'starts IDLE');
             VME.setState('PROCESSING');
             assert(VME.getState() === 'IDLE', 'IDLE->PROCESSING should be rejected');
@@ -562,20 +553,26 @@ class TestVoiceUpgrades:
             assert(VME.getState() === 'LISTENING', 'IDLE->LISTENING is valid');
             VME.setState('SPEAKING');
             assert(VME.getState() === 'LISTENING', 'LISTENING->SPEAKING should be rejected');
-        """))
+        """)
+        )
 
     def test_interrupt_aborts_controller_and_clears_queue(self):
-        self._run(self._base_context() + textwrap.dedent(r"""
+        self._run(
+            self._base_context()
+            + textwrap.dedent(r"""
             VME.setState('LISTENING');
             VME.setState('PROCESSING');
             VME.setState('RESPONDING');
             VME.interrupt();
             assert(cancelCalled, 'should cancel speech synthesis');
             assert(VME.getState() === 'LISTENING', 'should return to LISTENING');
-        """))
+        """)
+        )
 
     def test_extract_micro_chunks_long_buffer_fallback(self):
-        self._run(self._base_context() + textwrap.dedent(r"""
+        self._run(
+            self._base_context()
+            + textwrap.dedent(r"""
             const result = VME.extractMicroChunks('this is a very long test phrase without any punctuation at all and more');
             assert(result.chunks.length >= 1, 'should extract at least one chunk from long text');
 
@@ -584,18 +581,24 @@ class TestVoiceUpgrades:
             VME.setState('RESPONDING');
             const tr = VME.handleTranscript('this is a very long test phrase without any punctuation at all');
             assert(tr === true, 'long phrase should not be duplicate');
-        """))
+        """)
+        )
 
     def test_no_duplicate_triggers_within_window(self):
-        self._run(self._base_context() + textwrap.dedent(r"""
+        self._run(
+            self._base_context()
+            + textwrap.dedent(r"""
             assert(VME.isDuplicate('build a website') === false, 'first is not dup');
             assert(VME.isDuplicate('build a website') === true, 'immediate repeat is dup');
             assert(VME.isDuplicate('build a website') === true, 'still dup within 3s');
             assert(VME.isDuplicate('different command') === false, 'different is not dup');
-        """))
+        """)
+        )
 
     def test_voice_active_flag_controls_resume_target(self):
-        self._run(self._base_context() + textwrap.dedent(r"""
+        self._run(
+            self._base_context()
+            + textwrap.dedent(r"""
             VME.setVoiceActive(true);
             VME.setState('LISTENING');
             VME.setState('PROCESSING');
@@ -609,10 +612,13 @@ class TestVoiceUpgrades:
             VME.setVoiceActive(false);
             VME.resetEngine();
             assert(VME.getState() === 'IDLE', 'reset goes to IDLE');
-        """))
+        """)
+        )
 
     def test_handle_transcript_interrupts_responding_state(self):
-        self._run(self._base_context() + textwrap.dedent(r"""
+        self._run(
+            self._base_context()
+            + textwrap.dedent(r"""
             VME.setState('LISTENING');
             VME.setState('PROCESSING');
             VME.setState('RESPONDING');
@@ -620,10 +626,13 @@ class TestVoiceUpgrades:
             assert(result === true, 'should return true');
             assert(cancelCalled, 'should cancel TTS');
             assert(VME.getState() === 'LISTENING', 'should be LISTENING after barge-in');
-        """))
+        """)
+        )
 
     def test_reset_clears_interrupted_flag(self):
-        self._run(self._base_context() + textwrap.dedent(r"""
+        self._run(
+            self._base_context()
+            + textwrap.dedent(r"""
             VME.setState('LISTENING');
             VME.setState('PROCESSING');
             VME.setState('RESPONDING');
@@ -631,17 +640,21 @@ class TestVoiceUpgrades:
             VME.resetEngine();
             assert(VME.getState() === 'IDLE', 'reset should set IDLE');
             assert(VME.getHistory().length === 0, 'reset should clear history');
-        """))
+        """)
+        )
 
     def test_set_same_state_is_noop(self):
-        self._run(self._base_context() + textwrap.dedent(r"""
+        self._run(
+            self._base_context()
+            + textwrap.dedent(r"""
             let changeCount = 0;
             VME.onStateChange = () => { changeCount++; };
             VME.setState('LISTENING');
             assert(changeCount === 1, 'first transition fires callback');
             VME.setState('LISTENING');
             assert(changeCount === 1, 'same state should not fire again');
-        """))
+        """)
+        )
 
 
 class TestHindiAndPolish:
@@ -696,73 +709,99 @@ class TestHindiAndPolish:
         """)
 
     def test_hindi_detection_devanagari(self):
-        self._run(self._base_context() + textwrap.dedent(r"""
+        self._run(
+            self._base_context()
+            + textwrap.dedent(r"""
             assert(VME.isHindiText('नमस्ते दुनिया') === true, 'Devanagari should be detected as Hindi');
             assert(VME.isHindiText('Hello world') === false, 'Latin text should not be Hindi');
             assert(VME.isHindiText('Hello नमस्ते') === true, 'Mixed text with Devanagari should detect Hindi');
-        """))
+        """)
+        )
 
     def test_detect_lang_auto_mode(self):
-        self._run(self._base_context() + textwrap.dedent(r"""
+        self._run(
+            self._base_context()
+            + textwrap.dedent(r"""
             VME.setVoiceLangMode('auto');
             assert(VME.detectLang('Hello world') === 'en-US', 'English text in auto mode');
             assert(VME.detectLang('नमस्ते दुनिया') === 'hi-IN', 'Hindi text in auto mode');
-        """))
+        """)
+        )
 
     def test_detect_lang_forced_mode(self):
-        self._run(self._base_context() + textwrap.dedent(r"""
+        self._run(
+            self._base_context()
+            + textwrap.dedent(r"""
             VME.setVoiceLangMode('hi');
             assert(VME.detectLang('Hello world') === 'hi-IN', 'forced Hindi mode overrides');
             VME.setVoiceLangMode('en');
             assert(VME.detectLang('नमस्ते') === 'en-US', 'forced English mode overrides');
-        """))
+        """)
+        )
 
     def test_mixed_language_splitting(self):
-        self._run(self._base_context() + textwrap.dedent(r"""
+        self._run(
+            self._base_context()
+            + textwrap.dedent(r"""
             const segs = VME.splitMixedLanguage('Hello नमस्ते world दुनिया');
             assert(segs.length === 4, 'should split into 4 segments, got ' + segs.length);
             assert(segs[0].lang === 'en-US', 'first segment is English');
             assert(segs[1].lang === 'hi-IN', 'second segment is Hindi');
             assert(segs[2].lang === 'en-US', 'third segment is English');
             assert(segs[3].lang === 'hi-IN', 'fourth segment is Hindi');
-        """))
+        """)
+        )
 
     def test_mixed_language_pure_hindi(self):
-        self._run(self._base_context() + textwrap.dedent(r"""
+        self._run(
+            self._base_context()
+            + textwrap.dedent(r"""
             const segs = VME.splitMixedLanguage('नमस्ते दुनिया कैसे हो');
             assert(segs.length === 1, 'pure Hindi should be one segment');
             assert(segs[0].lang === 'hi-IN', 'should be Hindi');
-        """))
+        """)
+        )
 
     def test_micro_chunk_extraction(self):
-        self._run(self._base_context() + textwrap.dedent(r"""
+        self._run(
+            self._base_context()
+            + textwrap.dedent(r"""
             const result = VME.extractMicroChunks('This is a short sentence. And another one here.');
             assert(result.chunks.length >= 2, 'should extract at least 2 chunks');
             assert(result.remainder === '' || result.remainder.trim() === '', 'no remainder');
-        """))
+        """)
+        )
 
     def test_micro_chunk_long_text_without_punctuation(self):
-        self._run(self._base_context() + textwrap.dedent(r"""
+        self._run(
+            self._base_context()
+            + textwrap.dedent(r"""
             const text = 'This is a long text without any punctuation marks at all and it keeps going';
             const result = VME.extractMicroChunks(text);
             assert(result.chunks.length >= 1, 'should break long text into chunks');
             for (const c of result.chunks) {
                 assert(c.length <= 50, 'chunk should not be too long: ' + c.length);
             }
-        """))
+        """)
+        )
 
     def test_voice_lang_mode_persists(self):
-        self._run(self._base_context() + textwrap.dedent(r"""
+        self._run(
+            self._base_context()
+            + textwrap.dedent(r"""
             VME.setVoiceLangMode('hi');
             assert(VME.getVoiceLangMode() === 'hi', 'should be hi');
             VME.setVoiceLangMode('auto');
             assert(VME.getVoiceLangMode() === 'auto', 'should be auto');
             VME.setVoiceLangMode('invalid');
             assert(VME.getVoiceLangMode() === 'auto', 'invalid should be ignored');
-        """))
+        """)
+        )
 
     def test_interrupt_sets_timestamp_and_stale_check(self):
-        self._run(self._base_context() + textwrap.dedent(r"""
+        self._run(
+            self._base_context()
+            + textwrap.dedent(r"""
             const before = Date.now() - 100;
             VME.setState('LISTENING');
             VME.setState('PROCESSING');
@@ -772,14 +811,18 @@ class TestHindiAndPolish:
             // We test this indirectly: after interrupt, state is LISTENING
             assert(VME.getState() === 'LISTENING', 'should be LISTENING after interrupt');
             assert(cancelCalled, 'should cancel speech');
-        """))
+        """)
+        )
 
     def test_reset_clears_sync_indices(self):
-        self._run(self._base_context() + textwrap.dedent(r"""
+        self._run(
+            self._base_context()
+            + textwrap.dedent(r"""
             VME.resetEngine();
             assert(VME.getState() === 'IDLE', 'reset should set IDLE');
             assert(VME.getHistory().length === 0, 'reset should clear history');
-        """))
+        """)
+        )
 
 
 class TestNoRaceConditions:
@@ -787,9 +830,7 @@ class TestNoRaceConditions:
         import app as app_module
 
         seed = client.get("/smart-memory")
-        signed_cookie = SimpleCookie(seed.headers["Set-Cookie"])[
-            app_module.SESSION_COOKIE_NAME
-        ].value
+        signed_cookie = SimpleCookie(seed.headers["Set-Cookie"])[app_module.SESSION_COOKIE_NAME].value
 
         def write_memory(i):
             worker = app_module.app.test_client()
@@ -809,9 +850,7 @@ class TestNoRaceConditions:
         import app as app_module
 
         seed = client.get("/smart-memory")
-        signed_cookie = SimpleCookie(seed.headers["Set-Cookie"])[
-            app_module.SESSION_COOKIE_NAME
-        ].value
+        signed_cookie = SimpleCookie(seed.headers["Set-Cookie"])[app_module.SESSION_COOKIE_NAME].value
 
         def stream_request():
             worker = app_module.app.test_client()

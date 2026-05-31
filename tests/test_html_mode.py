@@ -1,4 +1,3 @@
-from http.cookies import SimpleCookie
 import json
 import os
 import shutil
@@ -6,6 +5,7 @@ import subprocess
 import textwrap
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from http.cookies import SimpleCookie
 from pathlib import Path
 
 import pytest
@@ -16,8 +16,9 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setenv("FLASK_TESTING", "true")
     monkeypatch.setenv("GEMINI_ENABLED", "0")
     import app as app_module
+    import codeup.config as config_module
 
-    monkeypatch.setattr(app_module, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(config_module, "DATA_DIR", str(tmp_path))
     app_module.app.config.update(TESTING=True)
     return app_module.app.test_client()
 
@@ -92,12 +93,15 @@ def test_ai_unavailable_matching_avoids_rate_false_positives():
 
 def test_call_ai_concurrency_cap_is_reserved_before_submit(monkeypatch):
     import requests
+
     import app as app_module
 
     monkeypatch.setenv("AI_CLOUD_ENABLED", "1")
     monkeypatch.setenv("XAI_API_KEY", "test-key")
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
-    monkeypatch.setattr(app_module, "_call_ollama", lambda *args: None)
+    import codeup.services.ai_service as ai_svc
+
+    monkeypatch.setattr(ai_svc, "_call_ollama", lambda *args: None)
 
     active = 0
     post_count = 0
@@ -128,8 +132,7 @@ def test_call_ai_concurrency_cap_is_reserved_before_submit(monkeypatch):
 
     with ThreadPoolExecutor(max_workers=app_module.AI_MAX_CONCURRENT) as pool:
         futures = [
-            pool.submit(app_module.call_ai, "system", f"user-{index}")
-            for index in range(app_module.AI_MAX_CONCURRENT)
+            pool.submit(app_module.call_ai, "system", f"user-{index}") for index in range(app_module.AI_MAX_CONCURRENT)
         ]
         assert all_started.wait(timeout=3)
         busy = app_module.call_ai("system", "overflow")
@@ -271,8 +274,9 @@ def test_fresh_clients_do_not_share_memory(monkeypatch, tmp_path):
     monkeypatch.setenv("FLASK_TESTING", "true")
     monkeypatch.setenv("GEMINI_ENABLED", "0")
     import app as app_module
+    import codeup.config as config_module
 
-    monkeypatch.setattr(app_module, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(config_module, "DATA_DIR", str(tmp_path))
     app_module.app.config.update(TESTING=True)
     first_client = app_module.app.test_client()
     second_client = app_module.app.test_client()
@@ -290,8 +294,9 @@ def test_raw_cookie_cannot_force_access_to_another_session(monkeypatch, tmp_path
     monkeypatch.setenv("FLASK_TESTING", "true")
     monkeypatch.setenv("GEMINI_ENABLED", "0")
     import app as app_module
+    import codeup.config as config_module
 
-    monkeypatch.setattr(app_module, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(config_module, "DATA_DIR", str(tmp_path))
     app_module.app.config.update(TESTING=True)
     victim = app_module.app.test_client()
     attacker = app_module.app.test_client()
@@ -361,8 +366,9 @@ def test_reset_session_cannot_clear_another_session(monkeypatch, tmp_path):
     monkeypatch.setenv("FLASK_TESTING", "true")
     monkeypatch.setenv("GEMINI_ENABLED", "0")
     import app as app_module
+    import codeup.config as config_module
 
-    monkeypatch.setattr(app_module, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(config_module, "DATA_DIR", str(tmp_path))
     app_module.app.config.update(TESTING=True)
     first_client = app_module.app.test_client()
     second_client = app_module.app.test_client()
@@ -395,8 +401,14 @@ def test_html_audit_reports_contrast_and_screen_reader_patterns(client):
     assert data["success"] is True
     assert data["audit"]["contrast_pairs"][0]["ratio"] == 1.0
     assert data["audit"]["contrast_pairs"][0]["passes_aa"] is False
-    assert any(check["pattern"] == "NVDA heading navigation" and check["passed"] is False for check in data["audit"]["screen_reader_checks"])
-    assert any(check["pattern"] == "VoiceOver control names" and check["passed"] is False for check in data["audit"]["screen_reader_checks"])
+    assert any(
+        check["pattern"] == "NVDA heading navigation" and check["passed"] is False
+        for check in data["audit"]["screen_reader_checks"]
+    )
+    assert any(
+        check["pattern"] == "VoiceOver control names" and check["passed"] is False
+        for check in data["audit"]["screen_reader_checks"]
+    )
     assert any(item["announcement"] == "button, unnamed" for item in data["audit"]["screen_reader_transcript"])
 
 
@@ -481,10 +493,19 @@ def test_voice_command_is_html_or_chat_focused(client):
     assert client.post("/voice-command", json={"text": "export website"}).get_json()["action"] == "export_site"
     assert client.post("/voice-command", json={"text": "reset session"}).get_json()["action"] == "reset_session"
     assert client.post("/voice-command", json={"text": "explain website"}).get_json()["action"] == "explain_site"
-    assert client.post("/voice-command", json={"text": "build a website for music class"}).get_json()["action"] == "build_site"
-    assert client.post("/voice-command", json={"text": "what is missing in this website?"}).get_json()["action"] == "review_site"
+    assert (
+        client.post("/voice-command", json={"text": "build a website for music class"}).get_json()["action"]
+        == "build_site"
+    )
+    assert (
+        client.post("/voice-command", json={"text": "what is missing in this website?"}).get_json()["action"]
+        == "review_site"
+    )
     assert client.post("/voice-command", json={"text": "add that"}).get_json()["action"] == "apply_review"
-    assert client.post("/voice-command", json={"text": "set wake word to table one"}).get_json()["action"] == "set_wake_word"
+    assert (
+        client.post("/voice-command", json={"text": "set wake word to table one"}).get_json()["action"]
+        == "set_wake_word"
+    )
     assert client.post("/voice-command", json={"text": "next heading"}).get_json()["action"] == "navigate_page"
     assert client.post("/voice-command", json={"text": "make the heading bigger"}).get_json()["action"] == "edit_css"
     assert client.post("/voice-command", json={"text": "center the section text"}).get_json()["action"] == "edit_css"
@@ -493,8 +514,14 @@ def test_voice_command_is_html_or_chat_focused(client):
     assert client.post("/voice-command", json={"text": "what is a div"}).get_json()["action"] == "explain_concept"
     assert client.post("/voice-command", json={"text": "go back two steps"}).get_json()["action"] == "undo_version"
     assert client.post("/voice-command", json={"text": "what changed"}).get_json()["action"] == "review_changes"
-    assert client.post("/voice-command", json={"text": "use the science project template"}).get_json()["action"] == "use_template"
-    assert client.post("/voice-command", json={"text": "create a multi page website"}).get_json()["action"] == "create_multipage_site"
+    assert (
+        client.post("/voice-command", json={"text": "use the science project template"}).get_json()["action"]
+        == "use_template"
+    )
+    assert (
+        client.post("/voice-command", json={"text": "create a multi page website"}).get_json()["action"]
+        == "create_multipage_site"
+    )
 
 
 def test_legacy_execution_routes_are_gone(client):
@@ -507,8 +534,9 @@ def test_same_origin_blocks_cross_site_posts(monkeypatch, tmp_path):
     monkeypatch.setenv("FLASK_TESTING", "false")
     monkeypatch.setenv("GEMINI_ENABLED", "0")
     import app as app_module
+    import codeup.config as config_module
 
-    monkeypatch.setattr(app_module, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(config_module, "DATA_DIR", str(tmp_path))
     app_module.app.config.update(TESTING=True)
     test_client = app_module.app.test_client()
     response = test_client.post(
