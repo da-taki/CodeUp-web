@@ -1,5 +1,7 @@
 # CodeUp HTML
 
+[![CI](https://github.com/da-taki/CodeUp-web/actions/workflows/ci.yml/badge.svg)](https://github.com/da-taki/CodeUp-web/actions/workflows/ci.yml)
+
 CodeUp HTML is a blind-first website builder for students who want to create
 real HTML websites through conversation, keyboard, and voice. This sister
 project is focused only on websites: build pages, save named projects, preview
