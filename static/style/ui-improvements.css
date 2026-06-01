@@ -469,3 +469,48 @@ body.theme-night .cu-output-box {
     animation: none;
   }
 }
+
+.cu-demo-flow {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--bg-main);
+}
+.cu-demo-flow-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.cu-demo-flow-list {
+  margin: 8px 0 0 0;
+  padding-left: 22px;
+  list-style: decimal;
+  font-size: 0.88rem;
+  line-height: 1.8;
+  color: var(--text-main);
+}
+.cu-demo-flow-list li {
+  margin-bottom: 2px;
+}
+.cu-demo-step {
+  background: none;
+  border: none;
+  border-bottom: 1px dashed var(--border-strong);
+  color: var(--accent);
+  font-family: var(--font-main);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 2px;
+}
+.cu-demo-step:hover {
+  background: var(--accent-soft);
+}
+.cu-demo-step:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}

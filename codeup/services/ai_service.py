@@ -97,9 +97,9 @@ def call_ai(system_prompt: str, user_prompt: str, temperature: float = 0.25, lan
         raise
     try:
         return future.result(timeout=AI_TIMEOUT + 1)
-    except Exception as exc:
+    except Exception:
         local = _call_ollama(system_prompt, user_prompt, temperature)
-        return local or f"AI service had a problem: {str(exc)[:120]}"
+        return local or "AI service had a problem. Please try again in a moment."
 
 
 def is_ai_unavailable(reply: str) -> bool:

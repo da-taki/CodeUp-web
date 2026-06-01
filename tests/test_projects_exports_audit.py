@@ -154,11 +154,11 @@ def test_publish_updates_project_version_and_zip_export_contains_pages(client):
 
 def test_publish_returns_warnings_when_external_resources_stripped(client):
     html_with_external = (
-        '<html><head>'
+        "<html><head>"
         '<link rel="stylesheet" href="https://cdn.example.com/style.css">'
-        '</head><body>'
+        "</head><body>"
         '<script src="https://cdn.example.com/app.js"></script>'
-        '<h1>Hello</h1></body></html>'
+        "<h1>Hello</h1></body></html>"
     )
     result = client.post("/publish-site", json={"html": html_with_external}).get_json()
     assert result["success"] is True

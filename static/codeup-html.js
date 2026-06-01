@@ -2006,6 +2006,17 @@
     $('auditFixOneBtn')?.addEventListener('click', applyFirstAuditFix);
     $('auditFixAllBtn')?.addEventListener('click', applyAllAuditFixes);
 
+    document.querySelectorAll('.cu-demo-step').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var cmd = btn.getAttribute('data-command');
+        if (cmd) {
+          var input = $('commandInput');
+          if (input) input.value = cmd;
+          handleStudentText(cmd);
+        }
+      });
+    });
+
     document.body.dataset.htmlModeReady = 'true';
   }
 

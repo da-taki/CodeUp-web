@@ -119,7 +119,9 @@ class TestPreviewButton:
 class TestAuditAndFix:
     def test_audit_button_reports_issues(self, browser_page):
         page, _, _ = browser_page
-        bad_html = "<html><head><title></title></head><body><img src='hero.png'><button></button><p>Hello</p></body></html>"
+        bad_html = (
+            "<html><head><title></title></head><body><img src='hero.png'><button></button><p>Hello</p></body></html>"
+        )
         page.locator("#htmlEditor").fill(bad_html)
         page.locator("#auditBtn").click()
         page.wait_for_function(
@@ -131,7 +133,9 @@ class TestAuditAndFix:
 
     def test_apply_safe_fixes(self, browser_page):
         page, _, _ = browser_page
-        bad_html = "<html><head><title></title></head><body><img src='hero.png'><button></button><p>Hello</p></body></html>"
+        bad_html = (
+            "<html><head><title></title></head><body><img src='hero.png'><button></button><p>Hello</p></body></html>"
+        )
         page.locator("#htmlEditor").fill(bad_html)
         page.locator("#auditBtn").click()
         page.wait_for_function(
