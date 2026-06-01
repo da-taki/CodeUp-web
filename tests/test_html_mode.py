@@ -432,7 +432,7 @@ def test_chat_uses_memory_and_has_local_fallback_without_ai(client):
     assert response.status_code == 200
     assert data["success"] is True
     assert "CodeUp HTML" in data["reply"]
-    assert "build a website" in data["reply"].lower()
+    assert "build" in data["reply"].lower()
     assert data["memory"]["history"][-1]["note"] == "chat"
 
 

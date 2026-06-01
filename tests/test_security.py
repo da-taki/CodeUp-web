@@ -88,12 +88,12 @@ class TestHtmlSanitization:
         from codeup.security import sanitize_hosted_html
 
         html = (
-            '<html><head>'
+            "<html><head>"
             '<link rel="stylesheet" href="https://cdn.example.com/a.css">'
             '<link rel="stylesheet" href="https://cdn.example.com/b.css">'
-            '</head><body>'
+            "</head><body>"
             '<script src="https://cdn.example.com/c.js"></script>'
-            '<h1>Content</h1></body></html>'
+            "<h1>Content</h1></body></html>"
         )
         result, warnings = sanitize_hosted_html(html)
         assert len(warnings) == 3

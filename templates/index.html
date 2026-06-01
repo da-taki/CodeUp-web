@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="/static/style/ui-improvements.css">
 </head>
 <body class="cu-body">
+  <a href="#commandInput" class="skip-link">Skip to command input</a>
   <div id="srAnnouncer" role="status" aria-live="assertive" aria-atomic="true"
        style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;"></div>
 
@@ -83,6 +84,18 @@
                aria-label="Ask CodeUp or request a website">
         <button id="sendCommandBtn" class="cu-button cu-button-primary" aria-label="Ask CodeUp or build a website">Ask / Build</button>
       </div>
+      <details id="demoFlowPanel" class="cu-demo-flow" open>
+        <summary class="cu-demo-flow-title">Try this workflow</summary>
+        <ol class="cu-demo-flow-list">
+          <li><button type="button" class="cu-demo-step" data-command="Hello, what all can I do in here?">What can I do here?</button></li>
+          <li><button type="button" class="cu-demo-step" data-command="Build a website for my robotics club">Build a website</button></li>
+          <li><button type="button" class="cu-demo-step" data-command="Preview website">Preview website</button></li>
+          <li><button type="button" class="cu-demo-step" data-command="What do you think is missing here?">What is missing?</button></li>
+          <li><button type="button" class="cu-demo-step" data-command="Add that">Add that</button></li>
+          <li><button type="button" class="cu-demo-step" data-command="Audit website">Audit website</button></li>
+          <li><button type="button" class="cu-demo-step" data-command="Export website">Export website</button></li>
+        </ol>
+      </details>
       <div id="sitePreview" class="cu-site-preview" aria-label="Local website preview"></div>
     </aside>
   </main>
