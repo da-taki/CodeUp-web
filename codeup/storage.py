@@ -6,7 +6,7 @@ import shutil
 import threading
 import time
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import codeup.config as _config
@@ -54,7 +54,7 @@ def _atomic_write_json(path: str, payload: dict[str, Any]) -> None:
 
 
 def _utc_now() -> str:
-    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def memory_lock(session_id: str) -> threading.RLock:
