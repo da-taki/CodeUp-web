@@ -8,6 +8,8 @@ venv/
 dist/
 build/
 .env
+.env.*
+!.env.example
 instance/
 html_memory/
 student_sites/
