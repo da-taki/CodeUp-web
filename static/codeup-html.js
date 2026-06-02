@@ -80,6 +80,17 @@
     projectName: 'Untitled Project',
     autosaveTimer: null,
     lastAudit: null,
+    walkthrough: {
+      active: false,
+      mode: null,
+      journeyElements: [],
+      journeyIndex: -1,
+      watchpointMode: false,
+      watchpoints: [],
+      watchpointIndex: 0,
+      htmlBeforeFix: '',
+      currentIssueIndex: 0,
+    },
   };
 
   const pageTemplates = {
@@ -1323,6 +1334,189 @@
     return false;
   }
 
+  async function walkthroughPageMap() {
+    const html = getHtml();
+    writeOutput(t('Reading page structure...', 'Page structure padh raha hoon...'));
+    try {
+      const data = await apiJson('/walkthrough/page-map', {
+        method: 'POST',
+        body: JSON.stringify({ html }),
+      });
+      state.walkthrough.active = true;
+      state.walkthrough.mode = 'page-map';
+      writeOutput(data.summary, true);
+    } catch (error) {
+      writeOutput(error.message, true);
+    }
+  }
+
+  async function walkthroughKeyboardStart() {
+    const html = getHtml();
+    writeOutput(t('Starting keyboard journey...', 'Keyboard journey shuru ho rahi hai...'));
+    try {
+      const data = await apiJson('/walkthrough/keyboard-journey', {
+        method: 'POST',
+        body: JSON.stringify({ html }),
+      });
+      state.walkthrough.active = true;
+      state.walkthrough.mode = 'keyboard-journey';
+      state.walkthrough.journeyElements = data.elements || [];
+      state.walkthrough.journeyIndex = data.index;
+      writeOutput(data.message, true);
+    } catch (error) {
+      writeOutput(error.message, true);
+    }
+  }
+
+  async function walkthroughKeyboardMove(direction) {
+    const html = getHtml();
+    const wt = state.walkthrough;
+    if (!wt.journeyElements.length) {
+      await walkthroughKeyboardStart();
+      return;
+    }
+    try {
+      const data = await apiJson('/walkthrough/keyboard-move', {
+        method: 'POST',
+        body: JSON.stringify({ html, index: wt.journeyIndex, direction }),
+      });
+      wt.journeyIndex = data.index;
+      if (wt.watchpointMode && data.element) {
+        const wp = wt.watchpoints.find(function (issue) {
+          const name = data.element.name || '';
+          return (
+            (issue.id === 'unnamed_button' && data.element.tag === 'button' && name === 'unnamed') ||
+            (issue.id === 'unnamed_link' && data.element.tag === 'a' && name === 'unnamed') ||
+            (issue.id === 'missing_form_label' && (data.element.tag === 'input' || data.element.tag === 'textarea' || data.element.tag === 'select') && name === 'unnamed')
+          );
+        });
+        if (wp) {
+          wt.currentIssueIndex = wt.watchpoints.indexOf(wp);
+          writeOutput(data.message + ' Accessibility watchpoint: ' + wp.description + ' Say "fix this issue" to apply a suggested repair.', true);
+          return;
+        }
+      }
+      writeOutput(data.message, true);
+    } catch (error) {
+      writeOutput(error.message, true);
+    }
+  }
+
+  async function walkthroughPauseOnIssues() {
+    const html = getHtml();
+    try {
+      const data = await apiJson('/walkthrough/watchpoints', {
+        method: 'POST',
+        body: JSON.stringify({ html }),
+      });
+      state.walkthrough.active = true;
+      state.walkthrough.watchpointMode = true;
+      state.walkthrough.watchpoints = data.watchpoints || [];
+      state.walkthrough.watchpointIndex = 0;
+      if (!data.watchpoints || !data.watchpoints.length) {
+        writeOutput(t('No accessibility watchpoints found. The page passes all current checks.', 'Koi accessibility issue nahi mila.'), true);
+        return;
+      }
+      writeOutput(t(
+        'Watchpoint mode enabled. Navigating will pause on elements with accessibility issues. Say "start keyboard journey" or "next interactive element" to begin.',
+        'Watchpoint mode on hai. Navigation accessibility issues par rukegi.'
+      ), true);
+    } catch (error) {
+      writeOutput(error.message, true);
+    }
+  }
+
+  async function walkthroughListWatchpoints() {
+    const html = getHtml();
+    try {
+      const data = await apiJson('/walkthrough/watchpoints', {
+        method: 'POST',
+        body: JSON.stringify({ html }),
+      });
+      state.walkthrough.watchpoints = data.watchpoints || [];
+      writeOutput(data.message, true);
+    } catch (error) {
+      writeOutput(error.message, true);
+    }
+  }
+
+  async function walkthroughExplainIssue() {
+    const html = getHtml();
+    const wt = state.walkthrough;
+    try {
+      const data = await apiJson('/walkthrough/explain', {
+        method: 'POST',
+        body: JSON.stringify({ html, issue_index: wt.currentIssueIndex }),
+      });
+      if (data.can_autofix) {
+        writeOutput(data.message + ' Say "fix this issue" to apply a suggested repair.', true);
+      } else {
+        writeOutput(data.message, true);
+      }
+    } catch (error) {
+      writeOutput(error.message, true);
+    }
+  }
+
+  async function walkthroughFixIssue() {
+    const html = getHtml();
+    const wt = state.walkthrough;
+    wt.htmlBeforeFix = html;
+    try {
+      const data = await apiJson('/walkthrough/fix', {
+        method: 'POST',
+        body: JSON.stringify({ html, issue_index: wt.currentIssueIndex }),
+      });
+      if (data.success && data.fixed_html) {
+        snapshotVersion('Before walkthrough fix');
+        setHtml(data.fixed_html);
+        snapshotVersion('Applied walkthrough fix');
+        let msg = data.message;
+        if (data.score_before !== undefined && data.score_after !== undefined) {
+          msg += ` Accessibility score changed from ${data.score_before} to ${data.score_after}.`;
+        }
+        msg += ' Say "compare accessibility before and after" to hear the full comparison.';
+        writeOutput(msg, true);
+        try { await publish(data.fixed_html); } catch (e) {}
+      } else {
+        writeOutput(data.message, true);
+      }
+    } catch (error) {
+      writeOutput(error.message, true);
+    }
+  }
+
+  async function walkthroughCompare() {
+    const wt = state.walkthrough;
+    const htmlAfter = getHtml();
+    const htmlBefore = wt.htmlBeforeFix;
+    if (!htmlBefore) {
+      writeOutput(t('No before version available. Fix an issue first, then compare.', 'Pehle koi issue fix karein, phir compare karein.'), true);
+      return;
+    }
+    try {
+      const data = await apiJson('/walkthrough/compare', {
+        method: 'POST',
+        body: JSON.stringify({ html_before: htmlBefore, html_after: htmlAfter }),
+      });
+      writeOutput(data.message, true);
+    } catch (error) {
+      writeOutput(error.message, true);
+    }
+  }
+
+  function walkthroughStop() {
+    state.walkthrough.active = false;
+    state.walkthrough.mode = null;
+    state.walkthrough.watchpointMode = false;
+    state.walkthrough.journeyElements = [];
+    state.walkthrough.journeyIndex = -1;
+    state.walkthrough.watchpoints = [];
+    state.walkthrough.watchpointIndex = 0;
+    state.walkthrough.currentIssueIndex = 0;
+    writeOutput(t('Walkthrough stopped.', 'Walkthrough band ho gaya.'), true);
+  }
+
   function helpText() {
     return t(
       'You can say: build a website for robotics club, preview website, what is missing, review website, add that, explain website, audit website, outline website, export website, reset session, sonify website, polish HTML, add heading About Us, add paragraph Welcome students, pause voice, resume voice, or stop speaking.',
@@ -1405,6 +1599,16 @@
     const action = routed.action;
     const slots = routed.slots || {};
     if (action === 'chat') return false;
+    if (action === 'walkthrough_page') { await walkthroughPageMap(); return true; }
+    if (action === 'walkthrough_keyboard_start') { await walkthroughKeyboardStart(); return true; }
+    if (action === 'walkthrough_next_element') { await walkthroughKeyboardMove('next'); return true; }
+    if (action === 'walkthrough_prev_element') { await walkthroughKeyboardMove('previous'); return true; }
+    if (action === 'walkthrough_pause_issues') { await walkthroughPauseOnIssues(); return true; }
+    if (action === 'walkthrough_list_watchpoints') { await walkthroughListWatchpoints(); return true; }
+    if (action === 'walkthrough_explain_issue') { await walkthroughExplainIssue(); return true; }
+    if (action === 'walkthrough_fix_issue') { await walkthroughFixIssue(); return true; }
+    if (action === 'walkthrough_compare') { await walkthroughCompare(); return true; }
+    if (action === 'walkthrough_stop') { walkthroughStop(); return true; }
     if (action === 'set_wake_word') {
       state.wakeWord = command.toLowerCase().replace(/^set wake word to |^change wake word to /, '').trim() || 'hey codeup';
       localStorage.setItem('codeup_wake_word', state.wakeWord);
@@ -1648,6 +1852,19 @@
       lower.includes('voice language') ||
       lower.includes('speech language') ||
       lower.includes('bhasha') ||
+      lower.includes('walk me through') ||
+      lower.includes('audio accessibility walkthrough') ||
+      lower.includes('read the page structure') ||
+      lower.includes('start keyboard journey') ||
+      lower.includes('next interactive element') ||
+      lower.includes('previous interactive element') ||
+      lower.includes('pause on accessibility issues') ||
+      lower.includes('list accessibility watchpoints') ||
+      lower.includes('explain first issue') ||
+      lower.includes('why is this inaccessible') ||
+      lower.includes('fix this issue') ||
+      lower.includes('compare accessibility before and after') ||
+      lower.includes('stop walkthrough') ||
       lower.includes('wake word') ||
       lower.includes('make the heading') ||
       lower.includes('make heading') ||
@@ -1910,6 +2127,7 @@
     replaceButton('voiceButton', 'Voice Off', 'Toggle voice control', toggleVoice);
     replaceButton('helpBtn', 'Help', 'Hear HTML voice commands', () => writeOutput(helpText(), true));
     replaceButton('sendCommandBtn', 'Ask / Build', 'Ask CodeUp or build a website from request', submitCommandFromInput);
+    replaceButton('walkthroughBtn', 'Walkthrough', 'Audio accessibility walkthrough of current website', walkthroughPageMap);
 
     const field = $('commandInput');
     if (field) {

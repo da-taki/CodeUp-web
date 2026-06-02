@@ -93,6 +93,10 @@ In this mode, CodeUp still:
 - Page outline from headings
 - One-click single-page HTML export and multi-page ZIP export
 - Demo Mode for larger, calmer classroom presentation
+- Audio Accessibility Walkthrough: hear how the page is structured
+- Keyboard Journey: step through focusable elements in order
+- Accessibility Watchpoints: pause on detected issues during navigation
+- Before/After Accessibility Repair Replay: fix an issue and hear what changed
 - Reset session for the next student
 - Per-session memory for recent prompts, current HTML, preview URL, and latest
   visual review
@@ -114,12 +118,14 @@ CodeUp-web/
 │   │   ├── site.py         # Publish, preview, audit, autofix, export, reset
 │   │   ├── ai_routes.py    # Generate, chat, review, explain, fix, stream
 │   │   ├── memory.py       # HTML memory, smart memory, build context
-│   │   └── projects.py     # Named projects and persisted versions
+│   │   ├── projects.py     # Named projects and persisted versions
+│   │   └── walkthrough.py  # Audio accessibility walkthrough routes
 │   └── services/           # Business logic
 │       ├── ai_service.py   # AI provider integration (xAI, Groq, Ollama)
 │       ├── fallbacks.py    # Offline fallback responses
 │       ├── html_utils.py   # HTML parsing, audit, accessibility checks
-│       └── memory_service.py  # Smart memory deduplication and context
+│       ├── memory_service.py  # Smart memory deduplication and context
+│       └── walkthrough.py  # Walkthrough engine (page map, journey, watchpoints)
 ├── static/
 │   ├── codeup-html.js      # Main frontend application
 │   ├── voice-memory-engine.js  # Voice state machine and streaming
@@ -258,6 +264,17 @@ English examples:
 - `pause voice`
 - `resume voice`
 - `stop speaking`
+- `walk me through this page`
+- `read the page structure`
+- `start keyboard journey`
+- `next interactive element`
+- `previous interactive element`
+- `pause on accessibility issues`
+- `list accessibility watchpoints`
+- `why is this inaccessible`
+- `fix this issue`
+- `compare accessibility before and after`
+- `stop walkthrough`
 - `voice language Hindi`
 - `voice language English`
 - `voice language auto`
@@ -275,6 +292,39 @@ Hindi/Hinglish examples:
 - `pause voice`
 - `resume voice`
 - `भाषा Hindi`
+
+## Audio Accessibility Walkthrough
+
+The walkthrough feature lets a blind or low-vision student hear how their
+generated website is structured, move through its keyboard journey, pause on
+detectable accessibility barriers, understand why an issue matters, fix it,
+and hear what changed afterward.
+
+All structural and accessibility facts are derived deterministically from the
+current HTML using the same parser and audit engine that powers the Audit
+feature. AI is optional: when a cloud provider is configured, it may rephrase
+deterministic findings to be easier for beginners to understand. When AI is
+unavailable, all walkthrough features work fully offline.
+
+Walkthrough commands:
+
+```text
+walk me through this page
+read the page structure
+start keyboard journey
+next interactive element
+previous interactive element
+pause on accessibility issues
+list accessibility watchpoints
+why is this inaccessible
+fix this issue
+compare accessibility before and after
+stop walkthrough
+```
+
+Note: the walkthrough describes keyboard focus order based on deterministic HTML
+analysis. Exact NVDA, JAWS, or VoiceOver behavior validation is not yet
+performed and remains a pending hardware test.
 
 ## AI Configuration
 
