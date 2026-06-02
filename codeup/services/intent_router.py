@@ -69,6 +69,63 @@ def _section_slots(command: str) -> dict[str, Any]:
 RULES: tuple[IntentRule, ...] = (
     IntentRule("set_wake_word", 100, (r"\b(set|change)\s+wake\s+word\s+to\b",)),
     IntentRule(
+        "walkthrough_page",
+        99,
+        (
+            r"\bwalk\s+me\s+through\b",
+            r"\baudio\s+accessibility\s+walkthrough\b",
+            r"\bread\s+the\s+page\s+structure\b",
+        ),
+    ),
+    IntentRule(
+        "walkthrough_keyboard_start",
+        99,
+        (r"\bstart\s+keyboard\s+journey\b",),
+    ),
+    IntentRule(
+        "walkthrough_next_element",
+        99,
+        (r"\bnext\s+interactive\s+element\b",),
+    ),
+    IntentRule(
+        "walkthrough_prev_element",
+        99,
+        (r"\bprevious\s+interactive\s+element\b",),
+    ),
+    IntentRule(
+        "walkthrough_pause_issues",
+        99,
+        (r"\bpause\s+on\s+accessibility\s+issues\b",),
+    ),
+    IntentRule(
+        "walkthrough_list_watchpoints",
+        99,
+        (r"\blist\s+accessibility\s+watchpoints\b",),
+    ),
+    IntentRule(
+        "walkthrough_explain_issue",
+        99,
+        (
+            r"\bexplain\s+first\s+issue\b",
+            r"\bwhy\s+is\s+this\s+inaccessible\b",
+        ),
+    ),
+    IntentRule(
+        "walkthrough_fix_issue",
+        99,
+        (r"\bfix\s+this\s+issue\b",),
+    ),
+    IntentRule(
+        "walkthrough_compare",
+        99,
+        (r"\bcompare\s+accessibility\s+before\s+and\s+after\b",),
+    ),
+    IntentRule(
+        "walkthrough_stop",
+        99,
+        (r"\bstop\s+walkthrough\b",),
+    ),
+    IntentRule(
         "pause_voice", 98, (r"\bpause\s+voice\b", r"\bstop\s+listening\b", r"\bawaaz\s+rok\b", r"\bruk\s+jao\b")
     ),
     IntentRule(
