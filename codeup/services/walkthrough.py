@@ -17,6 +17,91 @@ MAX_FOCUSABLE = 60
 
 FOCUSABLE_TAGS = {"a", "button", "input", "textarea", "select"}
 LANDMARK_TAGS = {"header", "nav", "main", "footer", "section", "article", "form"}
+ELEMENT_WATCHPOINT_IDS = {"unnamed_button", "unnamed_link", "missing_form_label"}
+
+
+def _is_descendant_of(node: HtmlNode, ancestor: HtmlNode) -> bool:
+    parent = node.parent
+    while parent:
+        if parent is ancestor:
+            return True
+        parent = parent.parent
+    return False
+
+
+def _inline_style_hides(node: HtmlNode) -> bool:
+    style = re.sub(r"\s+", "", node.attrs.get("style", "").lower())
+    return "display:none" in style or "visibility:hidden" in style
+
+
+def _is_hidden_from_focus(node: HtmlNode) -> bool:
+    current: HtmlNode | None = node
+    while current:
+        if "hidden" in current.attrs:
+            return True
+        if current.attrs.get("aria-hidden", "").strip().lower() == "true":
+            return True
+        if _inline_style_hides(current):
+            return True
+        current = current.parent
+    return False
+
+
+def _tabindex_value(node: HtmlNode) -> int | None:
+    raw = node.attrs.get("tabindex")
+    if raw is None or raw.strip() == "":
+        return None
+    try:
+        return int(raw.strip())
+    except ValueError:
+        return None
+
+
+def _is_disabled_control(node: HtmlNode) -> bool:
+    return node.tag in {"button", "input", "textarea", "select"} and "disabled" in node.attrs
+
+
+def _is_focusable_node(node: HtmlNode) -> bool:
+    if _is_hidden_from_focus(node) or _is_disabled_control(node):
+        return False
+
+    tabindex = _tabindex_value(node)
+    if tabindex is not None and tabindex < 0:
+        return False
+
+    tag = node.tag
+    role = node.attrs.get("role", "").strip().lower()
+    has_keyboard_tabindex = tabindex is not None and tabindex >= 0
+
+    if tag == "a":
+        return bool(node.attrs.get("href")) or (has_keyboard_tabindex and role in {"button", "link"})
+    if tag == "input":
+        return node.attrs.get("type", "text").strip().lower() != "hidden"
+    if tag in {"button", "textarea", "select", "summary"}:
+        return True
+    if role in {"button", "link"} and has_keyboard_tabindex:
+        return True
+    return has_keyboard_tabindex
+
+
+def _focusable_role(node: HtmlNode) -> str:
+    role = node.attrs.get("role", "").strip().lower()
+    if role in {"button", "link"}:
+        return role
+    if node.tag == "a":
+        return "link"
+    if node.tag == "button":
+        return "button"
+    if node.tag == "input":
+        input_type = node.attrs.get("type", "text").strip().lower() or "text"
+        return f"{input_type} input"
+    if node.tag == "textarea":
+        return "text area"
+    if node.tag == "select":
+        return "dropdown menu"
+    if node.tag == "summary":
+        return "summary"
+    return role or node.tag
 
 
 def _node_label(node: HtmlNode) -> str:
@@ -103,9 +188,18 @@ def page_map(html: str) -> dict[str, Any]:
         tag = lm["tag"]
         label = lm["label"]
         if tag == "nav":
+            nav_node = next(
+                (
+                    node
+                    for node in all_nodes
+                    if node.tag == "nav"
+                    and (node.attrs.get("aria-label") or node.attrs.get("aria-labelledby") or "") == label
+                ),
+                None,
+            )
             nav_links = []
-            for node in all_nodes:
-                if node.tag == "a" and node.parent and node.parent.tag == "nav":
+            for node in links:
+                if nav_node and _is_descendant_of(node, nav_node):
                     name = accessible_name(node)
                     if name:
                         nav_links.append(name)
@@ -163,49 +257,46 @@ def page_map(html: str) -> dict[str, Any]:
     }
 
 
-def _collect_focusable(html: str) -> list[dict[str, str]]:
+def _collect_focusable(html: str) -> list[dict[str, Any]]:
     root = parse_html(html)
-    elements: list[dict[str, str]] = []
+    issues = [
+        issue
+        for issue in audit_html(html).issues
+        if issue["severity"] in ("high", "medium") and issue["id"] in ELEMENT_WATCHPOINT_IDS
+    ]
+    issues_by_selector: dict[str, dict[str, Any]] = {issue["selector"]: issue for issue in issues}
+    records: list[tuple[int, int, dict[str, Any]]] = []
 
-    def visit(node: HtmlNode) -> None:
-        if node.tag in FOCUSABLE_TAGS:
-            name = accessible_name(node)
-            role_map = {
-                "a": "link",
-                "button": "button",
-                "input": "input",
-                "textarea": "text area",
-                "select": "dropdown menu",
+    for dom_index, node in enumerate(iter_nodes(root)):
+        if not _is_focusable_node(node):
+            continue
+        name = accessible_name(node)
+        role = _focusable_role(node)
+        selector = node.selector()
+        watchpoint = issues_by_selector.get(selector)
+        record: dict[str, Any] = {
+            "tag": node.tag,
+            "role": role,
+            "name": name or "unnamed",
+            "label": f"{role}, {name}" if name else f"{role}, unnamed",
+            "selector": selector,
+        }
+        tabindex = _tabindex_value(node)
+        if tabindex is not None:
+            record["tabindex"] = tabindex
+        if watchpoint:
+            record["watchpoint_ids"] = [watchpoint["id"]]
+            record["watchpoint"] = {
+                "id": watchpoint["id"],
+                "description": watchpoint["description"],
+                "selector": watchpoint["selector"],
+                "suggested_fix": watchpoint["suggested_fix"],
+                "autofix": watchpoint.get("autofix", False),
             }
-            input_type = node.attrs.get("type", "text") if node.tag == "input" else ""
-            role = role_map.get(node.tag, node.tag)
-            if node.tag == "input" and input_type:
-                role = f"{input_type} input"
-            elements.append(
-                {
-                    "tag": node.tag,
-                    "role": role,
-                    "name": name or "unnamed",
-                    "label": f"{role}, {name}" if name else f"{role}, unnamed",
-                }
-            )
-        tabindex = node.attrs.get("tabindex", "")
-        role_attr = node.attrs.get("role", "")
-        if node.tag not in FOCUSABLE_TAGS and tabindex not in ("", "-1") and role_attr in ("button", "link"):
-            name = accessible_name(node)
-            elements.append(
-                {
-                    "tag": node.tag,
-                    "role": role_attr,
-                    "name": name or "unnamed",
-                    "label": f"{role_attr}, {name}" if name else f"{role_attr}, unnamed",
-                }
-            )
-        for child in node.children:
-            visit(child)
+        records.append((tabindex or 0, dom_index, record))
 
-    visit(root)
-    return elements[:MAX_FOCUSABLE]
+    records.sort(key=lambda item: (0 if item[0] > 0 else 1, item[0] if item[0] > 0 else item[1], item[1]))
+    return [record for _, _, record in records[:MAX_FOCUSABLE]]
 
 
 def keyboard_journey_start(html: str) -> dict[str, Any]:
@@ -382,7 +473,9 @@ def fix_current_issue(html: str, issue_index: int = 0) -> dict[str, Any]:
             "issue": issue,
         }
 
-    fixed_html, fixed_ids, audit_after = apply_audit_fixes(html, issue_id=issue["id"])
+    fixed_html, fixed_ids, audit_after = apply_audit_fixes(
+        html, issue_id=issue["id"], issue_selector=issue.get("selector")
+    )
 
     if not fixed_ids:
         return {
@@ -420,16 +513,24 @@ def compare_before_after(html_before: str, html_after: str) -> dict[str, Any]:
     root_before = parse_html(html_before)
     root_after = parse_html(html_after)
 
-    for img_after in iter_nodes(root_after, {"img"}):
+    for index, (img_before, img_after) in enumerate(
+        zip(iter_nodes(root_before, {"img"}), iter_nodes(root_after, {"img"}), strict=False), 1
+    ):
+        alt_before = img_before.attrs.get("alt", "")
         alt_after = img_after.attrs.get("alt", "")
-        if alt_after and alt_after != "Describe this image":
-            for img_before in iter_nodes(root_before, {"img"}):
-                alt_before = img_before.attrs.get("alt", "")
-                if not alt_before or alt_before == "Describe this image":
-                    changes.append(
-                        f'An image now has alternative text: "{alt_after}" (previously missing or placeholder).'
-                    )
-                    break
+        if (not alt_before or alt_before == "Describe this image") and alt_after and alt_after != alt_before:
+            changes.append(f'Image {index} now has alternative text: "{alt_after}".')
+
+    control_tags = {"button", "a", "input", "textarea", "select"}
+    before_controls = [node for node in iter_nodes(root_before, control_tags)]
+    after_controls = [node for node in iter_nodes(root_after, control_tags)]
+    for index, (before_control, after_control) in enumerate(zip(before_controls, after_controls, strict=False), 1):
+        before_name = accessible_name(before_control)
+        after_name = accessible_name(after_control)
+        if before_name or not after_name:
+            continue
+        role = _focusable_role(after_control)
+        changes.append(f'{role.capitalize()} {index} now has readable label: "{after_name}".')
 
     for issue_id in sorted(fixed_ids):
         before_issue = next((i for i in audit_before.issues if i["id"] == issue_id), None)

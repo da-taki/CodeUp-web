@@ -27,7 +27,7 @@ class HtmlNode:
     def selector(self) -> str:
         if self.attrs.get("id"):
             return f"#{self.attrs['id']}"
-        label = self.attrs.get("aria-label") or self.attrs.get("alt") or self.text
+        label = (self.attrs.get("aria-label") or self.attrs.get("alt") or self.text).strip()
         suffix = f"[{label[:32]}]" if label else f":nth-of-type({self.index})"
         return f"{self.tag}{suffix}"
 
@@ -352,13 +352,15 @@ def audit_html(html: str) -> AuditResult:
     inputs = iter_nodes(root, {"input", "textarea", "select"})
     label_targets = {label.attrs.get("for", "") for label in labels if label.attrs.get("for")}
     landmark_nodes = iter_nodes(root, {"main", "section", "article", "header", "footer", "nav"})
-    form_label_ok = True
+    unlabeled_controls = []
     for control in inputs:
+        if control.tag == "input" and control.attrs.get("type", "text").strip().lower() == "hidden":
+            continue
         control_id = control.attrs.get("id", "")
         if accessible_name(control) or (control_id and control_id in label_targets):
             continue
-        form_label_ok = False
-        break
+        unlabeled_controls.append(control)
+    form_label_ok = not unlabeled_controls
     checks = [
         ("Document starts with doctype", lowered.lstrip().startswith("<!doctype html")),
         ("Page has a language attribute", bool(html_node and html_node.attrs.get("lang"))),
@@ -474,14 +476,14 @@ def audit_html(html: str) -> AuditResult:
                 True,
             )
         )
-    if not form_label_ok:
+    for control in unlabeled_controls:
         issues.append(
             _issue(
                 "missing_form_label",
                 "high",
                 "A form control has no accessible label.",
                 "Add a label or aria-label.",
-                "form",
+                control.selector(),
                 True,
             )
         )
@@ -615,16 +617,18 @@ def _insert_head_child(html: str, markup: str) -> str:
     return re.sub(r"</head\s*>", f"{markup}\n</head>", document, count=1, flags=re.I)
 
 
-def _missing_form_label_targets(html: str) -> set[tuple[str, int]]:
+def _missing_form_label_targets(html: str) -> set[str]:
     root = parse_html(html)
     labels = iter_nodes(root, {"label"})
     label_targets = {label.attrs.get("for", "") for label in labels if label.attrs.get("for")}
-    targets: set[tuple[str, int]] = set()
+    targets: set[str] = set()
     for control in iter_nodes(root, {"input", "textarea", "select"}):
+        if control.tag == "input" and control.attrs.get("type", "text").strip().lower() == "hidden":
+            continue
         control_id = control.attrs.get("id", "")
         if accessible_name(control) or (control_id and control_id in label_targets):
             continue
-        targets.add((control.tag, control.index))
+        targets.add(control.selector())
     return targets
 
 
@@ -638,8 +642,29 @@ def _add_or_replace_aria_label(tag: str, label: str = "Input field") -> str:
     return re.sub(r"^<([a-zA-Z][\w:-]*)\b", rf'<\1 aria-label="{label}"', tag, count=1)
 
 
+def _tag_attr(tag: str, name: str) -> str:
+    match = re.search(rf'\b{name}\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]*)', tag, re.I)
+    return match.group(1).strip("\"'") if match else ""
+
+
+def _tag_selector(tag_name: str, tag: str, index: int) -> str:
+    tag_id = _tag_attr(tag, "id")
+    if tag_id:
+        return f"#{tag_id}"
+    return f"{tag_name}:nth-of-type({index})"
+
+
+def _tag_selector_matches(tag_name: str, tag: str, index: int, selector: str | None) -> bool:
+    if not selector:
+        return True
+    if selector.startswith("#"):
+        return _tag_attr(tag, "id") == selector[1:]
+    match = re.fullmatch(rf"{re.escape(tag_name)}:nth-of-type\((\d+)\)", selector)
+    return bool(match and index == int(match.group(1)))
+
+
 def apply_audit_fixes(
-    html: str, issue_id: str | None = None, fix_all: bool = False
+    html: str, issue_id: str | None = None, fix_all: bool = False, issue_selector: str | None = None
 ) -> tuple[str, list[str], AuditResult]:
     audit = audit_html(html)
     selected = [issue for issue in audit.issues if issue.get("autofix")]
@@ -680,9 +705,14 @@ def apply_audit_fixes(
             updated = f"<h1>Untitled Page</h1>\n{updated}"
         fixed.append("missing_h1")
     if "missing_image_alt" in selected_ids:
+        img_count = 0
 
         def add_alt(match: re.Match[str]) -> str:
+            nonlocal img_count
+            img_count += 1
             tag = match.group(0)
+            if not _tag_selector_matches("img", tag, img_count, issue_selector):
+                return tag
             alt_match = re.search(r'\balt\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]*)', tag, re.I)
             if alt_match:
                 value = alt_match.group(1).strip("\"'")
@@ -698,11 +728,39 @@ def apply_audit_fixes(
         if updated != previous:
             fixed.append("missing_image_alt")
     if "unnamed_button" in selected_ids:
-        updated = re.sub(r"<button\b([^>]*)>\s*</button>", r"<button\1>Button</button>", updated, flags=re.I)
-        fixed.append("unnamed_button")
+        button_count = 0
+
+        def label_button(match: re.Match[str]) -> str:
+            nonlocal button_count
+            button_count += 1
+            opening = match.group(1)
+            text = match.group(2)
+            tag = f"<button{opening}>"
+            if not _tag_selector_matches("button", tag, button_count, issue_selector) or text.strip():
+                return match.group(0)
+            return f"<button{opening}>Button</button>"
+
+        previous = updated
+        updated = re.sub(r"<button\b([^>]*)>(.*?)</button>", label_button, updated, flags=re.I | re.S)
+        if updated != previous:
+            fixed.append("unnamed_button")
     if "unnamed_link" in selected_ids:
-        updated = re.sub(r"<a\b([^>]*)>\s*</a>", r'<a\1 aria-label="Link">Link</a>', updated, flags=re.I)
-        fixed.append("unnamed_link")
+        link_count = 0
+
+        def label_link(match: re.Match[str]) -> str:
+            nonlocal link_count
+            link_count += 1
+            opening = match.group(1)
+            text = match.group(2)
+            tag = f"<a{opening}>"
+            if not _tag_selector_matches("a", tag, link_count, issue_selector) or text.strip():
+                return match.group(0)
+            return f'<a{opening} aria-label="Link">Link</a>'
+
+        previous = updated
+        updated = re.sub(r"<a\b([^>]*)>(.*?)</a>", label_link, updated, flags=re.I | re.S)
+        if updated != previous:
+            fixed.append("unnamed_link")
     if "missing_landmarks" in selected_ids and not iter_nodes(
         parse_html(updated), {"main", "section", "article", "header", "footer", "nav"}
     ):
@@ -714,12 +772,15 @@ def apply_audit_fixes(
         fixed.append("missing_landmarks")
     if "missing_form_label" in selected_ids:
         targets = _missing_form_label_targets(updated)
+        if issue_selector:
+            targets = {target for target in targets if target == issue_selector}
         counts: dict[str, int] = {}
 
         def label_control(match: re.Match[str]) -> str:
             tag_name = match.group(1).lower()
             counts[tag_name] = counts.get(tag_name, 0) + 1
-            if (tag_name, counts[tag_name]) not in targets:
+            selector = _tag_selector(tag_name, match.group(0), counts[tag_name])
+            if selector not in targets:
                 return match.group(0)
             return _add_or_replace_aria_label(match.group(0))
 
