@@ -1350,6 +1350,34 @@
     }
   }
 
+  function findWalkthroughWatchpoint(element) {
+    const wt = state.walkthrough;
+    if (!wt.watchpointMode || !element) return null;
+    const embedded = element.watchpoint || null;
+    const match = wt.watchpoints.find(function (issue) {
+      if (embedded && issue.id === embedded.id && issue.selector === embedded.selector) return true;
+      return issue.selector && element.selector && issue.selector === element.selector;
+    });
+    return match || embedded;
+  }
+
+  function writeWalkthroughPosition(message, element) {
+    const wt = state.walkthrough;
+    const wp = findWalkthroughWatchpoint(element);
+    if (!wp) {
+      writeOutput(message, true);
+      return;
+    }
+    const watchpointIndex = wt.watchpoints.findIndex(function (issue) {
+      return issue.id === wp.id && issue.selector === wp.selector;
+    });
+    wt.currentIssueIndex = watchpointIndex >= 0 ? watchpointIndex : 0;
+    writeOutput(
+      message + ' Accessibility watchpoint: ' + wp.description + ' Say "fix this issue" to apply a suggested repair.',
+      true
+    );
+  }
+
   async function walkthroughKeyboardStart() {
     const html = getHtml();
     writeOutput(t('Starting keyboard journey...', 'Keyboard journey shuru ho rahi hai...'));
@@ -1362,7 +1390,7 @@
       state.walkthrough.mode = 'keyboard-journey';
       state.walkthrough.journeyElements = data.elements || [];
       state.walkthrough.journeyIndex = data.index;
-      writeOutput(data.message, true);
+      writeWalkthroughPosition(data.message, state.walkthrough.journeyElements[data.index]);
     } catch (error) {
       writeOutput(error.message, true);
     }
@@ -1381,22 +1409,7 @@
         body: JSON.stringify({ html, index: wt.journeyIndex, direction }),
       });
       wt.journeyIndex = data.index;
-      if (wt.watchpointMode && data.element) {
-        const wp = wt.watchpoints.find(function (issue) {
-          const name = data.element.name || '';
-          return (
-            (issue.id === 'unnamed_button' && data.element.tag === 'button' && name === 'unnamed') ||
-            (issue.id === 'unnamed_link' && data.element.tag === 'a' && name === 'unnamed') ||
-            (issue.id === 'missing_form_label' && (data.element.tag === 'input' || data.element.tag === 'textarea' || data.element.tag === 'select') && name === 'unnamed')
-          );
-        });
-        if (wp) {
-          wt.currentIssueIndex = wt.watchpoints.indexOf(wp);
-          writeOutput(data.message + ' Accessibility watchpoint: ' + wp.description + ' Say "fix this issue" to apply a suggested repair.', true);
-          return;
-        }
-      }
-      writeOutput(data.message, true);
+      writeWalkthroughPosition(data.message, data.element);
     } catch (error) {
       writeOutput(error.message, true);
     }

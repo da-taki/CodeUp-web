@@ -37,6 +37,34 @@ FLAWED_HTML = (
 
 EMPTY_HTML = ""
 
+NESTED_NAV_HTML = (
+    "<!doctype html><html lang='en'><head><title>Nested Nav</title>"
+    "<meta name='viewport' content='width=device-width'></head>"
+    "<body><header><nav aria-label='Main navigation'><ul>"
+    "<li><a href='#home'>Home</a></li><li><a href='#events'>Events</a></li>"
+    "</ul></nav></header><main><h1>Club</h1></main></body></html>"
+)
+
+FOCUS_EDGE_HTML = (
+    "<!doctype html><html lang='en'><head><title>Focus</title>"
+    "<meta name='viewport' content='width=device-width'></head>"
+    "<body><main><h1>Focus Test</h1>"
+    "<a>No href</a>"
+    "<a href='#home'>Home</a>"
+    "<button disabled>Disabled</button>"
+    "<input type='hidden' value='skip-me'>"
+    "<button tabindex='-1'>Skip me</button>"
+    "<button hidden>Hidden Button</button>"
+    "<a href='#hidden' aria-hidden='true'>Hidden Link</a>"
+    "<button style='display:none'>Display None</button>"
+    "<button style='visibility:hidden'>Invisible</button>"
+    "<div role='button' tabindex='1'>Priority Role Button</div>"
+    "<button tabindex='2'>Priority Native</button>"
+    "<button>Join</button>"
+    "<input aria-label='Email'>"
+    "</main></body></html>"
+)
+
 
 class TestPageMap:
     def test_page_map_good_html(self, client):
@@ -70,6 +98,10 @@ class TestPageMap:
         data = client.post("/walkthrough/page-map", json={"html": GOOD_HTML}).get_json()
         nav_landmarks = [lm for lm in data["landmarks"] if lm["tag"] == "nav"]
         assert len(nav_landmarks) >= 1
+
+    def test_page_map_nested_navigation_links(self, client):
+        data = client.post("/walkthrough/page-map", json={"html": NESTED_NAV_HTML}).get_json()
+        assert "Navigation region with links Home, Events" in data["summary"]
 
     def test_page_map_images_and_alt(self, client):
         data = client.post("/walkthrough/page-map", json={"html": GOOD_HTML}).get_json()
@@ -180,6 +212,39 @@ class TestKeyboardJourney:
         data = client.post("/walkthrough/keyboard-journey", json={"html": html}).get_json()
         assert data["total"] == 0
         assert "no interactive elements" in data["message"].lower()
+
+    def test_journey_filters_non_focusable_elements_and_orders_positive_tabindex(self, client):
+        data = client.post("/walkthrough/keyboard-journey", json={"html": FOCUS_EDGE_HTML}).get_json()
+        labels = [el["label"] for el in data["elements"]]
+
+        assert labels[:2] == ["button, Priority Role Button", "button, Priority Native"]
+        assert "link, Home" in labels
+        assert "button, Join" in labels
+        assert "text input, Email" in labels
+        assert "link, No href" not in labels
+        assert "button, Disabled" not in labels
+        assert "hidden input, skip-me" not in labels
+        assert "button, Skip me" not in labels
+        assert "button, Hidden Button" not in labels
+        assert "link, Hidden Link" not in labels
+        assert "button, Display None" not in labels
+        assert "button, Invisible" not in labels
+
+    def test_journey_marks_element_linked_watchpoints(self, client):
+        html = (
+            "<!doctype html><html lang='en'><head><title>Watch</title>"
+            "<meta name='viewport' content='width=device-width'></head>"
+            "<body><main><h1>Watch</h1><button>Join</button><button></button>"
+            "<input type='text'></main></body></html>"
+        )
+        start = client.post("/walkthrough/keyboard-journey", json={"html": html}).get_json()
+        move = client.post(
+            "/walkthrough/keyboard-move",
+            json={"html": html, "index": start["index"], "direction": "next"},
+        ).get_json()
+
+        assert move["element"]["watchpoint"]["id"] == "unnamed_button"
+        assert move["element"]["selector"] == move["element"]["watchpoint"]["selector"]
 
 
 class TestWatchpoints:
@@ -317,6 +382,41 @@ class TestRepairReplay:
             ).get_json()
             assert compare["issues_after"] < compare["issues_before"] or compare["issues_after"] >= 0
 
+    def test_fix_and_compare_pairs_second_missing_image(self, client):
+        html = (
+            "<!doctype html><html lang='en'><head><title>Gallery</title>"
+            "<meta name='viewport' content='width=device-width'></head>"
+            "<body><main><h1>Gallery</h1><img src='one.jpg'><img src='two.jpg'></main></body></html>"
+        )
+        fix_data = client.post("/walkthrough/fix", json={"html": html, "issue_index": 1}).get_json()
+        assert fix_data["success"] is True
+        assert "<img src='one.jpg'>" in fix_data["fixed_html"]
+        assert "<img src='two.jpg' alt=\"Describe this image\">" in fix_data["fixed_html"]
+
+        compare = client.post(
+            "/walkthrough/compare",
+            json={"html_before": html, "html_after": fix_data["fixed_html"]},
+        ).get_json()
+        assert "Image 2 now has alternative text" in compare["message"]
+        assert "Image 1 now has alternative text" not in compare["message"]
+
+    def test_fix_and_compare_pairs_second_unlabeled_control(self, client):
+        html = (
+            "<!doctype html><html lang='en'><head><title>Form</title>"
+            "<meta name='viewport' content='width=device-width'></head>"
+            "<body><main><h1>Form</h1><form><input type='text'><input type='email'></form></main></body></html>"
+        )
+        fix_data = client.post("/walkthrough/fix", json={"html": html, "issue_index": 1}).get_json()
+        assert fix_data["success"] is True
+        assert "<input type='text'>" in fix_data["fixed_html"]
+        assert "<input aria-label=\"Input field\" type='email'>" in fix_data["fixed_html"]
+
+        compare = client.post(
+            "/walkthrough/compare",
+            json={"html_before": html, "html_after": fix_data["fixed_html"]},
+        ).get_json()
+        assert "Email input 2 now has readable label" in compare["message"]
+
 
 class TestCommandRouting:
     def test_walkthrough_commands_route_correctly(self, client):
@@ -337,9 +437,9 @@ class TestCommandRouting:
         }
         for text, expected_action in commands.items():
             data = client.post("/voice-command", json={"text": text}).get_json()
-            assert (
-                data["action"] == expected_action
-            ), f"Command '{text}' routed to '{data['action']}' instead of '{expected_action}'"
+            assert data["action"] == expected_action, (
+                f"Command '{text}' routed to '{data['action']}' instead of '{expected_action}'"
+            )
 
     def test_walkthrough_commands_do_not_collide_with_existing(self, client):
         existing = {

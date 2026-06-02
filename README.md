@@ -302,9 +302,8 @@ and hear what changed afterward.
 
 All structural and accessibility facts are derived deterministically from the
 current HTML using the same parser and audit engine that powers the Audit
-feature. AI is optional: when a cloud provider is configured, it may rephrase
-deterministic findings to be easier for beginners to understand. When AI is
-unavailable, all walkthrough features work fully offline.
+feature. The walkthrough is currently deterministic and offline-capable; it does
+not call a cloud AI provider to rewrite or validate walkthrough findings.
 
 Walkthrough commands:
 
