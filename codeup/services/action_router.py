@@ -4,7 +4,6 @@ import json
 import re
 from typing import Any
 
-from codeup.config import MAX_HTML_SIZE
 from codeup.services.ai_service import call_ai, is_ai_unavailable
 
 ALLOWED_ACTIONS = frozenset({
