@@ -64,6 +64,7 @@
     activeVoice: false,
     wakeListening: false,
     paused: false,
+    manualVoiceStop: false,
     demoMode: false,
     lastSpoken: '',
     lastUrl: '',
@@ -1275,24 +1276,126 @@
     osc.stop(start + duration);
   }
 
+  let _sonifyTimer = null;
+
   function sonifyHtml() {
     cancelSpeech();
-    const html = getHtml();
+    if (_sonifyTimer) { clearTimeout(_sonifyTimer); _sonifyTimer = null; }
     const doc = previewDocument();
-    const elements = [...doc.body.querySelectorAll('header,main,section,article,nav,h1,h2,h3,p,a,button,img,form')];
-    const tags = elements.length
-      ? elements.map((node, index) => ({ tag: node.tagName.toLowerCase(), pan: (index % 5 - 2) / 2 }))
-      : [...html.matchAll(/<\/?([a-zA-Z][\w-]*)\b[^>]*>/g)].map((match, index) => ({ tag: match[1].toLowerCase(), pan: (index % 5 - 2) / 2 }));
-    if (!tags.length) {
-      speak(t('No HTML tags found to sonify.', 'Sonify karne ke liye HTML tags nahi mile.'));
+    const STRUCTURAL_TAGS = new Set(['header', 'nav', 'main', 'section', 'article', 'form', 'footer', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'button', 'a', 'img']);
+    const FREQ_MAP = { header: 520, nav: 480, main: 400, section: 440, article: 440, form: 500, footer: 360, h1: 600, h2: 560, h3: 520, h4: 500, h5: 480, h6: 460, button: 700, a: 650, img: 820 };
+    const WAVE_MAP = { button: 'square', a: 'triangle', img: 'sawtooth' };
+
+    function collectStructural(node, depth) {
+      const items = [];
+      if (!node || !node.children) return items;
+      for (const child of node.children) {
+        const tag = child.tagName ? child.tagName.toLowerCase() : '';
+        if (STRUCTURAL_TAGS.has(tag)) {
+          items.push({ tag, depth: Math.min(depth, 5) });
+          items.push(...collectStructural(child, depth + 1));
+        } else {
+          items.push(...collectStructural(child, depth));
+        }
+      }
+      return items;
+    }
+
+    const items = collectStructural(doc.body, 0);
+    if (!items.length) {
+      speak(t('No HTML structure found to sonify.', 'Sonify karne ke liye HTML structure nahi mila.'));
       return;
     }
-    speak(t(`Sonifying ${tags.length} HTML tags.`, `${tags.length} HTML tags ko sound mein suna raha hoon.`));
-    tags.slice(0, 80).forEach((item, index) => {
-      const tag = item.tag;
-      const base = tag === 'header' ? 520 : tag === 'section' ? 440 : tag === 'button' ? 700 : tag === 'img' ? 820 : tag === 'script' ? 300 : 360;
-      playTone(base + (index % 5) * 35, 0.12, index * 0.11, tag === 'button' ? 'square' : 'sine', item.pan);
+    const capped = items.slice(0, 20);
+    const GAP = 0.10;
+    const DURATION = 0.09;
+    const totalTime = (capped.length * GAP + DURATION).toFixed(1);
+    writeOutput(t(`Sonifying ${capped.length} structural elements (${totalTime}s).`, `${capped.length} structural elements sonify ho rahe hain (${totalTime}s).`));
+
+    capped.forEach((item, index) => {
+      const freq = (FREQ_MAP[item.tag] || 400) - item.depth * 40;
+      const pan = Math.max(-1, Math.min(1, (item.depth - 2) / 3));
+      const wave = WAVE_MAP[item.tag] || 'sine';
+      playTone(Math.max(200, freq), DURATION, index * GAP, wave, pan);
     });
+
+    _sonifyTimer = setTimeout(() => {
+      _sonifyTimer = null;
+      const summary = t(
+        `Done. ${capped.length} elements: ${[...new Set(capped.map(i => i.tag))].join(', ')}.`,
+        `Ho gaya. ${capped.length} elements: ${[...new Set(capped.map(i => i.tag))].join(', ')}.`
+      );
+      speak(summary);
+    }, Math.ceil(capped.length * GAP * 1000) + 200);
+  }
+
+  // --- Snippet persistence (localStorage) ---
+  const SNIPPET_STORAGE_KEY = 'codeup_snippets';
+  const MAX_SNIPPETS = 30;
+
+  function sanitizeSnippetName(name) {
+    return (name || '').replace(/[^a-zA-Z0-9 _-]/g, '').trim().slice(0, 60).toLowerCase();
+  }
+
+  function loadSnippets() {
+    try { return JSON.parse(localStorage.getItem(SNIPPET_STORAGE_KEY) || '{}'); } catch (e) { return {}; }
+  }
+
+  function persistSnippets(snippets) {
+    try { localStorage.setItem(SNIPPET_STORAGE_KEY, JSON.stringify(snippets)); } catch (e) {}
+  }
+
+  function saveSnippet(name) {
+    const safeName = sanitizeSnippetName(name);
+    if (!safeName) { speak(t('Please provide a snippet name.', 'Snippet ka naam bataiye.')); return; }
+    const html = getHtml();
+    if (!html.trim()) { speak(t('Cannot save an empty page as a snippet.', 'Khaali page snippet mein save nahi hota.')); return; }
+    const snippets = loadSnippets();
+    const exists = safeName in snippets;
+    if (exists) {
+      snippets[safeName] = { html, saved: new Date().toISOString() };
+      persistSnippets(snippets);
+      speak(t(`Updated snippet: ${safeName}.`, `Snippet update ho gaya: ${safeName}.`));
+    } else {
+      if (Object.keys(snippets).length >= MAX_SNIPPETS) {
+        speak(t(`You have ${MAX_SNIPPETS} snippets already. Delete one first.`, `Aapke paas ${MAX_SNIPPETS} snippets hain. Pehle ek delete karein.`));
+        return;
+      }
+      snippets[safeName] = { html, saved: new Date().toISOString() };
+      persistSnippets(snippets);
+      speak(t(`Saved snippet: ${safeName}.`, `Snippet save ho gaya: ${safeName}.`));
+    }
+    writeOutput(t(`Snippet "${safeName}" saved.`, `Snippet "${safeName}" save ho gaya.`));
+  }
+
+  function listSnippets() {
+    const snippets = loadSnippets();
+    const names = Object.keys(snippets);
+    if (!names.length) {
+      writeOutput(t('No saved snippets yet.', 'Abhi koi snippet save nahi hai.'), true);
+      return;
+    }
+    const list = names.map(n => `- ${n}`).join('\n');
+    writeOutput(t(`Your snippets:\n${list}`, `Aapke snippets:\n${list}`), true);
+  }
+
+  function loadSnippet(name) {
+    const safeName = sanitizeSnippetName(name);
+    if (!safeName) { speak(t('Please say the snippet name.', 'Snippet ka naam bataiye.')); return; }
+    const snippets = loadSnippets();
+    if (!(safeName in snippets)) {
+      const available = Object.keys(snippets);
+      const suggestion = available.length ? ` Available: ${available.join(', ')}.` : '';
+      speak(t(`Snippet "${safeName}" not found.${suggestion}`, `Snippet "${safeName}" nahi mila.${suggestion}`));
+      return;
+    }
+    const currentHtml = getHtml();
+    if (currentHtml.trim() && currentHtml !== starterHtml) {
+      snapshotVersion('Before loading snippet');
+    }
+    setHtml(snippets[safeName].html);
+    snapshotVersion(`Loaded snippet: ${safeName}`);
+    writeOutput(t(`Loaded snippet: ${safeName}.`, `Snippet load ho gaya: ${safeName}.`), true);
   }
 
   function insertAtCursor(text) {
@@ -1646,6 +1749,9 @@
     if (action === 'switch_page') { switchPage(slots.page || command); return true; }
     if (action === 'add_section') return addSectionFromIntent(command, slots);
     if (action === 'use_template') { useTemplate(command); return true; }
+    if (action === 'save_snippet') { if (handleSnippetCommand(command)) return true; saveSnippet(command.replace(/.*snippet\s*(called|named)?\s*/i, '')); return true; }
+    if (action === 'list_snippets') { listSnippets(); return true; }
+    if (action === 'load_snippet') { if (handleSnippetCommand(command)) return true; loadSnippet(command.replace(/.*snippet\s*(called|named)?\s*/i, '')); return true; }
     if (action === 'apply_audit_fixes') { await applyAllAuditFixes(); return true; }
     if (action === 'apply_review') { await applyReviewSuggestion(command, true); return true; }
     if (action === 'review_site') { await reviewWebsite(true); return true; }
@@ -1654,10 +1760,114 @@
     if (action === 'outline_site') { outlineWebsite(true); return true; }
     if (action === 'export_site') { await exportHtml(); return true; }
     if (action === 'reset_session') { await resetSession(); return true; }
+    if (action === 'clear_editor') { await resetSession(); return true; }
     if (action === 'explain_site') { await explainWebsite(true); return true; }
     if (action === 'sonify_site') { sonifyHtml(); return true; }
     if (action === 'polish_html') { await polishHtml(); return true; }
     if (action === 'build_site') { await buildWebsite(slots.prompt || command, true); return true; }
+    return false;
+  }
+
+  async function routeNaturalCommand(transcript) {
+    try {
+      const data = await apiJson('/voice-action', {
+        method: 'POST',
+        body: JSON.stringify({
+          transcript,
+          html: getHtml(),
+          language: lang(),
+        }),
+      });
+      return data;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  async function executeStructuredAction(action) {
+    if (!action || !action.action || action.action === 'unknown') return false;
+    const act = action.action;
+    const confirmation = action.spoken_confirmation || '';
+
+    if (act === 'generate_page' || act === 'edit_page') {
+      if (action.html) {
+        snapshotVersion('Before AI action');
+        if (act === 'generate_page') { state.currentPage = 'home'; state.pages = {}; }
+        setHtml(action.html);
+        snapshotVersion(confirmation || 'AI edit');
+        try { await publish(action.html); } catch (e) {}
+        writeOutput(confirmation || t('Page updated.', 'Page update ho gaya.'), true);
+        return true;
+      }
+    }
+    if (act === 'append_html' || act === 'add_component') {
+      if (action.html) {
+        snapshotVersion('Before adding component');
+        insertAtCursor('\n' + action.html + '\n');
+        writeOutput(confirmation || t('Content added.', 'Content add ho gaya.'), true);
+        return true;
+      }
+    }
+    if (act === 'replace_html_element' || act === 'update_text' || act === 'update_attribute' || act === 'add_alt_text' || act === 'fix_accessibility_issue') {
+      if (action.html) {
+        snapshotVersion('Before AI edit');
+        setHtml(action.html);
+        snapshotVersion(confirmation || 'Edited page');
+        try { await publish(action.html); } catch (e) {}
+        writeOutput(confirmation || t('Edit applied.', 'Edit apply ho gaya.'), true);
+        return true;
+      }
+    }
+    if (act === 'remove_element') {
+      if (action.html) {
+        snapshotVersion('Before removal');
+        setHtml(action.html);
+        snapshotVersion(confirmation || 'Removed element');
+        writeOutput(confirmation || t('Element removed.', 'Element hata diya.'), true);
+        return true;
+      }
+    }
+    if (act === 'preview_page') { await previewHtml(true); return true; }
+    if (act === 'explain_structure') { await walkthroughPageMap(); return true; }
+    if (act === 'audit_accessibility') { await auditWebsite(true); return true; }
+    if (act === 'sonify_structure') { sonifyHtml(); return true; }
+    if (act === 'save_snippet') { saveSnippet(action.snippet_name || ''); return true; }
+    if (act === 'list_snippets') { listSnippets(); return true; }
+    if (act === 'load_snippet') { loadSnippet(action.snippet_name || ''); return true; }
+    if (act === 'undo') { await undoByVoice('undo'); return true; }
+    if (act === 'clear_editor') { await resetSession(); return true; }
+    if (confirmation) { writeOutput(confirmation, true); return true; }
+    return false;
+  }
+
+  function isSnippetCommand(lower) {
+    return /\b(save|load|show|list|delete)\b.*\bsnippet/i.test(lower) ||
+      /\bsnippet\b.*\b(save|load|show|list|delete)\b/i.test(lower) ||
+      /\b(mere|mera)\s+snippets?\b/i.test(lower) ||
+      /\bsnippet\b.*\b(dikhao|batao)\b/i.test(lower);
+  }
+
+  function handleSnippetCommand(command) {
+    const lower = command.toLowerCase();
+    if (/\b(show|list)\b.*\bsnippets?\b/i.test(lower) || /\b(mere|mera)\s+snippets?\b/i.test(lower) || /\bsnippets?\s+(dikhao|batao)\b/i.test(lower)) {
+      listSnippets();
+      return true;
+    }
+    const saveMatch = command.match(/save\s+(?:this\s+(?:page|website|site)\s+)?(?:as\s+)?(?:a\s+)?snippet\s+(?:called\s+|named\s+)?(.+)/i)
+      || command.match(/snippet\s+(?:save\s+(?:karo|kar\s+do)\s+)?(.+?\s+naam\s+se)/i)
+      || command.match(/(.+?)\s+naam\s+(?:se|ka)\s+snippet\s+save\s+karo/i);
+    if (saveMatch) {
+      const name = saveMatch[1].replace(/\b(naam\s+se|called|named)\b/gi, '').trim();
+      saveSnippet(name);
+      return true;
+    }
+    const loadMatch = command.match(/load\s+(?:the\s+)?snippet\s+(?:called\s+|named\s+)?(.+)/i)
+      || command.match(/(.+?)\s+(?:wala|naam\s+ka)\s+snippet\s+load\s+karo/i);
+    if (loadMatch) {
+      const name = loadMatch[1].replace(/\b(called|named|wala|naam\s+ka)\b/gi, '').trim();
+      loadSnippet(name);
+      return true;
+    }
     return false;
   }
 
@@ -1688,12 +1898,16 @@
     state.wakeUntil = Date.now() + 45000;
     writeOutput(`${t('Heard', 'Suna')}: ${command}`);
 
-    if (lower.includes('voice off') || lower.includes('stop voice')) {
+    if (lower.includes('voice off') || lower.includes('stop voice') || lower.includes('voice band karo') || lower.includes('sunna band karo')) {
       stopVoice();
       return;
     }
     if (lower.includes('pause voice') || lower.includes('stop listening') || lower.includes('awaaz rok') || lower.includes('ruk jao')) {
       pauseVoice();
+      return;
+    }
+    if (lower.includes('voice on karo') || lower.includes('dobara sunna shuru karo')) {
+      resumeVoice();
       return;
     }
     if (state.paused) {
@@ -1804,11 +2018,46 @@
     }
     if (addHtmlFromSpeech(command)) return;
 
+    // Hinglish clear/preview/structure/accessibility
+    if (/\b(editor|page)\s+(clear|saaf)\s+karo\b/i.test(lower) || /\bnaya\s+page\s+shuru\s+karo\b/i.test(lower)) {
+      await resetSession();
+      return;
+    }
+    if (/\bpage\s+preview\s+karo\b/i.test(lower) || /\bwebsite\s+dikhao\b/i.test(lower)) {
+      await previewHtml(true);
+      return;
+    }
+    if (/\bpage\s+ka\s+structure\s+samjhao\b/i.test(lower) || /\bwebsite\s+ka\s+layout\s+batao\b/i.test(lower)) {
+      await walkthroughPageMap();
+      return;
+    }
+    if (/\bpage\s+structure\s+sonify\s+karo\b/i.test(lower) || /\blayout\s+ka\s+audio\s+structure\s+sunao\b/i.test(lower)) {
+      sonifyHtml();
+      return;
+    }
+    if (/\baccessibility\s+issues?\s+check\s+karo\b/i.test(lower) || /\bmissing\s+alt\s+text\s+fix\s+karo\b/i.test(lower) || /\baccessibility\s+fix\s+karo\b/i.test(lower)) {
+      await auditWebsite(true);
+      return;
+    }
+
+    // Snippet commands
+    if (isSnippetCommand(lower)) {
+      if (handleSnippetCommand(command)) return;
+    }
+
     const buildMatch = command.match(/(?:build|make|create|banao|bana do|website for|ke liye website)\s+(.+)/i);
     if (buildMatch || isBuildIntent(command)) {
       await buildWebsite(buildMatch ? buildMatch[1] : command, true);
       return;
     }
+
+    // Natural command via Groq structured router (fallback for conversational editing)
+    if (command.length > 10) {
+      writeOutput(t('Processing...', 'Process ho raha hai...'));
+      const action = await routeNaturalCommand(command);
+      if (action && action.success && await executeStructuredAction(action)) return;
+    }
+
     await chatWithAI(command, true);
   }
 
@@ -1889,11 +2138,37 @@
       lower.includes('less spacing') ||
       lower.includes('high contrast') ||
       lower.includes('rounded') ||
-      lower.includes('center')
+      lower.includes('center') ||
+      lower.includes('voice off') ||
+      lower.includes('voice band karo') ||
+      lower.includes('voice on karo') ||
+      lower.includes('sunna band karo') ||
+      lower.includes('dobara sunna') ||
+      /snippet/i.test(lower) ||
+      /\b(clear|saaf)\s+karo\b/i.test(lower) ||
+      /\bnaya\s+page\b/i.test(lower) ||
+      /\bpage\s+preview\s+karo\b/i.test(lower) ||
+      /\bwebsite\s+dikhao\b/i.test(lower) ||
+      /\bstructure\s+samjhao\b/i.test(lower) ||
+      /\blayout\s+batao\b/i.test(lower) ||
+      /\bsonify\s+karo\b/i.test(lower) ||
+      /\baudio\s+structure\s+sunao\b/i.test(lower) ||
+      /\baccessibility\s+issues?\s+check\s+karo\b/i.test(lower) ||
+      /\balt\s+text\s+fix\s+karo\b/i.test(lower) ||
+      /\bheading\s+ko\b.*\bkar\s+do\b/i.test(lower) ||
+      /\bimage\s+add\s+karo\b/i.test(lower)
     ) {
       await handleVoiceCommand(text);
       return;
     }
+
+    // Natural conversational editing via Groq router
+    if (text.length > 10) {
+      writeOutput(t('Processing...', 'Process ho raha hai...'));
+      const action = await routeNaturalCommand(text);
+      if (action && action.success && await executeStructuredAction(action)) return;
+    }
+
     await chatWithAI(text, true);
   }
 
@@ -1931,7 +2206,7 @@
       speak(t('Voice recognition is not supported in this browser. Please use Chrome or Edge.', 'Is browser mein voice recognition support nahi hai. Chrome ya Edge use karein.'));
       return;
     }
-    if (!state.activeVoice || state.paused) return;
+    if (!state.activeVoice || state.paused || state.manualVoiceStop) return;
     if (state.activeRecognition) {
       try { state.activeRecognition.stop(); } catch (e) {}
       state.activeRecognition = null;
@@ -1969,7 +2244,7 @@
       if (state.activeRecognition !== recognition) return;
       state.activeRecognition = null;
       updateVoiceButton();
-      if (state.activeVoice && !state.paused) {
+      if (state.activeVoice && !state.paused && !state.manualVoiceStop) {
         setTimeout(startActiveRecognition, 150);
       }
     };
@@ -2000,6 +2275,7 @@
     stopWakeListener();
     state.activeVoice = true;
     state.paused = false;
+    state.manualVoiceStop = false;
     state.wakeUntil = Date.now() + 45000;
     if (window.VoiceMemoryEngine) window.VoiceMemoryEngine.setVoiceActive(true);
     updateVoiceButton();
@@ -2011,7 +2287,7 @@
 
   function startWakeListener() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition || state.wakeListening || (state.activeVoice && !state.paused)) return;
+    if (!SpeechRecognition || state.wakeListening || (state.activeVoice && !state.paused && !state.manualVoiceStop)) return;
     const recognition = new SpeechRecognition();
     state.wakeRecognition = recognition;
     recognition.continuous = true;
@@ -2058,19 +2334,21 @@
     const wasActive = state.activeVoice || state.paused;
     state.activeVoice = false;
     state.paused = false;
+    state.manualVoiceStop = true;
     if (window.VoiceMemoryEngine) window.VoiceMemoryEngine.setVoiceActive(false);
     stopActiveRecognition();
     updateVoiceButton();
     startWakeListener();
-    if (wasActive) speak(t('Voice off.', 'Voice off hai.'));
+    if (wasActive) speak(t('Voice off. Say the wake word or press the Voice button to start again.', 'Voice off hai. Dobara shuru karne ke liye wake word bolein ya Voice button dabayein.'));
   }
 
   function pauseVoice() {
-    if (!state.activeVoice) {
+    if (!state.activeVoice && !state.paused) {
       writeOutput(t('Voice is already off.', 'Voice pehle se off hai.'), true);
       return;
     }
     state.paused = true;
+    state.manualVoiceStop = true;
     stopActiveRecognition();
     updateVoiceButton();
     startWakeListener();
@@ -2085,6 +2363,7 @@
     stopWakeListener();
     state.activeVoice = true;
     state.paused = false;
+    state.manualVoiceStop = false;
     updateVoiceButton();
     startActiveRecognition();
     speak(t('Voice resumed.', 'Voice resume ho gayi.'));
@@ -2281,7 +2560,7 @@
           output.classList.remove('cu-streaming', 'cu-typing');
           setTimeout(() => output.classList.remove('cu-fade-in'), 300);
         }
-        if (state.activeVoice && !state.paused && !state.activeRecognition) {
+        if (state.activeVoice && !state.paused && !state.manualVoiceStop && !state.activeRecognition) {
           setTimeout(startActiveRecognition, 100);
         }
       }
@@ -2355,6 +2634,11 @@
       restoreVersions,
       setHtml,
       getHtml,
+      saveSnippet,
+      listSnippets,
+      loadSnippet,
+      loadSnippets,
+      sonifyHtml,
     };
   }
 

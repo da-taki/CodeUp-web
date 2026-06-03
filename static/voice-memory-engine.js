@@ -18,7 +18,7 @@
   };
 
   var DEVANAGARI_RE = /[\u0900-\u097F]/;
-  var MICRO_CHUNK_SIZE = 22;
+  var MICRO_CHUNK_SIZE = 120;
 
   var engine = {
     state: STATES.IDLE,
@@ -264,11 +264,17 @@
     var pattern = /[^.!?\n]+[.!?\n]+/g;
     var match;
     var lastIndex = 0;
+    var pending = '';
     while ((match = pattern.exec(buffer)) !== null) {
       var sentence = match[0].trim();
-      if (sentence.length <= MICRO_CHUNK_SIZE * 2) {
-        chunks.push(sentence);
+      var candidate = pending ? pending + ' ' + sentence : sentence;
+      if (candidate.length < 20) {
+        pending = candidate;
+      } else if (candidate.length <= MICRO_CHUNK_SIZE * 2) {
+        chunks.push(candidate);
+        pending = '';
       } else {
+        if (pending) { chunks.push(pending); pending = ''; }
         var words = sentence.split(/\s+/);
         var micro = '';
         for (var i = 0; i < words.length; i++) {
@@ -280,17 +286,18 @@
             micro = next;
           }
         }
-        if (micro) chunks.push(micro);
+        if (micro) pending = micro;
       }
       lastIndex = match.index + match[0].length;
     }
+    if (pending) { chunks.push(pending); pending = ''; }
     var remainder = buffer.slice(lastIndex);
-    if (chunks.length === 0 && remainder.length > MICRO_CHUNK_SIZE) {
-      var breakPoint = remainder.lastIndexOf(' ', MICRO_CHUNK_SIZE + 8);
-      if (breakPoint > 8) {
-        chunks.push(remainder.slice(0, breakPoint).trim());
-        remainder = remainder.slice(breakPoint);
-      }
+    var FALLBACK_BREAK = 44;
+    while (remainder.trim().length > FALLBACK_BREAK) {
+      var breakPoint = remainder.lastIndexOf(' ', FALLBACK_BREAK + 6);
+      if (breakPoint <= 8) break;
+      chunks.push(remainder.slice(0, breakPoint).trim());
+      remainder = remainder.slice(breakPoint);
     }
     return { chunks: chunks, remainder: remainder };
   }
