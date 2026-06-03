@@ -229,7 +229,12 @@ RULES: tuple[IntentRule, ...] = (
     IntentRule(
         "outline_site",
         68,
-        (r"\boutline\b", r"\bpage\s+structure\b", r"\bpage\s+ka\s+structure\s+samjhao\b", r"\bwebsite\s+ka\s+layout\s+batao\b"),
+        (
+            r"\boutline\b",
+            r"\bpage\s+structure\b",
+            r"\bpage\s+ka\s+structure\s+samjhao\b",
+            r"\bwebsite\s+ka\s+layout\s+batao\b",
+        ),
     ),
     IntentRule("export_site", 67, (r"\bexport\b", r"\bdownload\b", r"\bzip\b")),
     IntentRule(
@@ -259,7 +264,11 @@ RULES: tuple[IntentRule, ...] = (
     ),
     IntentRule("polish_html", 63, (r"\bpolish\b", r"\bfix\s+html\b", r"\bimprove\b", r"\btheek\b")),
     IntentRule("save_snippet", 62, (r"\bsave\b.*\bsnippet\b", r"\bsnippet\s+save\s+karo\b")),
-    IntentRule("list_snippets", 62, (r"\b(show|list)\b.*\bsnippets?\b", r"\b(mere|mera)\s+snippets?\b", r"\bsnippets?\s+(dikhao|batao)\b")),
+    IntentRule(
+        "list_snippets",
+        62,
+        (r"\b(show|list)\b.*\bsnippets?\b", r"\b(mere|mera)\s+snippets?\b", r"\bsnippets?\s+(dikhao|batao)\b"),
+    ),
     IntentRule("load_snippet", 62, (r"\bload\b.*\bsnippet\b", r"\bsnippet\s+load\s+karo\b")),
     IntentRule(
         "build_site",

@@ -6,28 +6,30 @@ from typing import Any
 
 from codeup.services.ai_service import call_ai, is_ai_unavailable
 
-ALLOWED_ACTIONS = frozenset({
-    "append_html",
-    "replace_html_element",
-    "update_text",
-    "add_component",
-    "remove_element",
-    "update_attribute",
-    "add_alt_text",
-    "fix_accessibility_issue",
-    "generate_page",
-    "edit_page",
-    "preview_page",
-    "explain_structure",
-    "audit_accessibility",
-    "sonify_structure",
-    "save_snippet",
-    "list_snippets",
-    "load_snippet",
-    "undo",
-    "clear_editor",
-    "unknown",
-})
+ALLOWED_ACTIONS = frozenset(
+    {
+        "append_html",
+        "replace_html_element",
+        "update_text",
+        "add_component",
+        "remove_element",
+        "update_attribute",
+        "add_alt_text",
+        "fix_accessibility_issue",
+        "generate_page",
+        "edit_page",
+        "preview_page",
+        "explain_structure",
+        "audit_accessibility",
+        "sonify_structure",
+        "save_snippet",
+        "list_snippets",
+        "load_snippet",
+        "undo",
+        "clear_editor",
+        "unknown",
+    }
+)
 
 BLOCKED_PATTERNS = re.compile(
     r"<script\b[^>]*>.*?</script>|javascript:|on\w+\s*=|eval\s*\(|document\.cookie|window\.location|fetch\s*\(|XMLHttpRequest",
