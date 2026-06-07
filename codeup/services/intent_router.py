@@ -66,6 +66,39 @@ def _section_slots(command: str) -> dict[str, Any]:
     return _slot_after(command, ("add section", "insert section", "new section"), "section")
 
 
+def _read_code_slots(command: str) -> dict[str, Any]:
+    lower = command.lower()
+    if "css" in lower or "style" in lower:
+        target = "css"
+    elif "javascript" in lower or "java script" in lower or re.search(r"\bjs\b", lower) or "script" in lower:
+        target = "js"
+    elif "html" in lower or "markup" in lower:
+        target = "html"
+    else:
+        target = "all"
+    return {"target": target}
+
+
+def _design_slots(command: str) -> dict[str, Any]:
+    lower = command.lower()
+    if "futuristic" in lower:
+        return {"preset": "futuristic"}
+    if "animation" in lower or "animated" in lower:
+        return {"preset": "animated"}
+    return {"preset": "vibrant"}
+
+
+def _snippet_slots(command: str) -> dict[str, Any]:
+    match = re.search(
+        r"\b(?:save|load|delete|remove)\s+(?:the\s+)?snippet\s*(?:as\s+|called\s+|named\s+)?(.+)",
+        command,
+        re.IGNORECASE,
+    )
+    if match:
+        return {"snippet_name": match.group(1).strip()}
+    return {}
+
+
 RULES: tuple[IntentRule, ...] = (
     IntentRule("set_wake_word", 100, (r"\b(set|change)\s+wake\s+word\s+to\b",)),
     IntentRule(
@@ -152,17 +185,63 @@ RULES: tuple[IntentRule, ...] = (
             r"\bdobara\s+sunna\s+shuru\s+karo\b",
         ),
     ),
-    IntentRule("stop_speaking", 97, (r"\bstop\s+speaking\b", r"\bquiet\b", r"\bchup\b")),
+    IntentRule(
+        "stop_speaking",
+        97,
+        (r"\bstop\s+speaking\b", r"\bstop\s+everything\b", r"^cancel$", r"^stop$", r"\bquiet\b", r"\bchup\b"),
+    ),
     IntentRule("set_voice_language", 96, (r"\bvoice\s+language\b", r"\bspeech\s+language\b", r"\bbhasha\b")),
     IntentRule("navigate_page", 90, (r"\b(next|previous)\s+(heading|section)\b", r"\bread\s+paragraph\s+\d+\b")),
     IntentRule("read_current_section", 89, (r"\bread\s+current\s+section\b", r"\bcurrent\s+section\s+read\b")),
     IntentRule("read_next_section", 89, (r"\bread\s+next\s+section\b", r"\bnext\s+section\b")),
-    IntentRule("darken_theme", 88, (r"\bdarken\b", r"\bdark\s+theme\b", r"\bnight\s+mode\b")),
+    IntentRule("darken_theme", 88, (r"\bdarken\b", r"\bdark\s+theme\b", r"\bdark\s+mode\b", r"\bnight\s+mode\b")),
     IntentRule("lighten_theme", 88, (r"\blighten\b", r"\blighter\s+theme\b", r"\blight\s+theme\b")),
+    IntentRule(
+        "read_code",
+        87,
+        (r"\bread\s+(the\s+)?(code|html|css|javascript|java script|js|script)\b",),
+        slotter=_read_code_slots,
+    ),
+    IntentRule("code_map", 87, (r"\bcode\s+map\b", r"\bmap\s+of\s+the\s+code\b", r"\bmap\s+the\s+code\b")),
+    IntentRule(
+        "analyze_code",
+        86,
+        (r"\banaly[sz]e\s+(the\s+)?code\b", r"\bfind\s+problems\b", r"\bcheck\s+the\s+code\b"),
+    ),
+    IntentRule(
+        "explain_javascript",
+        86,
+        (r"\bexplain\s+(the\s+)?(javascript|java script|js|script)\b",),
+    ),
+    IntentRule(
+        "design_preset",
+        85,
+        (
+            r"\bmore\s+beautiful\b",
+            r"\bmore\s+colo[u]?rful\b",
+            r"\bmore\s+futuristic\b",
+            r"\bfuturistic\b",
+            r"\badd\s+animations?\b",
+            r"\bimprove\s+the\s+design\b",
+            r"\bmake\s+it\s+pop\b",
+        ),
+        slotter=_design_slots,
+    ),
+    IntentRule("add_contact_section", 85, (r"\badd\s+(a\s+)?contact\s+(section|form)\b",)),
+    IntentRule(
+        "add_js_interactivity",
+        85,
+        (r"\badd\s+(javascript|java script|js)\s+interactivity\b", r"\badd\s+interactivity\b"),
+    ),
     IntentRule(
         "edit_css",
         84,
-        (r"\bhigh\s+contrast\b", r"\b(background|font|text color|spacing|rounded|center|bold|bigger|smaller)\b"),
+        (
+            r"\bhigh\s+contrast\b",
+            r"\b(change|set|make|turn|use)\b.*\b(background|font|text color|spacing|rounded|bold|bigger|smaller)\b",
+            r"\b(center|align)\s+(the\s+)?(text|heading|section|button|content)\b",
+            r"\b(text|heading|section|button|content)\b.*\bcenter\b",
+        ),
     ),
     IntentRule("announce_contrast", 82, (r"\bcontrast\b",)),
     IntentRule(
@@ -178,7 +257,15 @@ RULES: tuple[IntentRule, ...] = (
     IntentRule("add_section", 75, (r"\b(add|insert|new)\s+section\b",), slotter=_section_slots),
     IntentRule("use_template", 74, (r"\btemplate\b",)),
     IntentRule(
-        "apply_audit_fixes", 73, (r"\bapply\s+(all\s+)?(safe\s+)?fixes\b", r"\bfix\s+accessibility\b", r"\bautofix\b")
+        "apply_audit_fixes",
+        73,
+        (
+            r"\bapply\s+(all\s+)?(safe\s+)?fixes\b",
+            r"\bfix\s+accessibility\b",
+            r"\bmake\s+it\s+accessible\b",
+            r"\bfix\s+(the\s+)?code\b",
+            r"\bautofix\b",
+        ),
     ),
     IntentRule(
         "apply_review",
@@ -249,7 +336,9 @@ RULES: tuple[IntentRule, ...] = (
             r"\bclear\s+editor\b",
         ),
     ),
-    IntentRule("explain_site", 65, (r"\bexplain\b", r"\bdescribe\b", r"\blooks\b", r"\bsamjhao\b")),
+    IntentRule(
+        "explain_site", 65, (r"\bexplain\b", r"\bdescribe\b", r"\bsummari[sz]e\b", r"\blooks\b", r"\bsamjhao\b")
+    ),
     IntentRule(
         "sonify_site",
         64,
@@ -263,13 +352,29 @@ RULES: tuple[IntentRule, ...] = (
         ),
     ),
     IntentRule("polish_html", 63, (r"\bpolish\b", r"\bfix\s+html\b", r"\bimprove\b", r"\btheek\b")),
-    IntentRule("save_snippet", 62, (r"\bsave\b.*\bsnippet\b", r"\bsnippet\s+save\s+karo\b")),
+    IntentRule(
+        "save_snippet",
+        62,
+        (r"\bsave\b.*\bsnippet\b", r"\bsnippet\s+save\s+karo\b"),
+        slotter=_snippet_slots,
+    ),
     IntentRule(
         "list_snippets",
         62,
         (r"\b(show|list)\b.*\bsnippets?\b", r"\b(mere|mera)\s+snippets?\b", r"\bsnippets?\s+(dikhao|batao)\b"),
     ),
-    IntentRule("load_snippet", 62, (r"\bload\b.*\bsnippet\b", r"\bsnippet\s+load\s+karo\b")),
+    IntentRule(
+        "load_snippet",
+        62,
+        (r"\bload\b.*\bsnippet\b", r"\bsnippet\s+load\s+karo\b"),
+        slotter=_snippet_slots,
+    ),
+    IntentRule(
+        "delete_snippet",
+        62,
+        (r"\b(delete|remove)\b.*\bsnippet\b", r"\bsnippet\s+(delete|hatao)\b"),
+        slotter=_snippet_slots,
+    ),
     IntentRule(
         "build_site",
         60,

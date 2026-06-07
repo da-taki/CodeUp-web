@@ -546,6 +546,22 @@ if (cta) {
     return normalized.replace(/<\/head\s*>/i, `${styleBlock}</head>`);
   }
 
+  function appendCssRules(rules) {
+    const cssEl = getCssEditor();
+    if (!cssEl) {
+      setHtml(injectVoiceCss(getHtml(), rules));
+      return;
+    }
+    const existing = getCss().trim();
+    const existingLines = existing.split('\n').map(line => line.trim()).filter(Boolean);
+    const nextRules = rules.filter(rule => !existingLines.includes(rule));
+    if (!nextRules.length) return;
+    cssEl.value = existing + (existing ? '\n\n' : '') + nextRules.join('\n');
+    persistDrafts();
+    state.pages[state.currentPage] = getHtml();
+    scheduleAutosave();
+  }
+
   function makeEditor(hostId, editorId, ariaLabel, draftKey) {
     let editor = $(editorId);
     if (editor) return editor;
@@ -621,11 +637,20 @@ if (cta) {
     preview.innerHTML = [
       '<div class="cu-panel-title">LOCAL WEBSITE PREVIEW</div>',
       '<div class="cu-preview-toolbar">',
-      '  <a id="sitePreviewLink" class="cu-button cu-button-secondary" href="#" target="_blank" rel="noopener">Open local site</a>',
+      '  <button id="sitePreviewOpenBtn" class="cu-button cu-button-secondary" type="button" disabled>Open local site</button>',
       '</div>',
       '<iframe id="sitePreviewFrame" title="Student website preview" sandbox="allow-scripts allow-forms allow-modals"></iframe>',
     ].join('');
     if (preview !== wrapper) wrapper.appendChild(preview);
+    const openBtn = $('sitePreviewOpenBtn');
+    if (openBtn && !openBtn.dataset.bound) {
+      openBtn.dataset.bound = 'true';
+      openBtn.addEventListener('click', () => {
+        const currentFrame = $('sitePreviewFrame');
+        const url = state.lastUrl || ((currentFrame?.getAttribute('src') || '').split('?')[0]);
+        if (url) window.open(url, '_blank', 'noopener');
+      });
+    }
     return $('sitePreviewFrame');
   }
 
@@ -672,8 +697,11 @@ if (cta) {
     state.memory.last_url = data.url;
     const frame = ensurePreviewFrame();
     if (frame) frame.src = data.url + '?t=' + Date.now();
-    const link = $('sitePreviewLink');
-    if (link) link.href = data.url;
+    const openBtn = $('sitePreviewOpenBtn');
+    if (openBtn) {
+      openBtn.disabled = false;
+      openBtn.dataset.url = data.url;
+    }
     if (data.warnings && data.warnings.length) {
       const warningText = 'Preview note: ' + data.warnings.join('; ') + '. Only inline scripts and styles are supported in the hosted preview.';
       announce(warningText);
@@ -771,12 +799,22 @@ if (cta) {
   async function exportHtml() {
     const html = getHtml();
     const pages = activePages();
-    if (Object.keys(pages).length > 1 || state.projectId) {
+    const fileExport = {
+      'index.html': ensureManagedRefs(stripManagedBlocks(normalizeHtmlDocument(getHtmlSource())), !!getCss().trim(), !!getJs().trim()),
+      'style.css': getCss(),
+      'script.js': getJs(),
+    };
+    const hasSeparateFiles = fileExport['style.css'].trim() || fileExport['script.js'].trim();
+    const isSinglePage = Object.keys(pages).length <= 1;
+    if ((isSinglePage && hasSeparateFiles) || Object.keys(pages).length > 1 || state.projectId) {
       try {
+        const payload = isSinglePage && hasSeparateFiles
+          ? { project_id: state.projectId, files: fileExport, name: state.projectName }
+          : { project_id: state.projectId, pages, html, name: state.projectName };
         const response = await fetch('/export-site.zip', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ project_id: state.projectId, pages, html, name: state.projectName }),
+          body: JSON.stringify(payload),
         });
         if (!response.ok) {
           const data = await response.json().catch(() => ({}));
@@ -791,7 +829,10 @@ if (cta) {
         link.click();
         link.remove();
         setTimeout(() => URL.revokeObjectURL(objectUrl), 500);
-        writeOutput(t('Project ZIP exported.', 'Project ZIP export ho gayi.'), true);
+        writeOutput(t(
+          isSinglePage && hasSeparateFiles ? 'Project ZIP exported with index.html, style.css, and script.js.' : 'Project ZIP exported.',
+          isSinglePage && hasSeparateFiles ? 'Project ZIP index.html, style.css aur script.js ke saath export ho gayi.' : 'Project ZIP export ho gayi.'
+        ), true);
         return;
       } catch (error) {
         writeOutput(error.message, true);
@@ -925,10 +966,9 @@ if (cta) {
     if (lower.includes('high contrast')) rules.push('body { color: #0f172a; background: #ffffff; } a, button, .button { color: #ffffff; background: #0f172a; }');
     if (!rules.length) return false;
     snapshotVersion('Before CSS voice edit');
-    const html = getHtml();
-    setHtml(injectVoiceCss(html, rules));
+    appendCssRules(rules);
     writeOutput(`Applied CSS edit: ${rules.join(' ')}`, true);
-    previewHtml(false);
+    previewHtml(false, { silent: true });
     return true;
   }
 
@@ -1042,8 +1082,11 @@ if (cta) {
     } catch (error) {}
     const frame = $('sitePreviewFrame');
     if (frame) frame.removeAttribute('src');
-    const link = $('sitePreviewLink');
-    if (link) link.href = '#';
+    const openBtn = $('sitePreviewOpenBtn');
+    if (openBtn) {
+      openBtn.disabled = true;
+      delete openBtn.dataset.url;
+    }
     writeOutput(t('Session reset. Starter website loaded.', 'Session reset ho gaya. Starter website load ho gayi.'), true);
   }
 
@@ -1183,7 +1226,7 @@ if (cta) {
     if (!selected) return;
     try {
       await openProject(selected);
-      await previewHtml(false);
+      await previewHtml(false, { silent: true });
     } catch (error) {
       writeOutput(error.message, true);
     }
@@ -1208,16 +1251,17 @@ if (cta) {
     ));
   }
 
-  async function previewHtml(shouldSpeak = false) {
+  async function previewHtml(shouldSpeak = false, options = {}) {
     const html = getHtml();
-    writeOutput(t('Publishing local preview...', 'Website local preview mein publish ho rahi hai...'));
+    const silent = !!options.silent;
+    if (!silent) writeOutput(t('Publishing local preview...', 'Website local preview mein publish ho rahi hai...'));
     try {
       const url = await publish(html);
       const message = t(
         `Website is live locally at ${url}\nThe HTML is in the editor and the preview is below.`,
         `Website ready hai: ${url}\nHTML editor mein hai aur preview neeche dikh raha hai.`
       );
-      writeOutput(message, shouldSpeak);
+      if (!silent) writeOutput(message, shouldSpeak);
       announce('Website preview ready');
     } catch (error) {
       writeOutput(error.message, true);
@@ -1531,6 +1575,7 @@ if (cta) {
       speak(t(`Saved snippet: ${safeName}.`, `Snippet save ho gaya: ${safeName}.`));
     }
     writeOutput(t(`Snippet "${safeName}" saved.`, `Snippet "${safeName}" save ho gaya.`));
+    refreshSnippetSelect();
   }
 
   function listSnippets() {
@@ -1573,6 +1618,7 @@ if (cta) {
     delete snippets[safeName];
     persistSnippets(snippets);
     writeOutput(t(`Deleted snippet: ${safeName}.`, `Snippet delete ho gaya: ${safeName}.`), true);
+    refreshSnippetSelect();
   }
 
   function insertAtCursor(text) {
@@ -2080,9 +2126,9 @@ if (cta) {
     const rules = presets[name];
     if (!rules) return false;
     snapshotVersion('Before design preset');
-    setHtml(injectVoiceCss(getHtml(), rules));
+    appendCssRules(rules);
     writeOutput(t(`Applied a ${name} design.`, `${name} design apply ho gaya.`), true);
-    previewHtml(false);
+    previewHtml(false, { silent: true });
     return true;
   }
 
@@ -2106,7 +2152,7 @@ if (cta) {
     insertAtCursor(block);
     state.pages[state.currentPage] = getHtml();
     writeOutput(t('Added a contact section with an accessible form.', 'Accessible form ke saath contact section add ho gaya.'), true);
-    previewHtml(false);
+    previewHtml(false, { silent: true });
     return true;
   }
 
@@ -2148,7 +2194,7 @@ if (cta) {
     const name = select ? select.value : '';
     if (!name) { writeOutput(t('Choose a snippet to load first.', 'Pehle ek snippet chuniye.'), true); return; }
     loadSnippet(name);
-    previewHtml(false);
+    previewHtml(false, { silent: true });
   }
 
   function deleteSnippetFromUi() {
@@ -2289,6 +2335,13 @@ if (cta) {
     if (action === 'resume_voice') { resumeVoice(); return true; }
     if (action === 'stop_speaking') { cancelSpeech(); announce('Speech stopped'); return true; }
     if (action === 'set_voice_language') return false;
+    if (action === 'read_code') { readCode(slots.target || 'all'); return true; }
+    if (action === 'code_map') { codeMap(); return true; }
+    if (action === 'analyze_code') { await analyzeCode(); return true; }
+    if (action === 'explain_javascript') { explainJs(); return true; }
+    if (action === 'design_preset') { applyDesignPreset(slots.preset || 'vibrant'); return true; }
+    if (action === 'add_contact_section') return addContactSection();
+    if (action === 'add_js_interactivity') { await buildWebsite(command, true, { edit: true }); return true; }
     if (action === 'navigate_page' || action === 'read_current_section' || action === 'read_next_section') { navigatePreview(command); return true; }
     if (action === 'darken_theme') { applyCssEdit('change the background dark'); return true; }
     if (action === 'lighten_theme') { applyCssEdit('change the background white'); return true; }
@@ -2305,6 +2358,7 @@ if (cta) {
     if (action === 'save_snippet') { if (handleSnippetCommand(command)) return true; saveSnippet(command.replace(/.*snippet\s*(called|named)?\s*/i, '')); return true; }
     if (action === 'list_snippets') { listSnippets(); return true; }
     if (action === 'load_snippet') { if (handleSnippetCommand(command)) return true; loadSnippet(command.replace(/.*snippet\s*(called|named)?\s*/i, '')); return true; }
+    if (action === 'delete_snippet') { if (handleSnippetCommand(command)) return true; deleteSnippet(slots.snippet_name || ''); return true; }
     if (action === 'apply_audit_fixes') { await applyAllAuditFixes(); return true; }
     if (action === 'apply_review') { await applyReviewSuggestion(command, true); return true; }
     if (action === 'review_site') { await reviewWebsite(true); return true; }
@@ -2410,7 +2464,7 @@ if (cta) {
       || command.match(/snippet\s+(?:save\s+(?:karo|kar\s+do)\s+)?(.+?\s+naam\s+se)/i)
       || command.match(/(.+?)\s+naam\s+(?:se|ka)\s+snippet\s+save\s+karo/i);
     if (saveMatch) {
-      const name = saveMatch[1].replace(/\b(naam\s+se|called|named)\b/gi, '').trim();
+      const name = saveMatch[1].replace(/^\s*(as\s+|called\s+|named\s+)+/i, '').replace(/\b(naam\s+se|called|named)\b/gi, '').trim();
       saveSnippet(name);
       return true;
     }
@@ -3106,8 +3160,6 @@ if (cta) {
     $('snippetSelect')?.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') { event.preventDefault(); loadSnippetFromUi(); }
     });
-
-    document.body.dataset.htmlModeReady = 'true';
   }
 
   function updateStateIndicator(voiceState) {
@@ -3239,6 +3291,7 @@ if (cta) {
     setupUi();
     state.pages.home = getHtml();
     await ensureProject();
+    document.body.dataset.htmlModeReady = 'true';
     initVoiceMemoryEngine();
     if (!state.versions.length) snapshotVersion('Initial version');
     try { await previewHtml(false); } catch (e) {}

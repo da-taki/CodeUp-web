@@ -16,6 +16,15 @@ Both routes go through the same command parser, so the results are identical.
 
 ## 60-second demo
 
+Launch:
+
+```text
+$env:AI_CLOUD_ENABLED="0"
+python app.py
+```
+
+Open `http://127.0.0.1:5000/`, click the command box, then run:
+
 ```text
 generate a website for a bakery
 make it more colorful
@@ -23,9 +32,15 @@ add a contact section
 read the HTML
 give me a code map
 stop everything
+save snippet as bakery demo
+load snippet bakery demo
+delete snippet bakery demo
 ```
 
 ## Full robotics-lab demo
+
+Click the command box or press **Voice**. If the browser blocks the microphone,
+keep typing the same commands; voice and typed commands use the same routing.
 
 ```text
 generate a website for the robotics lab of my school with projects, achievements, student team, equipment, events, and a join form
@@ -34,6 +49,8 @@ analyze the code
 fix the accessibility issues
 explain the JavaScript
 save snippet as robotics demo
+run preview
+stop everything
 ```
 
 The first command produces a complete site with **separate `index.html`,
@@ -41,6 +58,21 @@ The first command produces a complete site with **separate `index.html`,
 preview. The generated site includes a hero, an about/mission section, a
 filterable projects grid, animated achievement stats, a student team, an
 equipment/facilities grid, an upcoming-events list, and an accessible join form.
+
+What to show during the robotics demo:
+
+1. The HTML, CSS, and JavaScript tabs all contain code.
+2. **Run Preview** refreshes the iframe.
+3. The preview dark-mode toggle works.
+4. Project filter buttons hide and show robot cards.
+5. Animated stats count up.
+6. **Analyze**, **Fix**, **Read Code**, **Code Map**, and **Stop Speaking** work from buttons or commands.
+
+To recover quickly:
+
+- If voice fails, use the text command box.
+- If narration keeps going, press **Stop Speaking** or type `stop everything`.
+- If the page looks stale, type `run preview`.
 
 ---
 

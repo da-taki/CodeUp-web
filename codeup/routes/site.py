@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import zipfile
 
 from flask import Blueprint, jsonify, send_file, send_from_directory
@@ -47,13 +48,40 @@ def _pages_from_body(body: dict) -> tuple[dict[str, str], str | None]:
                 continue
             pages[page_name] = page_value
     project_id = str(body.get("project_id") or "").strip() or None
+    if not pages and html.strip():
+        current_page = str(body.get("current_page") or "home").strip() or "home"
+        pages[current_page] = html
     if project_id and not pages:
         project = load_project(project_id)
         if project:
             pages = project.pages.copy()
-    if not pages and html.strip():
-        pages["home"] = html
     return pages, project_id
+
+
+def _ensure_source_refs(html: str, has_css: bool, has_js: bool) -> str:
+    doc = wrap_html(html)
+    if has_css and not re.search(r'<link\b[^>]*href=["\'](?:\./)?style\.css["\']', doc, re.IGNORECASE):
+        link = '\n<link rel="stylesheet" href="style.css">'
+        doc = re.sub(r"</head\s*>", lambda _m: link + "\n</head>", doc, count=1, flags=re.IGNORECASE)
+    if has_js and not re.search(r'<script\b[^>]*src=["\'](?:\./)?script\.js["\']', doc, re.IGNORECASE):
+        script = '\n<script src="script.js" defer></script>'
+        doc = re.sub(r"</body\s*>", lambda _m: script + "\n</body>", doc, count=1, flags=re.IGNORECASE)
+    return doc
+
+
+def _source_files_from_body(body: dict) -> dict[str, str] | None:
+    raw_files = body.get("files")
+    if not isinstance(raw_files, dict):
+        return None
+
+    html = str(raw_files.get("index.html") or raw_files.get("html") or body.get("html") or "")
+    css = str(raw_files.get("style.css") or raw_files.get("css") or body.get("css") or "")
+    js = str(raw_files.get("script.js") or raw_files.get("js") or body.get("js") or "")
+    if not html.strip():
+        return None
+
+    html = _ensure_source_refs(html, bool(css.strip()), bool(js.strip()))
+    return {"index.html": html, "style.css": css, "script.js": js}
 
 
 @site_bp.route("/publish-site", methods=["POST"])
@@ -185,6 +213,31 @@ def audit_autofix():
 @site_bp.route("/export-site.zip", methods=["POST"])
 def export_site_zip():
     body = safejson()
+    source_files = _source_files_from_body(body)
+    if source_files:
+        total_size = sum(len(value) for value in source_files.values())
+        if total_size > MAX_HTML_SIZE * 5:
+            return jsonify({"success": False, "error": f"Project too large (max {MAX_HTML_SIZE * 5} bytes)"}), 413
+        archive = io.BytesIO()
+        manifest = {
+            "project_id": str(body.get("project_id") or ""),
+            "files": list(source_files),
+            "entry": "index.html",
+        }
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+            for filename, content in source_files.items():
+                bundle.writestr(filename, content)
+            bundle.writestr("manifest.json", json.dumps(manifest, indent=2))
+        archive.seek(0)
+        filename = safe_page_filename(str(body.get("name") or "codeup-site"))[:-5] + ".zip"
+        return send_file(
+            archive,
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name=filename,
+            max_age=0,
+        )
+
     pages, project_id = _pages_from_body(body)
     if not pages:
         return jsonify({"success": False, "error": "No pages to export"}), 400
