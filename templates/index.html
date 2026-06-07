@@ -3,105 +3,160 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Blind-first HTML website builder with conversational AI, Hindi and English voice, local preview, and audio explanation.">
-  <title>CodeUp HTML - Blind-first Website Builder</title>
+  <meta name="description" content="CodeUp-Web: a blind-first web IDE. Generate complete HTML, CSS, and JavaScript websites by voice or by typed command, with live preview, analyze, fix, read, and code map.">
+  <title>CODEUP HTML - Blind-first Web IDE</title>
   <link rel="stylesheet" href="/static/style/fonts.css">
   <link rel="stylesheet" href="/static/style/core.css">
   <link rel="stylesheet" href="/static/style/accessibility.css">
   <link rel="stylesheet" href="/static/style/ui-improvements.css">
+  <link rel="stylesheet" href="/static/style/ide.css">
 </head>
-<body class="cu-body">
+<body class="cu-body ide-body">
   <a href="#commandInput" class="skip-link">Skip to command input</a>
-  <div id="srAnnouncer" role="status" aria-live="assertive" aria-atomic="true"
-       style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;"></div>
+  <a href="#editor" class="skip-link">Skip to code editor</a>
+  <div id="srAnnouncer" role="status" aria-live="assertive" aria-atomic="true" class="sr-only"></div>
 
-  <header class="cu-header">
-    <div class="cu-header-top">
+  <header class="ide-header">
+    <div class="ide-header-row">
       <h1 class="cu-title">CODEUP HTML</h1>
-      <div class="cu-status-pill" aria-label="HTML builder with voice">HTML + VOICE</div>
+      <span class="cu-status-pill" aria-hidden="true">HTML · CSS · JS</span>
+      <span id="voiceStatus" class="ide-voice-status" role="status" aria-live="polite">Voice off</span>
     </div>
-    <div class="cu-subtitle">
-      Blind-first website builder. Press <span class="cu-hotkey">Ctrl+Enter</span> to preview.
-    </div>
-    <div class="cu-subtitle-info">
-      <small>Voice coding - Hindi and English - sonification - local website hosting</small>
-    </div>
-    <div class="cu-theme-controls" role="group" aria-label="Accessibility settings">
-      <select id="colorVisionMode" class="theme-selector" aria-label="Color vision mode">
-        <option value="default">Standard Colors</option>
-        <option value="protanopia">Protanopia</option>
-        <option value="deuteranopia">Deuteranopia</option>
-        <option value="tritanopia">Tritanopia</option>
-        <option value="high-contrast">High Contrast</option>
-      </select>
-      <button id="dyslexiaToggle" class="theme-toggle" aria-pressed="false">Dyslexia Mode</button>
-      <button id="motionToggle" class="theme-toggle" aria-pressed="false">Reduce Motion</button>
-      <button id="nightToggle" class="theme-toggle" aria-pressed="false">Night Mode</button>
-      <button id="demoModeBtn" class="theme-toggle" aria-pressed="false">Demo Mode</button>
-    </div>
-    <div class="cu-project-controls" role="group" aria-label="Project controls">
-      <input id="projectNameInput" type="text" value="Untitled Project" aria-label="Project name">
-      <button id="projectSaveBtn" class="theme-toggle" type="button">Save / Rename</button>
-      <button id="projectNewBtn" class="theme-toggle" type="button">New Project</button>
-      <button id="projectDuplicateBtn" class="theme-toggle" type="button">Duplicate</button>
-      <select id="projectSelect" class="theme-selector" aria-label="Open saved project"></select>
-      <button id="projectOpenBtn" class="theme-toggle" type="button">Open</button>
-    </div>
-  </header>
-
-  <main class="cu-main">
-    <section class="cu-panel cu-editor-wrapper" aria-label="HTML website workspace">
-      <div id="editor" class="cu-editor" role="region" aria-label="HTML website editor"></div>
-      <div class="cu-command-bar" role="toolbar" aria-label="Website actions">
-        <button class="cu-button cu-button-primary" id="runBtn" aria-label="Preview HTML website">Preview</button>
-        <button class="cu-button" id="analyzeBtn" aria-label="Explain what the website looks like">Explain</button>
-        <button class="cu-button" id="fixBtn" aria-label="Polish HTML accessibility and layout">Polish</button>
-        <button class="cu-button" id="auditBtn" aria-label="Audit accessibility and page quality">Audit</button>
-        <button class="cu-button" id="outlineBtn" aria-label="Summarize the website outline">Outline</button>
-        <button class="cu-button" id="exportBtn" aria-label="Export website as HTML or project ZIP">Export</button>
-        <button class="cu-button" id="resetBtn" aria-label="Reset this session">Reset</button>
-        <button class="cu-button" id="walkthroughBtn" aria-label="Audio accessibility walkthrough of current website">Walkthrough</button>
-        <button class="cu-button cu-button-voice" id="voiceButton" aria-label="Toggle voice control" aria-pressed="false">Voice Off</button>
-        <button class="cu-button cu-button-secondary" id="helpBtn" aria-label="Ask what CodeUp HTML can do">Help</button>
-        <select id="languageSelector" class="cu-language-selector" aria-label="Select spoken language">
+    <p class="cu-subtitle">
+      Blind-first website builder. Generate complete <strong>HTML</strong>, <strong>CSS</strong>,
+      and <strong>JavaScript</strong> by voice or typed command. Press
+      <kbd class="cu-hotkey">Ctrl</kbd>+<kbd class="cu-hotkey">Enter</kbd> to preview.
+    </p>
+    <div class="ide-settings" role="group" aria-label="Accessibility settings">
+      <label class="ide-field">
+        <span>Color vision</span>
+        <select id="colorVisionMode" class="theme-selector" aria-label="Color vision mode">
+          <option value="default">Standard Colors</option>
+          <option value="protanopia">Protanopia</option>
+          <option value="deuteranopia">Deuteranopia</option>
+          <option value="tritanopia">Tritanopia</option>
+          <option value="high-contrast">High Contrast</option>
+        </select>
+      </label>
+      <label class="ide-field">
+        <span>Spoken language</span>
+        <select id="languageSelector" class="theme-selector" aria-label="Select spoken language">
           <option value="en">English</option>
           <option value="hi">Hindi / Hinglish</option>
         </select>
+      </label>
+      <button id="dyslexiaToggle" class="theme-toggle" type="button" aria-pressed="false">Dyslexia Mode</button>
+      <button id="motionToggle" class="theme-toggle" type="button" aria-pressed="false">Reduce Motion</button>
+      <button id="nightToggle" class="theme-toggle" type="button" aria-pressed="false">Night Mode</button>
+      <button id="demoModeBtn" class="theme-toggle" type="button" aria-pressed="false">Demo Mode</button>
+    </div>
+  </header>
+
+  <section class="ide-command" aria-label="Command bar">
+    <label class="ide-command-label" for="commandInput">Type a command</label>
+    <div class="ide-command-row">
+      <input id="commandInput" type="text" class="ide-command-input"
+             placeholder="Type a command, e.g. generate a website for my robotics lab"
+             aria-label="Type a command, for example generate a website for my robotics lab"
+             autocomplete="off">
+      <button id="sendCommandBtn" class="cu-button cu-button-primary" type="button" aria-label="Run the typed command">Ask / Build</button>
+      <button id="voiceButton" class="cu-button cu-button-voice" type="button" aria-pressed="false" aria-label="Toggle voice control">Voice Off</button>
+      <button id="stopBtn" class="cu-button cu-button-danger" type="button" aria-label="Stop speaking immediately">Stop Speaking</button>
+    </div>
+    <p class="ide-command-hint">No microphone? Type any voice command here and press Enter. Say or type
+      <em>stop everything</em> to stop speech instantly.</p>
+  </section>
+
+  <div class="ide-toolbar" role="toolbar" aria-label="Code actions">
+    <button id="generateBtn" class="cu-button cu-button-primary" type="button" aria-label="Generate a website from the command box">Generate</button>
+    <button id="runBtn" class="cu-button" type="button" aria-label="Run live preview of HTML, CSS, and JavaScript">Run Preview</button>
+    <button id="analyzeBtn" class="cu-button" type="button" aria-label="Analyze the code for issues">Analyze</button>
+    <button id="fixBtn" class="cu-button" type="button" aria-label="Fix accessibility and code issues">Fix</button>
+    <button id="readBtn" class="cu-button" type="button" aria-label="Read the current editor aloud">Read Code</button>
+    <button id="codeMapBtn" class="cu-button" type="button" aria-label="Hear a beginner-friendly map of the code">Code Map</button>
+    <button id="auditBtn" class="cu-button" type="button" aria-label="Audit accessibility and page quality">Audit</button>
+    <button id="outlineBtn" class="cu-button" type="button" aria-label="Summarize the website outline">Outline</button>
+    <button id="saveSnippetBtn" class="cu-button" type="button" aria-label="Save the current HTML, CSS, and JavaScript as a named snippet">Save Snippet</button>
+    <button id="loadSnippetBtn" class="cu-button" type="button" aria-label="Load a saved snippet">Load Snippet</button>
+    <button id="exportBtn" class="cu-button" type="button" aria-label="Export website as HTML or project ZIP">Export</button>
+    <button id="walkthroughBtn" class="cu-button" type="button" aria-label="Audio accessibility walkthrough">Walkthrough</button>
+    <button id="resetBtn" class="cu-button" type="button" aria-label="Reset this session">Reset</button>
+    <button id="helpBtn" class="cu-button cu-button-secondary" type="button" aria-label="Hear what CodeUp can do">Help</button>
+  </div>
+
+  <main class="ide-main">
+    <section class="ide-editors cu-panel" aria-label="Code editors">
+      <div class="ide-tabs" role="tablist" aria-label="Editor files">
+        <button class="ide-tab" id="tabHtml" type="button" role="tab" aria-controls="panelHtml" aria-selected="true">index.html</button>
+        <button class="ide-tab" id="tabCss" type="button" role="tab" aria-controls="panelCss" aria-selected="false" tabindex="-1">style.css</button>
+        <button class="ide-tab" id="tabJs" type="button" role="tab" aria-controls="panelJs" aria-selected="false" tabindex="-1">script.js</button>
+      </div>
+      <div class="ide-panel" id="panelHtml" role="tabpanel" aria-labelledby="tabHtml">
+        <div id="editor" class="cu-editor" role="region" aria-label="HTML editor"></div>
+      </div>
+      <div class="ide-panel" id="panelCss" role="tabpanel" aria-labelledby="tabCss" hidden>
+        <div id="cssEditorHost" class="cu-editor" role="region" aria-label="CSS editor"></div>
+      </div>
+      <div class="ide-panel" id="panelJs" role="tabpanel" aria-labelledby="tabJs" hidden>
+        <div id="jsEditorHost" class="cu-editor" role="region" aria-label="JavaScript editor"></div>
       </div>
     </section>
 
-    <aside class="cu-panel cu-output-panel" aria-label="Output and website preview">
-      <div class="cu-output-header">
-        <span>OUTPUT</span>
-      </div>
-      <pre id="output" class="cu-output-box" tabindex="0" aria-live="polite"></pre>
-      <div class="cu-audit-actions" role="group" aria-label="Audit autofix actions">
-        <button id="auditFixOneBtn" class="cu-button" type="button" disabled>Fix First Issue</button>
-        <button id="auditFixAllBtn" class="cu-button" type="button" disabled>Apply Safe Fixes</button>
-      </div>
-      <div class="cu-command-row">
-        <input id="commandInput" type="text"
-               placeholder="Ask what you can do, or build a website for a school science fair..."
-               aria-label="Ask CodeUp or request a website">
-        <button id="sendCommandBtn" class="cu-button cu-button-primary" aria-label="Ask CodeUp or build a website">Ask / Build</button>
-      </div>
-      <details id="demoFlowPanel" class="cu-demo-flow" open>
-        <summary class="cu-demo-flow-title">Try this workflow</summary>
-        <ol class="cu-demo-flow-list">
-          <li><button type="button" class="cu-demo-step" data-command="Hello, what all can I do in here?">What can I do here?</button></li>
-          <li><button type="button" class="cu-demo-step" data-command="Build a website for my robotics club">Build a website</button></li>
-          <li><button type="button" class="cu-demo-step" data-command="Preview website">Preview website</button></li>
-          <li><button type="button" class="cu-demo-step" data-command="What do you think is missing here?">What is missing?</button></li>
-          <li><button type="button" class="cu-demo-step" data-command="Add that">Add that</button></li>
-          <li><button type="button" class="cu-demo-step" data-command="Audit website">Audit website</button></li>
-          <li><button type="button" class="cu-demo-step" data-command="Export website">Export website</button></li>
-        </ol>
-      </details>
-      <div id="sitePreview" class="cu-site-preview" aria-label="Local website preview"></div>
+    <aside class="ide-side">
+      <section class="cu-panel ide-preview" aria-label="Live website preview">
+        <h2 class="ide-section-title">Live Preview</h2>
+        <div id="sitePreview" class="cu-site-preview"></div>
+      </section>
+
+      <section class="cu-panel ide-output" aria-label="Output and status">
+        <h2 class="ide-section-title">Output</h2>
+        <pre id="output" class="cu-output-box" tabindex="0" aria-live="polite"></pre>
+        <div class="cu-audit-actions" role="group" aria-label="Audit autofix actions">
+          <button id="auditFixOneBtn" class="cu-button" type="button" disabled>Fix First Issue</button>
+          <button id="auditFixAllBtn" class="cu-button" type="button" disabled>Apply Safe Fixes</button>
+        </div>
+      </section>
+
+      <section class="cu-panel ide-snippets" aria-label="Snippet library">
+        <h2 class="ide-section-title">Snippets</h2>
+        <div class="ide-field-row">
+          <label class="ide-field">
+            <span>Snippet name</span>
+            <input id="snippetNameInput" type="text" placeholder="robotics demo" autocomplete="off">
+          </label>
+          <label class="ide-field">
+            <span>Saved snippets</span>
+            <select id="snippetSelect" aria-label="Saved snippets"><option value="">No snippets yet</option></select>
+          </label>
+        </div>
+        <div class="ide-project-buttons">
+          <button id="deleteSnippetBtn" class="cu-button" type="button" aria-label="Delete the selected snippet">Delete Snippet</button>
+        </div>
+      </section>
+
+      <section class="cu-panel ide-projects" aria-label="Project controls">
+        <h2 class="ide-section-title">Project</h2>
+        <div class="ide-field-row">
+          <label class="ide-field">
+            <span>Project name</span>
+            <input id="projectNameInput" type="text" value="Untitled Project" aria-label="Project name">
+          </label>
+          <label class="ide-field">
+            <span>Open project</span>
+            <select id="projectSelect" class="theme-selector" aria-label="Open saved project"></select>
+          </label>
+        </div>
+        <div class="ide-project-buttons">
+          <button id="projectSaveBtn" class="cu-button" type="button">Save / Rename</button>
+          <button id="projectNewBtn" class="cu-button" type="button">New Project</button>
+          <button id="projectDuplicateBtn" class="cu-button" type="button">Duplicate</button>
+          <button id="projectOpenBtn" class="cu-button" type="button">Open</button>
+        </div>
+      </section>
     </aside>
   </main>
 
   <script src="/static/voice-memory-engine.js?v=1"></script>
-  <script src="/static/codeup-html.js?v=html-only"></script>
+  <script src="/static/codeup-html.js?v=ide-1"></script>
 </body>
 </html>

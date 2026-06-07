@@ -16,9 +16,36 @@ from codeup.services.fallbacks import (
 )
 from codeup.services.html_utils import extract_html, fallback_site, summarize_html_changes, wrap_html
 from codeup.services.memory_service import build_context, store_smart_memory
+from codeup.services.site_generator import (
+    combine_site_files,
+    generate_site_files,
+    parse_file_blocks,
+)
 from codeup.storage import append_memory, create_project_version, load_html_memory
 
 ai_bp = Blueprint("ai", __name__)
+
+# Reusable, high-quality generation prompt shared by the 3-file generator.
+SITE_SYSTEM_PROMPT = (
+    "You are the website generator inside CodeUp-Web, an accessibility-first web IDE for blind and "
+    "low-vision students. Generate a COMPLETE, polished website as THREE separate files: HTML, CSS, "
+    "and JavaScript.\n\n"
+    "Requirements:\n"
+    "- Always produce all three files: index.html, style.css, and script.js.\n"
+    '- index.html must link the CSS with <link rel="stylesheet" href="style.css"> and load the JS with '
+    '<script src="script.js" defer></script>.\n'
+    "- Use semantic HTML5 (header, nav, main, section, footer) with headings in order and ARIA where useful.\n"
+    "- Make it visually polished and modern, not generic: a hero section plus several rich content sections, "
+    "cards, a clear visual hierarchy, and a footer.\n"
+    "- Use meaningful, specific sample content based on the user's request.\n"
+    "- Add keyboard support, visible focus styles, strong colour contrast, and full mobile responsiveness.\n"
+    "- Never use external images, fonts, CDNs, or broken links. Use CSS gradients, CSS shapes, and emoji instead.\n"
+    "- Keep the code clear enough for a beginner student to read and learn from.\n"
+    "- Put meaningful interactivity in script.js (for example: theme/dark-mode toggle, accessible mobile menu, "
+    "project filtering, animated stats, and form handling). Do not add artificial delays.\n\n"
+    "Return ONLY the three files in EXACTLY this parseable format, with no extra prose or markdown fences:\n"
+    "FILE: index.html\n<your html here>\n\nFILE: style.css\n<your css here>\n\nFILE: script.js\n<your js here>\n"
+)
 
 
 @ai_bp.route("/review-site", methods=["POST"])
@@ -164,6 +191,84 @@ def generate_code():
     if project_id:
         create_project_version(project_id, label="Generated website", source="generate", html=html, summary=summary)
     return jsonify({"success": True, "code": html, "language": "html", "summary": summary})
+
+
+@ai_bp.route("/generate-site", methods=["POST"])
+def generate_site():
+    """Generate (or edit) a complete website as three separate files.
+
+    Returns separate ``html``, ``css`` and ``js`` strings plus a ``combined``
+    single-file document for preview, parsed from the AI's FILE: format and
+    falling back to the deterministic offline generator.
+    """
+    body = safejson()
+    prompt = str(body.get("prompt") or body.get("task") or "").strip()
+    current_html = str(body.get("html") or body.get("current_html") or "")
+    current_css = str(body.get("css") or body.get("current_css") or "")
+    current_js = str(body.get("js") or body.get("current_js") or "")
+    language = str(body.get("language") or "en")
+    project_id = str(body.get("project_id") or "").strip()
+    is_edit = bool(body.get("edit")) and bool(current_html.strip())
+
+    if not prompt:
+        return jsonify({"success": False, "error": "Prompt cannot be empty"}), 400
+    if (
+        len(prompt) > MAX_MESSAGE_SIZE
+        or len(current_html) > MAX_HTML_SIZE
+        or len(current_css) > MAX_HTML_SIZE
+        or len(current_js) > MAX_HTML_SIZE
+    ):
+        return jsonify({"success": False, "error": "Request too large"}), 413
+
+    session_id = get_session_id()
+
+    if is_edit:
+        user = (
+            f"Edit the existing website according to this instruction:\n{prompt}\n\n"
+            "Keep the parts that already work and return all three updated files.\n\n"
+            f"Current index.html:\n```html\n{current_html[:MAX_HTML_SIZE]}\n```\n\n"
+            f"Current style.css:\n```css\n{current_css[:MAX_HTML_SIZE]}\n```\n\n"
+            f"Current script.js:\n```javascript\n{current_js[:MAX_HTML_SIZE]}\n```"
+        )
+    else:
+        user = f"Build request:\n{prompt}\n\nGenerate a complete, beautiful, accessible website for this request."
+
+    raw = call_ai(SITE_SYSTEM_PROMPT, user, temperature=0.35, language=language)
+    files = parse_file_blocks(raw) if not is_ai_unavailable(raw) else {}
+
+    if not files.get("html"):
+        # AI unavailable or unparseable: use the deterministic offline generator.
+        generated = generate_site_files(prompt)
+        files = {"html": generated["html"], "css": generated["css"], "js": generated["js"]}
+    else:
+        files.setdefault("css", current_css)
+        files.setdefault("js", current_js)
+
+    html_file = files["html"]
+    css_file = files.get("css", "")
+    js_file = files.get("js", "")
+    combined = combine_site_files(html_file, css_file, js_file)
+
+    previous = combine_site_files(current_html, current_css, current_js) if current_html else ""
+    summary = summarize_html_changes(previous, combined) if previous else ["Generated a new website."]
+
+    append_memory(session_id, prompt=prompt, note="Generated 3-file website", html=combined)
+    store_smart_memory(session_id, f"Built website: {prompt}", "instruction")
+    if project_id:
+        create_project_version(
+            project_id, label="Generated website", source="generate-site", html=combined, summary=summary
+        )
+
+    return jsonify(
+        {
+            "success": True,
+            "html": html_file,
+            "css": css_file,
+            "js": js_file,
+            "combined": combined,
+            "summary": summary,
+        }
+    )
 
 
 @ai_bp.route("/analyze", methods=["POST"])

@@ -2,11 +2,61 @@
 
 [![CI](https://github.com/da-taki/CodeUp-web/actions/workflows/ci.yml/badge.svg)](https://github.com/da-taki/CodeUp-web/actions/workflows/ci.yml)
 
-CodeUp HTML is a blind-first website builder for students who want to create
-real HTML websites through conversation, keyboard, and voice. This sister
-project is focused only on websites: build pages, save named projects, preview
-locally, hear a visual review, apply improvements, audit accessibility, and
-export either a single HTML file or a multi-page ZIP.
+CodeUp HTML (CodeUp-Web) is a blind-first **web IDE** for students who want to
+create real websites through voice, a typed command box, and the keyboard. It
+ships a serious three-pane editor (HTML, CSS, and JavaScript), a live preview,
+and a voice/command engine that can generate a complete, polished website from a
+single request such as *"generate a website for my robotics lab"*.
+
+Every generation produces all three files — `index.html`, `style.css`, and
+`script.js` — wired together correctly, then loads them into the matching
+editors. Generated sites are responsive, accessible, and visually polished, and
+they never rely on external/broken assets (gradients, CSS shapes, and emoji are
+used instead). You can also save named projects, preview locally, hear a visual
+review, read the code aloud, get a beginner-friendly code map, audit/fix
+accessibility, save/load snippets, and export a single HTML file or a ZIP.
+
+### IDE controls
+
+The interface is a real IDE, not link-style buttons:
+
+- A **command box** at the top (method 2 when voice is unavailable): type a
+  command and press Enter or **Ask / Build**.
+- **HTML / CSS / JavaScript** editor tabs with a shared live preview.
+- Real `<button>` controls: **Generate, Run Preview, Analyze, Fix, Read Code,
+  Code Map, Audit, Outline, Save Snippet, Load Snippet, Export, Walkthrough,
+  Reset, Help**, plus a **Stop Speaking** button that cancels narration
+  instantly.
+- Full keyboard support, visible focus states, and `aria-live` status updates.
+
+### Quick demo (voice or command box)
+
+Both the microphone and the typed command box go through the same parser, so any
+of these work whether spoken or typed.
+
+Simple:
+
+```text
+generate a website for a bakery
+make it more colorful
+add a contact section
+read the HTML
+give me a code map
+stop everything
+```
+
+Advanced:
+
+```text
+generate a website for the robotics lab of my school with projects, achievements, student team, equipment, events, and a join form
+make the design futuristic with dark mode and animated stats
+analyze the code
+fix the accessibility issues
+explain the JavaScript
+save snippet as robotics demo
+```
+
+See `DEMO.md` for the full command catalogue.
 
 ## Demo Flow
 
@@ -116,20 +166,21 @@ CodeUp-web/
 │   ├── routes/             # Flask blueprints
 │   │   ├── core.py         # Home, healthz, voice-command
 │   │   ├── site.py         # Publish, preview, audit, autofix, export, reset
-│   │   ├── ai_routes.py    # Generate, chat, review, explain, fix, stream
+│   │   ├── ai_routes.py    # Generate (1-file + 3-file /generate-site), chat, review, explain, fix, stream
 │   │   ├── memory.py       # HTML memory, smart memory, build context
 │   │   ├── projects.py     # Named projects and persisted versions
 │   │   └── walkthrough.py  # Audio accessibility walkthrough routes
 │   └── services/           # Business logic
 │       ├── ai_service.py   # AI provider integration (xAI, Groq, Ollama)
+│       ├── site_generator.py  # Offline 3-file (HTML/CSS/JS) site generator + FILE-format parser
 │       ├── fallbacks.py    # Offline fallback responses
 │       ├── html_utils.py   # HTML parsing, audit, accessibility checks
 │       ├── memory_service.py  # Smart memory deduplication and context
 │       └── walkthrough.py  # Walkthrough engine (page map, journey, watchpoints)
 ├── static/
-│   ├── codeup-html.js      # Main frontend application
+│   ├── codeup-html.js      # Main frontend IDE controller (editors, commands, preview)
 │   ├── voice-memory-engine.js  # Voice state machine and streaming
-│   └── style/              # CSS modules
+│   └── style/              # CSS modules (core, accessibility, ui-improvements, ide)
 ├── templates/
 │   └── index.html          # Single-page app template
 ├── tests/                  # Test suite (100+ tests)
