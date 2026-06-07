@@ -58,6 +58,50 @@
 </body>
 </html>`;
 
+  // Split starter for the 3-file IDE: HTML structure, CSS in its own pane, JS in its own pane.
+  const starterBodyHtml = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>My CodeUp Website</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="hero">
+    <h1>My CodeUp Website</h1>
+    <p>Edit index.html, style.css, and script.js, or say "generate a website for my robotics lab".</p>
+    <button id="cta" type="button">Say hello</button>
+  </header>
+  <main>
+    <section>
+      <h2>About</h2>
+      <p>This page is built from three files: HTML for structure, CSS for style, and JavaScript for behaviour.</p>
+    </section>
+  </main>
+  <script src="script.js" defer></script>
+</body>
+</html>`;
+
+  const starterCss = `:root { color-scheme: light dark; --brand: #4f46e5; --accent: #06b6d4; }
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.6; color: #14181f; background: #f7f8fc; }
+.hero { padding: 64px 24px; text-align: center; color: #fff; background: linear-gradient(135deg, var(--brand), var(--accent)); }
+.hero h1 { font-size: clamp(2rem, 6vw, 3.5rem); margin: 0 0 .5rem; }
+main { max-width: 820px; margin: 0 auto; padding: 32px 20px; }
+section { background: #fff; border: 1px solid #e3e8f3; border-radius: 14px; padding: 22px; }
+button { font: inherit; font-weight: 700; cursor: pointer; margin-top: 14px; padding: 12px 22px; border: 0; border-radius: 999px; color: #fff; background: linear-gradient(135deg, var(--brand), var(--accent)); }
+button:focus-visible { outline: 3px solid #312e81; outline-offset: 3px; }`;
+
+  const starterJs = `var cta = document.getElementById('cta');
+if (cta) {
+  cta.addEventListener('click', function () {
+    cta.textContent = 'Hello! 👋';
+  });
+}`;
+
+  const starterFiles = { html: starterBodyHtml, css: starterCss, js: starterJs };
+
   const state = {
     activeRecognition: null,
     wakeRecognition: null,
@@ -147,8 +191,118 @@
     return (value || 'codeup-site').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'codeup-site';
   }
 
+  const CODEUP_CSS_ID = 'codeup-ide-css';
+  const CODEUP_JS_ID = 'codeup-ide-js';
+
   function getEditor() { return $('htmlEditor'); }
-  function getHtml() { return (getEditor() || {}).value || ''; }
+  function getCssEditor() { return $('cssEditor'); }
+  function getJsEditor() { return $('jsEditor'); }
+  function getHtmlSource() { return (getEditor() || {}).value || ''; }
+  function getCss() { const el = getCssEditor(); return el ? el.value : ''; }
+  function getJs() { const el = getJsEditor(); return el ? el.value : ''; }
+
+  // Remove only the IDE-managed inline <style>/<script> blocks.
+  function stripManagedBlocks(html) {
+    return String(html || '')
+      .replace(new RegExp('\\s*<style\\b[^>]*id=["\\\']?' + CODEUP_CSS_ID + '["\\\']?[^>]*>[\\s\\S]*?<\\/style>', 'gi'), '')
+      .replace(new RegExp('\\s*<script\\b[^>]*id=["\\\']?' + CODEUP_JS_ID + '["\\\']?[^>]*>[\\s\\S]*?<\\/script>', 'gi'), '');
+  }
+
+  // Remove external references to the sibling files (used only for the inlined preview).
+  function stripExternalRefs(html) {
+    return String(html || '')
+      .replace(/\s*<link\b[^>]*href=["']?(?:\.\/)?style\.css["']?[^>]*>/gi, '')
+      .replace(/\s*<script\b[^>]*src=["']?(?:\.\/)?script\.js["']?[^>]*>\s*<\/script>/gi, '');
+  }
+
+  // Keep index.html honest: ensure it links style.css / script.js when those panes have content.
+  function ensureManagedRefs(html, hasCss, hasJs) {
+    let doc = normalizeHtmlDocument(html);
+    if (hasCss && !/<link\b[^>]*href=["']?(?:\.\/)?style\.css["']?/i.test(doc)) {
+      const link = '\n  <link rel="stylesheet" href="style.css">';
+      doc = /<\/head\s*>/i.test(doc) ? doc.replace(/<\/head\s*>/i, () => link + '\n</head>') : link + doc;
+    }
+    if (hasJs && !/<script\b[^>]*src=["']?(?:\.\/)?script\.js["']?/i.test(doc)) {
+      const script = '\n  <script src="script.js" defer></script>';
+      doc = /<\/body\s*>/i.test(doc) ? doc.replace(/<\/body\s*>/i, () => script + '\n</body>') : doc + script;
+    }
+    return doc;
+  }
+
+  // Merge the three editors into a single, self-contained document for preview/publish.
+  function combineDocument(html, css, js) {
+    let doc = normalizeHtmlDocument(stripExternalRefs(stripManagedBlocks(html)));
+    if (css && css.trim()) {
+      const styleBlock = '\n<style id="' + CODEUP_CSS_ID + '">\n' + css.trim() + '\n</style>\n';
+      doc = /<\/head\s*>/i.test(doc)
+        ? doc.replace(/<\/head\s*>/i, () => styleBlock + '</head>')
+        : styleBlock + doc;
+    }
+    if (js && js.trim()) {
+      const scriptBlock = '\n<script id="' + CODEUP_JS_ID + '">\n' + js.trim() + '\n</script>\n';
+      doc = /<\/body\s*>/i.test(doc)
+        ? doc.replace(/<\/body\s*>/i, () => scriptBlock + '</body>')
+        : doc + scriptBlock;
+    }
+    return doc;
+  }
+
+  // Split a single document back into {html, css, js} using the managed block ids.
+  // The returned HTML keeps/ensures the external style.css / script.js references.
+  function splitDocument(doc) {
+    const source = String(doc || '');
+    let css = '';
+    let js = '';
+    const cssMatch = source.match(
+      new RegExp('<style\\b[^>]*id=["\\\']?' + CODEUP_CSS_ID + '["\\\']?[^>]*>([\\s\\S]*?)<\\/style>', 'i'),
+    );
+    if (cssMatch) css = cssMatch[1].trim();
+    const jsMatch = source.match(
+      new RegExp('<script\\b[^>]*id=["\\\']?' + CODEUP_JS_ID + '["\\\']?[^>]*>([\\s\\S]*?)<\\/script>', 'i'),
+    );
+    if (jsMatch) js = jsMatch[1].trim();
+    let html = stripManagedBlocks(source);
+    if (css || js) html = ensureManagedRefs(html, !!css, !!js);
+    return { html, css, js };
+  }
+
+  // getHtml() returns the combined document. When the CSS/JS panes are empty (or
+  // absent, as in the unit-test harness) it returns the raw HTML editor value.
+  function getHtml() {
+    const html = getHtmlSource();
+    const css = getCss();
+    const js = getJs();
+    if ((css && css.trim()) || (js && js.trim())) return combineDocument(html, css, js);
+    return html;
+  }
+
+  function persistDrafts() {
+    try {
+      const h = getEditor(); if (h) sessionStorage.setItem('codeup_html_draft', h.value);
+      const c = getCssEditor(); if (c) sessionStorage.setItem('codeup_css_draft', c.value);
+      const j = getJsEditor(); if (j) sessionStorage.setItem('codeup_js_draft', j.value);
+    } catch (error) {}
+  }
+
+  // Load three generated files directly into the three editors.
+  function loadGeneratedFiles(files) {
+    const htmlEl = getEditor();
+    const cssEl = getCssEditor();
+    const jsEl = getJsEditor();
+    const css = files.css || '';
+    const js = files.js || '';
+    const html = ensureManagedRefs(stripManagedBlocks(normalizeHtmlDocument(files.html || '')), !!css.trim(), !!js.trim());
+    if (cssEl || jsEl) {
+      if (htmlEl) htmlEl.value = html;
+      if (cssEl) cssEl.value = css;
+      if (jsEl) jsEl.value = js;
+    } else if (htmlEl) {
+      htmlEl.value = combineDocument(html, css, js);
+    }
+    persistDrafts();
+    state.pages[state.currentPage] = getHtml();
+    scheduleAutosave();
+  }
 
   function activePages() {
     state.pages[state.currentPage] = getHtml();
@@ -183,9 +337,22 @@
     saveVersionToServer(version);
   }
 
+  // setHtml() accepts a full document. When the CSS/JS panes exist it splits the
+  // managed style/script blocks back into them; otherwise it behaves like the
+  // original single-editor model (used by the unit-test harness).
   function setHtml(html) {
     const editor = getEditor();
-    if (editor) {
+    const cssEl = getCssEditor();
+    const jsEl = getJsEditor();
+    if (cssEl || jsEl) {
+      const parts = splitDocument(html);
+      if (editor) editor.value = parts.html;
+      if (cssEl) cssEl.value = parts.css;
+      if (jsEl) jsEl.value = parts.js;
+      persistDrafts();
+      state.pages[state.currentPage] = getHtml();
+      scheduleAutosave();
+    } else if (editor) {
       editor.value = html;
       try { sessionStorage.setItem('codeup_html_draft', html); } catch (error) {}
       state.pages[state.currentPage] = html;
@@ -379,21 +546,21 @@
     return normalized.replace(/<\/head\s*>/i, `${styleBlock}</head>`);
   }
 
-  function ensureHtmlEditor() {
-    let editor = getEditor();
+  function makeEditor(hostId, editorId, ariaLabel, draftKey) {
+    let editor = $(editorId);
     if (editor) return editor;
-    const host = $('editor');
+    const host = $(hostId);
     if (!host) return null;
     host.innerHTML = '';
     editor = document.createElement('textarea');
-    editor.id = 'htmlEditor';
+    editor.id = editorId;
     editor.className = 'cu-html-editor';
     editor.spellcheck = false;
-    editor.setAttribute('aria-label', 'HTML website editor. Dictate or type HTML, CSS, and JavaScript.');
-    editor.value = sessionStorage.getItem('codeup_html_draft') || state.memory.last_html || starterHtml;
+    editor.setAttribute('aria-label', ariaLabel);
+    try { editor.value = sessionStorage.getItem(draftKey) || ''; } catch (error) { editor.value = ''; }
     editor.addEventListener('input', () => {
-      try { sessionStorage.setItem('codeup_html_draft', editor.value); } catch (error) {}
-      state.pages[state.currentPage] = editor.value;
+      try { sessionStorage.setItem(draftKey, editor.value); } catch (error) {}
+      state.pages[state.currentPage] = getHtml();
       scheduleAutosave();
     });
     editor.addEventListener('keydown', (event) => {
@@ -406,6 +573,23 @@
     host.appendChild(editor);
     return editor;
   }
+
+  function ensureEditors() {
+    const htmlEl = makeEditor('editor', 'htmlEditor', 'HTML editor. Type or dictate the page structure.', 'codeup_html_draft');
+    const cssEl = makeEditor('cssEditorHost', 'cssEditor', 'CSS editor. Type or dictate the styles.', 'codeup_css_draft');
+    const jsEl = makeEditor('jsEditorHost', 'jsEditor', 'JavaScript editor. Type or dictate the behaviour.', 'codeup_js_draft');
+    const hasDraft = (htmlEl && htmlEl.value.trim()) || (cssEl && cssEl.value.trim()) || (jsEl && jsEl.value.trim());
+    if (!hasDraft) {
+      if (htmlEl) htmlEl.value = state.memory.last_html || starterBodyHtml;
+      if (cssEl && !state.memory.last_html) cssEl.value = starterCss;
+      if (jsEl && !state.memory.last_html) jsEl.value = starterJs;
+      persistDrafts();
+    }
+    return htmlEl;
+  }
+
+  // Backwards-compatible alias (used by the existing setup flow).
+  function ensureHtmlEditor() { return ensureEditors(); }
 
   function replaceButton(id, label, aria, handler, extraClass) {
     const old = $(id);
@@ -840,12 +1024,17 @@
     state.currentPage = 'home';
     state.projectId = '';
     state.projectName = 'Untitled Project';
-    try { sessionStorage.removeItem('codeup_html_draft'); } catch (error) {}
-    setHtml(starterHtml);
+    try {
+      sessionStorage.removeItem('codeup_html_draft');
+      sessionStorage.removeItem('codeup_css_draft');
+      sessionStorage.removeItem('codeup_js_draft');
+    } catch (error) {}
+    loadGeneratedFiles(starterFiles);
+    activateTab('html');
     try {
       const data = await apiJson('/projects', {
         method: 'POST',
-        body: JSON.stringify({ name: state.projectName, html: starterHtml, current_page: state.currentPage }),
+        body: JSON.stringify({ name: state.projectName, html: getHtml(), current_page: state.currentPage }),
       });
       state.projectId = data.project.id;
       state.projectName = data.project.name;
@@ -1108,78 +1297,54 @@
     }
   }
 
-  async function buildWebsite(prompt, shouldSpeak = true) {
+  // Generate (or edit) a complete website as three separate files via /generate-site.
+  async function buildWebsite(prompt, shouldSpeak = true, options = {}) {
     cancelSpeech();
     if (!prompt) {
       writeOutput(t(
-        'Type or say a request like: Build a website for my school project.',
-        'Request boliye ya likhiye: mere school project ke liye website banao.'
+        'Type or say a request like: generate a website for my robotics lab.',
+        'Request boliye ya likhiye: mere robotics lab ke liye website banao.'
       ), true);
       return;
     }
-    const normalized = /^build a website/i.test(prompt) || /^make/i.test(prompt)
+    const isEdit = !!options.edit;
+    const normalized = isEdit || /^(build|make|create|generate)/i.test(prompt)
       ? prompt
       : 'Build a website for ' + prompt;
 
-    if (window.VoiceMemoryEngine && shouldSpeak) {
-      writeOutput(t('Building website...', 'Website ban rahi hai...'));
-      updateStateIndicator('PROCESSING');
-      const result = await window.VoiceMemoryEngine.streamAIResponse(normalized, {
-        currentHtml: getHtml(),
-        projectId: state.projectId,
-      });
-      if (result) {
-        const html = result.indexOf('<') !== -1 ? result : '';
-        if (html) {
-          snapshotVersion('Before building website');
-          state.currentPage = 'home';
-          state.pages = {};
-          setHtml(html);
-          snapshotVersion('Built website');
-          try {
-            const url = await publish(html);
-            await saveMemory({ prompt: normalized, html, url });
-            const review = await reviewWebsite(false);
-            writeOutput(t(
-              `Website built and hosted locally at ${url}. ${review}`,
-              `Website ban gayi: ${url}. ${review}`
-            ), false);
-          } catch (error) {
-            writeOutput(t('Website built but preview failed.', 'Website bani par preview fail.'), false);
-          }
-        }
-      }
-      return;
-    }
-
-    writeOutput(t('Building website...', 'Website ban rahi hai...'), shouldSpeak);
+    writeOutput(t('Generating HTML, CSS, and JavaScript...', 'HTML, CSS aur JavaScript ban rahe hain...'));
+    updateStateIndicator('PROCESSING');
     try {
-      const response = await fetch('/generate-code', {
+      const data = await apiJson('/generate-site', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: normalized,
+          html: getHtmlSource(),
+          css: getCss(),
+          js: getJs(),
+          edit: isEdit,
           language: lang(),
-          current_html: getHtml(),
           project_id: state.projectId,
         }),
       });
-      const data = await response.json();
-      if (!data.success || !data.code) throw new Error(data.error || 'Website generation failed.');
-      snapshotVersion('Before building website');
-      state.currentPage = 'home';
-      state.pages = {};
-      setHtml(data.code);
-      snapshotVersion('Built website');
-      const url = await publish(data.code);
-      await saveMemory({ prompt: normalized, html: data.code, url });
-      const review = await reviewWebsite(false);
+      if (!data.html) throw new Error(data.error || 'Website generation failed.');
+      snapshotVersion(isEdit ? 'Before editing website' : 'Before generating website');
+      if (!isEdit) { state.currentPage = 'home'; state.pages = {}; }
+      loadGeneratedFiles({ html: data.html, css: data.css, js: data.js });
+      snapshotVersion(isEdit ? 'Edited website' : 'Generated website');
+      activateTab('html');
+      let url = '';
+      try { url = await publish(getHtml()); } catch (error) {}
+      await saveMemory({ prompt: normalized, html: getHtml(), url });
+      const summary = (data.summary || []).join(' ');
       const message = t(
-        `Website built and hosted locally at ${url}.\nChanges: ${(data.summary || []).join(' ')}\nHere is the first review. ${review}`,
-        `Website ban gayi aur local URL ${url} par host ho gayi.\nChanges: ${(data.summary || []).join(' ')}\nPehla review yeh hai. ${review}`
+        `Done. I created separate index.html, style.css, and script.js files and updated the live preview. ${summary}`,
+        `Ho gaya. Alag index.html, style.css aur script.js files ban gayi aur preview update ho gaya. ${summary}`
       );
-      if (shouldSpeak) speak(message);
+      writeOutput(message, shouldSpeak);
+      updateStateIndicator('IDLE');
     } catch (error) {
+      updateStateIndicator('IDLE');
       writeOutput(error.message, true);
     }
   }
@@ -1396,6 +1561,18 @@
     setHtml(snippets[safeName].html);
     snapshotVersion(`Loaded snippet: ${safeName}`);
     writeOutput(t(`Loaded snippet: ${safeName}.`, `Snippet load ho gaya: ${safeName}.`), true);
+  }
+
+  function deleteSnippet(name) {
+    const safeName = sanitizeSnippetName(name);
+    const snippets = loadSnippets();
+    if (!safeName || !(safeName in snippets)) {
+      writeOutput(t(`Snippet "${safeName}" not found.`, `Snippet "${safeName}" nahi mila.`), true);
+      return;
+    }
+    delete snippets[safeName];
+    persistSnippets(snippets);
+    writeOutput(t(`Deleted snippet: ${safeName}.`, `Snippet delete ho gaya: ${safeName}.`), true);
   }
 
   function insertAtCursor(text) {
@@ -1633,10 +1810,386 @@
     writeOutput(t('Walkthrough stopped.', 'Walkthrough band ho gaya.'), true);
   }
 
+  // ----- Tabs -----
+  const TAB_IDS = { html: 'tabHtml', css: 'tabCss', js: 'tabJs' };
+  const PANEL_IDS = { html: 'panelHtml', css: 'panelCss', js: 'panelJs' };
+
+  function activateTab(name) {
+    const target = TAB_IDS[name] ? name : 'html';
+    state.activeTab = target;
+    Object.keys(TAB_IDS).forEach((key) => {
+      const tab = $(TAB_IDS[key]);
+      const panel = $(PANEL_IDS[key]);
+      const selected = key === target;
+      if (tab) {
+        tab.setAttribute('aria-selected', selected ? 'true' : 'false');
+        tab.tabIndex = selected ? 0 : -1;
+      }
+      if (panel) {
+        if (selected) panel.removeAttribute('hidden');
+        else panel.setAttribute('hidden', '');
+      }
+    });
+    const focusMap = { html: 'htmlEditor', css: 'cssEditor', js: 'jsEditor' };
+    const editor = $(focusMap[target]);
+    if (editor && document.activeElement && /tab/i.test(document.activeElement.id || '')) editor.focus();
+  }
+
+  function setupTabs() {
+    const order = ['html', 'css', 'js'];
+    order.forEach((name) => {
+      const tab = $(TAB_IDS[name]);
+      if (!tab) return;
+      tab.addEventListener('click', () => activateTab(name));
+      tab.addEventListener('keydown', (event) => {
+        const idx = order.indexOf(name);
+        let nextName = null;
+        if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextName = order[(idx + 1) % order.length];
+        else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextName = order[(idx - 1 + order.length) % order.length];
+        else if (event.key === 'Home') nextName = order[0];
+        else if (event.key === 'End') nextName = order[order.length - 1];
+        if (nextName) {
+          event.preventDefault();
+          activateTab(nextName);
+          const nextTab = $(TAB_IDS[nextName]);
+          if (nextTab) nextTab.focus();
+        }
+      });
+    });
+    activateTab('html');
+  }
+
+  function generateFromCommand() {
+    const field = $('commandInput');
+    const value = field ? field.value.trim() : '';
+    if (!value) {
+      writeOutput(t('Type what to build in the command box, then press Generate.', 'Command box mein likhiye kya banana hai, phir Generate dabaiye.'), true);
+      if (field) field.focus();
+      return;
+    }
+    buildWebsite(value, true);
+  }
+
+  // ----- Read code aloud (stoppable) -----
+  function describeForSpeech(label, code) {
+    const trimmed = (code || '').trim();
+    if (!trimmed) return t(`The ${label} is empty.`, `${label} khaali hai.`);
+    const lines = trimmed.split('\n').length;
+    return t(
+      `${label}, ${lines} line${lines === 1 ? '' : 's'}. ${trimmed}`,
+      `${label}, ${lines} line. ${trimmed}`
+    );
+  }
+
+  function readCode(target) {
+    let which = target || state.activeTab || 'html';
+    if (which === 'all') {
+      const msg = [
+        describeForSpeech('HTML', getHtmlSource()),
+        describeForSpeech('CSS', getCss()),
+        describeForSpeech('JavaScript', getJs()),
+      ].join('\n\n');
+      writeOutput(msg, true);
+      return;
+    }
+    const map = {
+      html: ['HTML', getHtmlSource()],
+      css: ['CSS', getCss()],
+      js: ['JavaScript', getJs()],
+    };
+    const entry = map[which] || map.html;
+    activateTab(which);
+    writeOutput(describeForSpeech(entry[0], entry[1]), true);
+  }
+
+  // ----- Code map (deterministic, beginner friendly) -----
+  function buildCodeMap() {
+    const doc = previewDocument();
+    const sections = [];
+    const landmarks = doc.body ? doc.body.querySelectorAll('header,nav,main,section,article,aside,footer,form') : [];
+    landmarks.forEach((node) => {
+      const tag = node.tagName.toLowerCase();
+      const heading = node.querySelector('h1,h2,h3');
+      const label = node.getAttribute('aria-label') || (heading ? heading.textContent.trim() : '') || '';
+      sections.push(`${tag}${label ? ': ' + label : ''}`);
+    });
+    const headings = [...doc.querySelectorAll('h1,h2,h3,h4,h5,h6')].map(
+      (h) => `${h.tagName.toUpperCase()} ${h.textContent.replace(/\s+/g, ' ').trim()}`
+    );
+
+    const css = getCss() || (getHtmlSource().match(/<style\b[^>]*>([\s\S]*?)<\/style>/i) || [])[1] || '';
+    const selectors = [...new Set((css.match(/[^{}]+(?=\s*\{)/g) || [])
+      .map((s) => s.replace(/\s+/g, ' ').trim())
+      .filter((s) => s && !s.startsWith('@') && !s.startsWith('/*')))].slice(0, 14);
+
+    const js = getJs() || (getHtmlSource().match(/<script\b(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/i) || [])[1] || '';
+    const fns = [...new Set([
+      ...(js.match(/function\s+([A-Za-z0-9_]+)/g) || []).map((m) => m.replace(/function\s+/, '') + '()'),
+      ...(js.match(/(?:const|let|var)\s+([A-Za-z0-9_]+)\s*=\s*(?:async\s*)?\(/g) || [])
+        .map((m) => m.replace(/(?:const|let|var)\s+/, '').replace(/\s*=.*/, '') + '()'),
+    ])].slice(0, 14);
+    const events = [...new Set((js.match(/addEventListener\(\s*['"]([a-z]+)['"]/g) || [])
+      .map((m) => m.replace(/addEventListener\(\s*['"]/, '').replace(/['"]/, '')))].slice(0, 10);
+
+    return { sections, headings, selectors, fns, events };
+  }
+
+  function codeMap() {
+    const map = buildCodeMap();
+    const detail = [
+      t('CODE MAP', 'CODE MAP'),
+      '',
+      t('HTML sections:', 'HTML sections:'),
+      ...(map.sections.length ? map.sections.map((s) => '  - ' + s) : ['  (none found)']),
+      '',
+      t('Headings:', 'Headings:'),
+      ...(map.headings.length ? map.headings.map((h) => '  - ' + h) : ['  (none found)']),
+      '',
+      t('CSS selectors:', 'CSS selectors:'),
+      ...(map.selectors.length ? map.selectors.map((s) => '  - ' + s) : ['  (none found)']),
+      '',
+      t('JavaScript functions:', 'JavaScript functions:'),
+      ...(map.fns.length ? map.fns.map((f) => '  - ' + f) : ['  (none found)']),
+      '',
+      t('JavaScript events:', 'JavaScript events:'),
+      ...(map.events.length ? map.events.map((e) => '  - ' + e) : ['  (none found)']),
+    ].join('\n');
+    writeOutput(detail, false);
+    const spoken = t(
+      `Code map. ${map.sections.length} HTML sections, ${map.headings.length} headings, ${map.selectors.length} CSS rules, and ${map.fns.length} JavaScript functions handling ${map.events.length} events. Full map is on screen.`,
+      `Code map. ${map.sections.length} HTML sections, ${map.headings.length} headings, ${map.selectors.length} CSS rules, aur ${map.fns.length} JavaScript functions. Poora map screen par hai.`
+    );
+    speak(spoken);
+  }
+
+  function explainJs() {
+    const map = buildCodeMap();
+    if (!map.fns.length && !map.events.length) {
+      writeOutput(t('There is no JavaScript yet. Generate a website or add interactivity first.', 'Abhi JavaScript nahi hai.'), true);
+      return;
+    }
+    const msg = t(
+      `The JavaScript defines ${map.fns.length} function${map.fns.length === 1 ? '' : 's'}: ${map.fns.join(', ') || 'none'}. It listens for these events: ${map.events.join(', ') || 'none'}.`,
+      `JavaScript mein ${map.fns.length} functions hain: ${map.fns.join(', ') || 'none'}. Yeh events sunta hai: ${map.events.join(', ') || 'none'}.`
+    );
+    writeOutput(msg, true);
+  }
+
+  // ----- Analyze: structured checks across HTML/CSS/JS with a short spoken summary -----
+  async function analyzeCode() {
+    writeOutput(t('Analyzing the code...', 'Code analyze ho raha hai...'));
+    try {
+      const response = await fetch('/html-audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html: getHtml(), project_id: state.projectId }),
+      });
+      const data = await response.json();
+      if (!data.success) throw new Error(data.error || 'Analyze failed.');
+      const audit = data.audit;
+      state.lastAudit = audit;
+      const issues = audit.issues || [];
+      const fixable = issues.filter((item) => item.autofix);
+      const one = $('auditFixOneBtn');
+      const all = $('auditFixAllBtn');
+      if (one) one.disabled = fixable.length === 0;
+      if (all) all.disabled = fixable.length === 0;
+
+      const checks = audit.checks.map((item) => `${item.passed ? 'PASS' : 'FIX '} - ${item.label}`).join('\n');
+      const issueLines = issues
+        .map((item) => `${item.severity.toUpperCase()} - ${item.id}: ${item.description}\n  Fix: ${item.suggested_fix}`)
+        .join('\n');
+      const jsNote = analyzeJsSyntax();
+      const detail = `Analysis — accessibility score ${audit.score}/100\n\n${checks}\n\n` +
+        `Issues:\n${issueLines || 'No structured issues found.'}\n\n` +
+        `JavaScript: ${jsNote.message}\n\n` +
+        `Suggestions:\n${audit.suggestions.map((s) => '- ' + s).join('\n')}`;
+      writeOutput(detail, false);
+
+      const top = issues.slice(0, 3).map((item) => item.id.replace(/_/g, ' ')).join(', ');
+      const jsSpoken = jsNote.ok ? '' : ' ' + jsNote.message;
+      const spoken = issues.length
+        ? t(
+            `Analysis done. Accessibility score ${audit.score} out of 100. ${issues.length} issue${issues.length === 1 ? '' : 's'} found: ${top}. Press Fix to repair the safe ones.${jsSpoken}`,
+            `Analysis ho gaya. Score ${audit.score}. ${issues.length} issues mile: ${top}. Fix dabaiye.${jsSpoken}`
+          )
+        : t(
+            `Analysis done. Accessibility score ${audit.score} out of 100. No structured issues found.${jsSpoken}`,
+            `Analysis ho gaya. Score ${audit.score}. Koi structured issue nahi mila.${jsSpoken}`
+          );
+      speak(spoken);
+    } catch (error) {
+      writeOutput(error.message, true);
+    }
+  }
+
+  // Lightweight, CSP-safe JavaScript sanity check (balanced brackets/quotes).
+  function analyzeJsSyntax() {
+    const js = getJs() || (getHtmlSource().match(/<script\b(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/i) || [])[1] || '';
+    if (!js.trim()) return { ok: true, message: 'No JavaScript yet.' };
+    const noStrings = js
+      .replace(/\/\/[^\n]*/g, '')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/'(?:\\.|[^'\\])*'/g, "''")
+      .replace(/"(?:\\.|[^"\\])*"/g, '""')
+      .replace(/`(?:\\.|[^`\\])*`/g, '``');
+    const pairs = { ')': '(', ']': '[', '}': '{' };
+    const stack = [];
+    for (const ch of noStrings) {
+      if (ch === '(' || ch === '[' || ch === '{') stack.push(ch);
+      else if (pairs[ch]) {
+        if (stack.pop() !== pairs[ch]) return { ok: false, message: 'Possible JavaScript syntax issue: unbalanced brackets.' };
+      }
+    }
+    if (stack.length) return { ok: false, message: 'Possible JavaScript syntax issue: unclosed bracket.' };
+    return { ok: true, message: 'No obvious syntax problems.' };
+  }
+
+  // ----- Stop everything -----
+  function stopEverything() {
+    cancelSpeech();
+    if (_sonifyTimer) { clearTimeout(_sonifyTimer); _sonifyTimer = null; }
+    if (window.VoiceMemoryEngine && typeof window.VoiceMemoryEngine.interrupt === 'function') {
+      try { window.VoiceMemoryEngine.interrupt(); } catch (error) {}
+    }
+    announce(t('Stopped.', 'Ruk gaya.'));
+    const output = $('output');
+    if (output) output.textContent = t('Stopped speaking.', 'Bolna band ho gaya.');
+  }
+
+  // ----- Design presets (offline editing) -----
+  function applyDesignPreset(name) {
+    const presets = {
+      futuristic: [
+        'body { background: #05060f; color: #e6f1ff; }',
+        'header, .hero { background: linear-gradient(135deg, #0ea5e9, #7c3aed); color: #ffffff; }',
+        'section, article, .card { background: #0c1124; border-color: #1e2a4a; color: #e6f1ff; box-shadow: 0 0 24px rgba(14,165,233,0.25); }',
+        'a, button, .button { background: #06b6d4; color: #04121a; }',
+      ],
+      vibrant: [
+        'header, .hero { background: linear-gradient(135deg, #ec4899, #f59e0b); color: #ffffff; }',
+        'section, article, .card { border-left: 6px solid #ec4899; }',
+        'a, button, .button { background: #7c3aed; color: #ffffff; }',
+      ],
+      animated: [
+        '@keyframes cu-fade-up { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }',
+        'section, article, .card { animation: cu-fade-up .6s ease both; }',
+        'a:hover, button:hover, .button:hover { transform: translateY(-2px); transition: transform .15s ease; }',
+      ],
+    };
+    const rules = presets[name];
+    if (!rules) return false;
+    snapshotVersion('Before design preset');
+    setHtml(injectVoiceCss(getHtml(), rules));
+    writeOutput(t(`Applied a ${name} design.`, `${name} design apply ho gaya.`), true);
+    previewHtml(false);
+    return true;
+  }
+
+  // ----- Add a contact section into the HTML pane -----
+  function addContactSection() {
+    snapshotVersion('Before adding contact section');
+    const block = '\n<section id="contact" aria-labelledby="contact-heading">\n' +
+      '  <h2 id="contact-heading">Contact Us</h2>\n' +
+      '  <p>Have a question? Send us a message.</p>\n' +
+      '  <form data-contact-form novalidate>\n' +
+      '    <label for="contact-name">Your name</label>\n' +
+      '    <input id="contact-name" name="name" type="text" required>\n' +
+      '    <label for="contact-email">Email address</label>\n' +
+      '    <input id="contact-email" name="email" type="email" required>\n' +
+      '    <label for="contact-message">Message</label>\n' +
+      '    <textarea id="contact-message" name="message" rows="4" required></textarea>\n' +
+      '    <button type="submit">Send message</button>\n' +
+      '  </form>\n' +
+      '</section>\n';
+    activateTab('html');
+    insertAtCursor(block);
+    state.pages[state.currentPage] = getHtml();
+    writeOutput(t('Added a contact section with an accessible form.', 'Accessible form ke saath contact section add ho gaya.'), true);
+    previewHtml(false);
+    return true;
+  }
+
+  // ----- Snippet dropdown -----
+  function refreshSnippetSelect() {
+    const select = $('snippetSelect');
+    if (!select) return;
+    const snippets = loadSnippets();
+    const names = Object.keys(snippets);
+    select.innerHTML = '';
+    if (!names.length) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = t('No snippets yet', 'Abhi koi snippet nahi');
+      select.appendChild(opt);
+      return;
+    }
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = t('Choose a snippet…', 'Snippet chuniye…');
+    select.appendChild(placeholder);
+    names.forEach((name) => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      select.appendChild(opt);
+    });
+  }
+
+  function saveSnippetFromUi() {
+    const input = $('snippetNameInput');
+    const name = input ? input.value.trim() : '';
+    saveSnippet(name || ('snippet ' + (Object.keys(loadSnippets()).length + 1)));
+    refreshSnippetSelect();
+  }
+
+  function loadSnippetFromUi() {
+    const select = $('snippetSelect');
+    const name = select ? select.value : '';
+    if (!name) { writeOutput(t('Choose a snippet to load first.', 'Pehle ek snippet chuniye.'), true); return; }
+    loadSnippet(name);
+    previewHtml(false);
+  }
+
+  function deleteSnippetFromUi() {
+    const select = $('snippetSelect');
+    const name = select ? select.value : '';
+    if (!name) { writeOutput(t('Choose a snippet to delete first.', 'Pehle ek snippet chuniye.'), true); return; }
+    deleteSnippet(name);
+    refreshSnippetSelect();
+  }
+
+  // Natural-language commands that are specific to the 3-file IDE. Returns true
+  // when handled. Shared by both the voice route and the typed command box.
+  function handleIdeCommand(command, lower) {
+    if (/\bread\b/.test(lower) && !/\bread\s+paragraph\b/.test(lower) && !lower.includes('page structure')) {
+      if (lower.includes('css') || lower.includes('style')) { readCode('css'); return true; }
+      if (lower.includes('javascript') || lower.includes('java script') || /\bjs\b/.test(lower) || lower.includes('script')) { readCode('js'); return true; }
+      if (lower.includes('html') || lower.includes('markup')) { readCode('html'); return true; }
+      if (lower.includes('all') || lower.includes('everything') || lower.includes('whole') || lower.includes('current') || lower.includes('the code') || lower.includes('read code') || lower === 'read') { readCode('all'); return true; }
+    }
+    if (lower.includes('code map') || lower.includes('codemap') || lower.includes('structure map') || lower.includes('map of the code') || lower.includes('map the code')) { codeMap(); return true; }
+    if ((lower.includes('explain') || lower.includes('what does')) && (lower.includes('javascript') || lower.includes('java script') || /\bjs\b/.test(lower) || lower.includes('the script'))) { explainJs(); return true; }
+    if ((lower.includes('explain') || lower.includes('what does')) && (lower.includes('css') || lower.includes('the style'))) { readCode('css'); return true; }
+    if (lower.includes('analyze') || lower.includes('analyse') || lower.includes('find problems') || lower.includes('check the code')) { analyzeCode(); return true; }
+    if (lower.includes('summarize') || lower.includes('summarise')) { explainWebsite(true); return true; }
+    if (lower.includes('fix the accessibility') || lower.includes('fix accessibility') || lower.includes('fix the accessibility issues')) { applyAllAuditFixes(); return true; }
+    if (lower.includes('fix the code') || lower.includes('fix my code') || lower === 'fix' || lower.includes('fix it') || lower.includes('fix the bugs')) { applyAllAuditFixes(); return true; }
+    if (lower.includes('futuristic')) { applyDesignPreset('futuristic'); return true; }
+    if (lower.includes('add animation') || lower.includes('add animations') || lower.includes('more animation')) { applyDesignPreset('animated'); return true; }
+    if (lower.includes('more beautiful') || lower.includes('more colorful') || lower.includes('more colourful') || lower.includes('prettier') || lower.includes('improve the design') || lower.includes('make it pop')) { applyDesignPreset('vibrant'); return true; }
+    if (lower.includes('dark mode')) { applyCssEdit('change the background dark'); return true; }
+    if (lower.includes('make it accessible') || lower.includes('improve accessibility') || lower.includes('more accessible')) { applyAllAuditFixes(); return true; }
+    if (lower.includes('contact') && (lower.includes('section') || lower.includes('form'))) { addContactSection(); return true; }
+    if (lower.includes('run preview') || lower.includes('run the preview') || lower.includes('show preview')) { previewHtml(true); return true; }
+    if (lower.includes('add javascript') || lower.includes('add interactivity') || lower.includes('more interactive')) { buildWebsite(command, true, { edit: true }); return true; }
+    return false;
+  }
+
   function helpText() {
     return t(
-      'You can say: build a website for robotics club, preview website, what is missing, review website, add that, explain website, audit website, outline website, export website, reset session, sonify website, polish HTML, add heading About Us, add paragraph Welcome students, pause voice, resume voice, or stop speaking.',
-      'Aap bol sakte hain: robotics club ke liye website banao, preview website, website samjhao, audit website, outline website, export website, reset session, website sonify karo, HTML polish karo, heading add karo About Us, paragraph add karo Welcome students, pause voice, resume voice, ya stop speaking. Hindi examples: school annual day ke liye website banao. Website kaisi dikhti hai? Isme kya missing hai? Add that.'
+      'You can say: generate a website for a robotics lab, run preview, analyze the code, fix the code, read the HTML, read the CSS, read the JavaScript, give me a code map, add a contact section, add dark mode, make it more futuristic, save snippet as robotics demo, load snippet, audit website, export website, reset session, and stop everything.',
+      'Aap bol sakte hain: robotics lab ke liye website banao, run preview, code analyze karo, code fix karo, HTML padho, CSS padho, JavaScript padho, code map do, contact section add karo, dark mode add karo, futuristic banao, snippet save karo, snippet load karo, audit karo, export karo, reset karo, aur stop everything.'
     );
   }
 
@@ -1868,6 +2421,14 @@
       loadSnippet(name);
       return true;
     }
+    const deleteMatch = command.match(/(?:delete|remove)\s+(?:the\s+)?snippet\s+(?:called\s+|named\s+)?(.+)/i)
+      || command.match(/(.+?)\s+(?:wala|naam\s+ka)\s+snippet\s+(?:delete|hatao)/i);
+    if (deleteMatch) {
+      const name = deleteMatch[1].replace(/\b(called|named|wala|naam\s+ka)\b/gi, '').trim();
+      deleteSnippet(name);
+      refreshSnippetSelect();
+      return true;
+    }
     return false;
   }
 
@@ -1876,6 +2437,18 @@
     if (!command) return;
     cancelSpeech();
     const lower = command.toLowerCase();
+    // Instant control commands (must work without any network round-trip).
+    if (lower.includes('stop everything') || lower.includes('stop speaking') || lower === 'stop'
+        || lower === 'cancel' || lower.includes('be quiet') || lower.includes('chup') || lower.includes('sab rok')) {
+      stopEverything();
+      return;
+    }
+    if (lower.includes('clear command')) {
+      const field = $('commandInput');
+      if (field) field.value = '';
+      writeOutput(t('Command box cleared.', 'Command box clear ho gaya.'), true);
+      return;
+    }
     if (lower.startsWith('set wake word to ') || lower.startsWith('change wake word to ')) {
       state.wakeWord = lower.replace(/^set wake word to |^change wake word to /, '').trim() || 'hey codeup';
       localStorage.setItem('codeup_wake_word', state.wakeWord);
@@ -1942,6 +2515,7 @@
       await chatWithAI(command, true);
       return;
     }
+    if (handleIdeCommand(command, lower)) return;
     const routed = await routeIntent(command);
     if (await dispatchIntent(routed, command)) return;
     if (lower.includes('next heading') || lower.includes('previous heading') || lower.includes('next section') || lower.includes('previous section') || /read paragraph\s+\d+/i.test(command)) {
@@ -2072,6 +2646,13 @@
     }
     state.wakeUntil = Date.now() + 45000;
     const lower = text.toLowerCase();
+    // Control + IDE commands route through the same handler as voice.
+    if (lower.includes('stop everything') || lower.includes('stop speaking') || lower === 'stop'
+        || lower === 'cancel' || lower.includes('clear command') || lower.includes('be quiet')) {
+      await handleVoiceCommand(text);
+      return;
+    }
+    if (handleIdeCommand(text, lower)) return;
     const routed = await routeIntent(text);
     if (routed.action !== 'chat' || routed.needs_clarification) {
       await handleVoiceCommand(text);
@@ -2386,6 +2967,11 @@
       : activelyListening
         ? 'Voice On'
         : 'Voice Off';
+    const statusEl = $('voiceStatus');
+    if (statusEl) {
+      statusEl.textContent = state.paused ? 'Voice paused' : activelyListening ? 'Voice on — listening' : 'Voice off';
+      statusEl.setAttribute('data-voice', state.paused ? 'paused' : activelyListening ? 'on' : 'off');
+    }
   }
 
   async function submitCommandFromInput() {
@@ -2396,35 +2982,32 @@
   }
 
   function setupUi() {
-    document.title = 'CodeUp HTML - Blind-first Website Builder';
+    document.title = 'CODEUP HTML - Blind-first Web IDE';
     const pageTitle = document.querySelector('.cu-title');
     if (pageTitle) pageTitle.textContent = 'CODEUP HTML';
-    const status = document.querySelector('.cu-status-pill');
-    if (status) {
-      status.textContent = 'HTML + VOICE';
-      status.setAttribute('aria-label', 'HTML website builder with voice');
-    }
-    const subtitle = document.querySelector('.cu-subtitle');
-    if (subtitle) subtitle.innerHTML = 'Blind-first HTML website builder. Press <span class="cu-hotkey">Ctrl+Enter</span> to preview.';
-    const info = document.querySelector('.cu-subtitle-info small');
-    if (info) info.textContent = 'Voice coding - Hindi and English - sonification - local website hosting';
 
-    replaceButton('runBtn', 'Preview', 'Preview HTML website', () => previewHtml(true));
-    replaceButton('analyzeBtn', 'Explain', 'Explain what the website looks like', () => explainWebsite(true));
-    replaceButton('fixBtn', 'Polish', 'Polish HTML accessibility and layout', polishHtml);
+    // Real action buttons (not links). Labels match the IDE toolbar.
+    replaceButton('generateBtn', 'Generate', 'Generate a website from the command box', generateFromCommand);
+    replaceButton('runBtn', 'Run Preview', 'Run live preview of HTML, CSS, and JavaScript', () => previewHtml(true));
+    replaceButton('analyzeBtn', 'Analyze', 'Analyze the code for issues', analyzeCode);
+    replaceButton('fixBtn', 'Fix', 'Fix accessibility and code issues', applyAllAuditFixes);
+    replaceButton('readBtn', 'Read Code', 'Read the current editor aloud', () => readCode(state.activeTab || 'html'));
+    replaceButton('codeMapBtn', 'Code Map', 'Hear a beginner-friendly map of the code', codeMap);
     replaceButton('auditBtn', 'Audit', 'Audit accessibility and page quality', () => auditWebsite(true));
     replaceButton('outlineBtn', 'Outline', 'Summarize the website outline', () => outlineWebsite(true));
+    replaceButton('saveSnippetBtn', 'Save Snippet', 'Save HTML, CSS, and JavaScript as a named snippet', saveSnippetFromUi);
+    replaceButton('loadSnippetBtn', 'Load Snippet', 'Load a saved snippet', loadSnippetFromUi);
+    replaceButton('deleteSnippetBtn', 'Delete Snippet', 'Delete the selected snippet', deleteSnippetFromUi);
     replaceButton('exportBtn', 'Export', 'Export website as HTML or project ZIP', exportHtml);
+    replaceButton('walkthroughBtn', 'Walkthrough', 'Audio accessibility walkthrough of current website', walkthroughPageMap);
     replaceButton('resetBtn', 'Reset', 'Reset this session', resetSession);
     replaceButton('voiceButton', 'Voice Off', 'Toggle voice control', toggleVoice);
-    replaceButton('helpBtn', 'Help', 'Hear HTML voice commands', () => writeOutput(helpText(), true));
-    replaceButton('sendCommandBtn', 'Ask / Build', 'Ask CodeUp or build a website from request', submitCommandFromInput);
-    replaceButton('walkthroughBtn', 'Walkthrough', 'Audio accessibility walkthrough of current website', walkthroughPageMap);
+    replaceButton('helpBtn', 'Help', 'Hear what CodeUp can do', () => writeOutput(helpText(), true));
+    replaceButton('sendCommandBtn', 'Ask / Build', 'Run the typed command', submitCommandFromInput);
+    replaceButton('stopBtn', 'Stop Speaking', 'Stop speaking immediately', stopEverything);
 
     const field = $('commandInput');
     if (field) {
-      field.placeholder = 'Ask what you can do, or build a website for a school science fair...';
-      field.setAttribute('aria-label', 'Website request or voice transcript');
       const clone = field.cloneNode(true);
       field.replaceWith(clone);
       clone.addEventListener('keydown', (event) => {
@@ -2435,11 +3018,15 @@
       });
     }
 
-    ensureHtmlEditor();
+    setupTabs();
+    ensureEditors();
     ensurePreviewFrame();
+    refreshSnippetSelect();
     window.runCode = () => previewHtml(true);
-    window.analyzeCode = () => explainWebsite(true);
-    window.fixCode = polishHtml;
+    window.analyzeCode = analyzeCode;
+    window.explainWebsite = explainWebsite;
+    window.fixCode = applyAllAuditFixes;
+    window.polishHtml = polishHtml;
     window.reviewWebsite = reviewWebsite;
     window.applyReviewSuggestion = (instruction) => applyReviewSuggestion(instruction, true);
     window.auditWebsite = auditWebsite;
@@ -2516,15 +3103,8 @@
     $('auditFixOneBtn')?.addEventListener('click', applyFirstAuditFix);
     $('auditFixAllBtn')?.addEventListener('click', applyAllAuditFixes);
 
-    document.querySelectorAll('.cu-demo-step').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var cmd = btn.getAttribute('data-command');
-        if (cmd) {
-          var input = $('commandInput');
-          if (input) input.value = cmd;
-          handleStudentText(cmd);
-        }
-      });
+    $('snippetSelect')?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') { event.preventDefault(); loadSnippetFromUi(); }
     });
 
     document.body.dataset.htmlModeReady = 'true';
@@ -2634,11 +3214,22 @@
       restoreVersions,
       setHtml,
       getHtml,
+      getCss,
+      getJs,
+      loadGeneratedFiles,
+      combineDocument,
+      splitDocument,
       saveSnippet,
       listSnippets,
       loadSnippet,
       loadSnippets,
+      deleteSnippet,
       sonifyHtml,
+      readCode,
+      codeMap,
+      stopEverything,
+      handleIdeCommand,
+      activateTab,
     };
   }
 

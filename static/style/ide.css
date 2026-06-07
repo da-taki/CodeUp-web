@@ -1,0 +1,152 @@
+/* CodeUp-Web IDE layout — sits on top of core/accessibility/ui-improvements.
+   Reuses the existing paper/cream theme tokens (var(--bg-*), var(--accent), ...). */
+
+.ide-body { display: flex; flex-direction: column; min-height: 100vh; }
+.ide-header,
+.ide-command,
+.ide-toolbar,
+.ide-main { position: relative; z-index: 1; }
+
+/* ---------- Header ---------- */
+.ide-header {
+  padding: 18px 4% 14px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-strong);
+}
+.ide-header-row {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 6px;
+}
+.ide-voice-status {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 0.74rem; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 5px 12px; border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-main); color: var(--text-dim);
+}
+.ide-voice-status[data-voice="on"] { background: var(--accent); color: #fff; border-color: var(--accent); }
+.ide-voice-status[data-voice="paused"] { background: #b45309; color: #fff; border-color: #b45309; }
+
+.ide-settings { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-top: 10px; }
+
+.ide-field { display: flex; flex-direction: column; gap: 4px; font-size: 0.72rem; color: var(--text-dim); font-weight: 700; letter-spacing: 0.04em; }
+.ide-field span { text-transform: uppercase; }
+.ide-field input,
+.ide-field select {
+  padding: 9px 12px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong); border-bottom-width: 2px;
+  background: var(--bg-main); color: var(--text-main);
+  font-family: var(--font-main); font-size: 0.9rem; font-weight: 500;
+}
+.ide-field input:focus,
+.ide-field select:focus { outline: 3px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+
+/* ---------- Command bar (method 2) ---------- */
+.ide-command {
+  padding: 16px 4%;
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--border-soft);
+}
+.ide-command-label {
+  display: block; font-size: 0.74rem; font-weight: 800; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--text-dim); margin-bottom: 6px;
+}
+.ide-command-row {
+  display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap;
+}
+.ide-command-input {
+  flex: 1 1 340px; min-width: 0; min-height: 46px;
+  padding: 12px 14px; font-size: 1rem;
+  border-radius: var(--radius-md);
+  border: 2px solid var(--border-strong);
+  background: var(--bg-main); color: var(--text-main);
+  font-family: var(--font-main);
+}
+.ide-command-input:focus { outline: 3px solid var(--accent-soft); outline-offset: 1px; border-color: var(--accent); }
+.ide-command-hint { margin-top: 8px; font-size: 0.82rem; color: var(--text-dim); }
+.ide-command-hint em { font-style: normal; font-weight: 700; color: var(--accent); }
+
+.cu-button-danger {
+  background: var(--danger); color: #fff; border-color: var(--danger); font-weight: 700;
+}
+.cu-button-danger:hover:not(:disabled) { background: #6b1404; border-color: #6b1404; color: #fff; }
+body.theme-night .cu-button-danger { color: #2a0a00; }
+
+/* ---------- Toolbar ---------- */
+.ide-toolbar {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  padding: 12px 4%;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+/* ---------- Main grid ---------- */
+.ide-main {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 1fr);
+  gap: var(--gap-lg);
+  padding: 18px 4% 28px;
+  align-items: start;
+}
+
+/* ---------- Editors ---------- */
+.ide-editors { display: flex; flex-direction: column; padding: 0; overflow: hidden; min-width: 0; }
+.ide-tabs {
+  display: flex; gap: 2px;
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--border-strong);
+  padding: 6px 6px 0;
+}
+.ide-tab {
+  appearance: none; cursor: pointer;
+  padding: 10px 18px;
+  border: 1px solid transparent; border-bottom: none;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: transparent; color: var(--text-dim);
+  font-family: var(--font-mono); font-size: 0.85rem; font-weight: 700;
+}
+.ide-tab:hover { color: var(--text-main); background: var(--bg-main); }
+.ide-tab[aria-selected="true"] {
+  background: #101820; color: #eef6ff;
+  border-color: var(--border-strong);
+}
+.ide-tab:focus-visible { outline: 3px solid var(--accent); outline-offset: -2px; }
+
+.ide-panel { display: block; }
+.ide-panel[hidden] { display: none; }
+.ide-panel .cu-editor { display: block; height: 100%; }
+.ide-panel .cu-html-editor { min-height: 60vh; border-radius: 0; }
+
+/* ---------- Side column ---------- */
+.ide-side { display: flex; flex-direction: column; gap: var(--gap-lg); min-width: 0; }
+.ide-section-title {
+  font-size: 0.78rem; font-weight: 800; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--text-dim); margin-bottom: 10px;
+}
+.ide-preview, .ide-output, .ide-snippets, .ide-projects { display: flex; flex-direction: column; }
+.ide-preview .cu-site-preview { margin-top: 0; border-top: none; padding-top: 0; }
+
+.ide-field-row { display: flex; flex-wrap: wrap; gap: 12px; }
+.ide-field-row .ide-field { flex: 1 1 160px; }
+.ide-field-row .ide-field input,
+.ide-field-row .ide-field select { width: 100%; }
+
+.ide-project-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 980px) {
+  .ide-main { grid-template-columns: 1fr; }
+  .ide-voice-status { margin-left: 0; }
+  .ide-panel .cu-html-editor { min-height: 44vh; }
+}
+@media (max-width: 560px) {
+  .ide-command-row { flex-direction: column; align-items: stretch; }
+  .ide-command-row .cu-button { width: 100%; }
+}
+
+/* ---------- Demo mode bump ---------- */
+.cu-demo-mode .ide-command-input,
+.cu-demo-mode .ide-tab,
+.cu-demo-mode .ide-section-title { font-size: 1.05em; }

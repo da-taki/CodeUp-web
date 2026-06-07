@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from html import escape
 from html.parser import HTMLParser
 from typing import Any
 
@@ -793,90 +792,12 @@ def apply_audit_fixes(
 
 
 def fallback_site(prompt: str) -> str:
-    title = title_from_prompt(prompt)
-    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") or "codeup-site"
-    safe_title = escape(title)
-    safe_prompt = escape(prompt)
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{safe_title}</title>
-  <style>
-    :root {{
-      color-scheme: light;
-      --ink: #13231f;
-      --muted: #4f635f;
-      --paper: #fbf8f2;
-      --panel: #ffffff;
-      --brand: #0f766e;
-      --accent: #f59e0b;
-      --line: #d7e1dc;
-    }}
-    * {{ box-sizing: border-box; }}
-    body {{
-      margin: 0;
-      font-family: Arial, sans-serif;
-      color: var(--ink);
-      background: var(--paper);
-      line-height: 1.6;
-    }}
-    header {{
-      padding: 48px 20px;
-      background: #0f766e;
-      color: white;
-      text-align: center;
-    }}
-    header h1 {{ margin: 0 0 10px; font-size: clamp(2rem, 6vw, 4rem); }}
-    header p {{ max-width: 680px; margin: 0 auto; font-size: 1.1rem; }}
-    main {{ max-width: 1040px; margin: 0 auto; padding: 28px 18px 44px; }}
-    section {{
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 22px;
-      margin: 18px 0;
-    }}
-    .grid {{ display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }}
-    .card {{ border-left: 5px solid var(--accent); }}
-    a.button {{
-      display: inline-block;
-      margin-top: 8px;
-      padding: 10px 14px;
-      border-radius: 6px;
-      color: #10201d;
-      background: var(--accent);
-      font-weight: 700;
-      text-decoration: none;
-    }}
-    footer {{ padding: 22px; text-align: center; color: var(--muted); }}
-  </style>
-</head>
-<body>
-  <header>
-    <h1>{safe_title}</h1>
-    <p>A clear, accessible website made in CodeUp HTML for the request: {safe_prompt}.</p>
-  </header>
-  <main id="{slug}">
-    <section aria-labelledby="about-heading">
-      <h2 id="about-heading">About This Website</h2>
-      <p>This page introduces the topic, gives visitors the main details, and keeps the structure easy to understand with headings and short sections.</p>
-    </section>
-    <section aria-labelledby="highlights-heading">
-      <h2 id="highlights-heading">Highlights</h2>
-      <div class="grid">
-        <article class="card"><h3>Clear Purpose</h3><p>Visitors can quickly understand what the website is for.</p></article>
-        <article class="card"><h3>Accessible Layout</h3><p>Semantic headings, strong contrast, and responsive spacing support screen readers and mobile devices.</p></article>
-        <article class="card"><h3>Easy Next Step</h3><p>The call to action tells visitors what they can do next.</p></article>
-      </div>
-    </section>
-    <section aria-labelledby="action-heading">
-      <h2 id="action-heading">Get Involved</h2>
-      <p>Add your real details here: timings, contact information, photos with alt text, or links.</p>
-      <a class="button" href="#about-heading">Back to top</a>
-    </section>
-  </main>
-  <footer>Built locally with CodeUp HTML.</footer>
-</body>
-</html>"""
+    """Return a complete, polished single-file website for the prompt.
+
+    Delegates to the rich 3-file generator and inlines the CSS/JS so the result
+    is a self-contained document (used by the non-streaming generate routes and
+    the offline/no-key demo mode).
+    """
+    from codeup.services.site_generator import generate_combined_site
+
+    return generate_combined_site(prompt)
