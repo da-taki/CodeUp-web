@@ -125,6 +125,23 @@ if (cta) {
     projectName: 'Untitled Project',
     autosaveTimer: null,
     lastAudit: null,
+    lastCommand: '',
+    lastOutput: '',
+    heartbeatTimer: null,
+    heartbeatLabel: '',
+    heartbeatToken: 0,
+    asyncToken: 0,
+    replay: { before: null, after: null },
+    watchpointRules: [],
+    lastPauseReason: '',
+    lastCodeMap: '',
+    tutorial: {
+      active: false,
+      modules: [],
+      index: 0,
+      current: '',
+      lastValidation: null,
+    },
     walkthrough: {
       active: false,
       mode: null,
@@ -184,11 +201,69 @@ if (cta) {
   function writeOutput(message, shouldSpeak = false) {
     const output = $('output');
     if (output) output.textContent = message;
+    state.lastOutput = message || '';
     if (shouldSpeak) speak(message);
   }
 
   function slugify(value) {
     return (value || 'codeup-site').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'codeup-site';
+  }
+
+  function loadJsonStore(key, fallback) {
+    try {
+      const value = JSON.parse(localStorage.getItem(key) || '');
+      return value && typeof value === 'object' ? value : fallback;
+    } catch (error) {
+      return fallback;
+    }
+  }
+
+  function saveJsonStore(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch (error) {}
+  }
+
+  function nextAsyncToken() {
+    state.asyncToken += 1;
+    return state.asyncToken;
+  }
+
+  function isAsyncFresh(token) {
+    return token === state.asyncToken;
+  }
+
+  function softSpeak(text) {
+    if (!text || document.body.classList.contains('theme-reduced-motion')) return;
+    if (!('speechSynthesis' in window) || window.speechSynthesis.speaking) return;
+    try {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = detectSpeakLang(text);
+      utterance.rate = 0.95;
+      window.speechSynthesis.speak(utterance);
+    } catch (error) {}
+  }
+
+  function startHeartbeat(label) {
+    stopHeartbeat();
+    const token = nextAsyncToken();
+    state.heartbeatToken = token;
+    state.heartbeatLabel = label || 'Working';
+    let count = 0;
+    state.heartbeatTimer = setInterval(() => {
+      if (token !== state.heartbeatToken) return;
+      count += 1;
+      const msg = `${state.heartbeatLabel}... still working.`;
+      announce(msg);
+      if (count % 2 === 1) softSpeak(msg);
+    }, 9000);
+    return token;
+  }
+
+  function stopHeartbeat(token) {
+    if (token && token !== state.heartbeatToken) return;
+    if (state.heartbeatTimer) clearInterval(state.heartbeatTimer);
+    state.heartbeatTimer = null;
+    state.heartbeatLabel = '';
+    state.heartbeatToken = 0;
   }
 
   const CODEUP_CSS_ID = 'codeup-ide-css';
@@ -281,6 +356,16 @@ if (cta) {
       const h = getEditor(); if (h) sessionStorage.setItem('codeup_html_draft', h.value);
       const c = getCssEditor(); if (c) sessionStorage.setItem('codeup_css_draft', c.value);
       const j = getJsEditor(); if (j) sessionStorage.setItem('codeup_js_draft', j.value);
+      localStorage.setItem('codeup_last_work', JSON.stringify({
+        html: h ? h.value : '',
+        css: c ? c.value : '',
+        js: j ? j.value : '',
+        projectId: state.projectId,
+        projectName: state.projectName,
+        currentPage: state.currentPage,
+        previewUrl: state.lastUrl,
+        savedAt: new Date().toISOString(),
+      }));
     } catch (error) {}
   }
 
@@ -335,6 +420,56 @@ if (cta) {
     state.versions = state.versions.slice(-25);
     persistVersions();
     saveVersionToServer(version);
+  }
+
+  function sourceSnapshot(label) {
+    return {
+      label: label || 'Current code',
+      html: getHtmlSource(),
+      css: getCss(),
+      js: getJs(),
+      combined: getHtml(),
+      time: new Date().toISOString(),
+    };
+  }
+
+  function beginReplay(label) {
+    state.replay.before = sourceSnapshot(label || 'Before change');
+  }
+
+  function finishReplay(label) {
+    state.replay.after = sourceSnapshot(label || 'After change');
+    persistDrafts();
+  }
+
+  async function narrateReplay(reason, title) {
+    const before = state.replay.before;
+    const after = state.replay.after || sourceSnapshot('Current code');
+    if (!before) {
+      writeOutput(t('No before version is available yet. Make a change, then ask what changed.', 'Pehle change kariye, phir poochiye kya badla.'), true);
+      return;
+    }
+    const token = nextAsyncToken();
+    try {
+      const data = await apiJson('/mistake-replay', {
+        method: 'POST',
+        body: JSON.stringify({
+          html_before: before.html,
+          html_after: after.html,
+          css_before: before.css,
+          css_after: after.css,
+          js_before: before.js,
+          js_after: after.js,
+          reason: reason || '',
+        }),
+      });
+      if (!isAsyncFresh(token)) return;
+      const message = title ? data.message.replace(/^Mistake replay:/, `${title}:`) : data.message;
+      writeOutput(message, true);
+    } catch (error) {
+      if (!isAsyncFresh(token)) return;
+      writeOutput(error.message, true);
+    }
   }
 
   // setHtml() accepts a full document. When the CSS/JS panes exist it splits the
@@ -797,6 +932,7 @@ if (cta) {
   }
 
   async function exportHtml() {
+    const token = startHeartbeat('Exporting project');
     const html = getHtml();
     const pages = activePages();
     const fileExport = {
@@ -821,6 +957,7 @@ if (cta) {
           throw new Error(data.error || 'ZIP export failed.');
         }
         const blob = await response.blob();
+        if (!isAsyncFresh(token)) return;
         const link = document.createElement('a');
         const objectUrl = URL.createObjectURL(blob);
         link.href = objectUrl;
@@ -833,8 +970,11 @@ if (cta) {
           isSinglePage && hasSeparateFiles ? 'Project ZIP exported with index.html, style.css, and script.js.' : 'Project ZIP exported.',
           isSinglePage && hasSeparateFiles ? 'Project ZIP index.html, style.css aur script.js ke saath export ho gayi.' : 'Project ZIP export ho gayi.'
         ), true);
+        stopHeartbeat(token);
         return;
       } catch (error) {
+        if (!isAsyncFresh(token)) return;
+        stopHeartbeat(token);
         writeOutput(error.message, true);
         return;
       }
@@ -849,6 +989,7 @@ if (cta) {
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(objectUrl), 500);
+    stopHeartbeat(token);
     writeOutput(t('HTML file exported.', 'HTML file export ho gayi.'), true);
   }
 
@@ -966,7 +1107,9 @@ if (cta) {
     if (lower.includes('high contrast')) rules.push('body { color: #0f172a; background: #ffffff; } a, button, .button { color: #ffffff; background: #0f172a; }');
     if (!rules.length) return false;
     snapshotVersion('Before CSS voice edit');
+    beginReplay('Before CSS edit');
     appendCssRules(rules);
+    finishReplay('After CSS edit');
     writeOutput(`Applied CSS edit: ${rules.join(' ')}`, true);
     previewHtml(false, { silent: true });
     return true;
@@ -1092,6 +1235,7 @@ if (cta) {
 
   async function auditWebsite(shouldSpeak = true) {
     writeOutput(t('Auditing accessibility...', 'Accessibility audit chal raha hai...'), shouldSpeak);
+    const token = startHeartbeat('Auditing accessibility');
     try {
       const response = await fetch('/html-audit', {
         method: 'POST',
@@ -1113,8 +1257,13 @@ if (cta) {
       const fixable = (audit.issues || []).filter(item => item.autofix);
       if (one) one.disabled = fixable.length === 0;
       if (all) all.disabled = fixable.length === 0;
+      if (!isAsyncFresh(token)) return;
+      stopHeartbeat(token);
       writeOutput(message, shouldSpeak);
+      await checkWatchpoints('Audit');
     } catch (error) {
+      if (!isAsyncFresh(token)) return;
+      stopHeartbeat(token);
       writeOutput(error.message, true);
     }
   }
@@ -1122,6 +1271,8 @@ if (cta) {
   async function applyAuditFix(issueId, shouldSpeak = true) {
     const html = getHtml();
     writeOutput(issueId ? `Applying fix ${issueId}...` : 'Applying safe audit fixes...', shouldSpeak);
+    beginReplay('Before accessibility fix');
+    const token = startHeartbeat('Fixing accessibility');
     try {
       const response = await fetch('/audit-autofix', {
         method: 'POST',
@@ -1136,6 +1287,7 @@ if (cta) {
       });
       const data = await response.json();
       if (!data.success) throw new Error(data.error || 'Audit autofix failed.');
+      if (!isAsyncFresh(token)) return;
       snapshotVersion('Before audit autofix');
       setHtml(data.code);
       snapshotVersion('Applied audit autofix', data.summary || []);
@@ -1146,9 +1298,14 @@ if (cta) {
       if (one) one.disabled = fixableRemaining.length === 0;
       if (all) all.disabled = fixableRemaining.length === 0;
       await publish(data.code);
+      finishReplay('After accessibility fix');
+      stopHeartbeat(token);
       const fixed = (data.fixed || []).join(', ') || 'nothing';
       writeOutput(`Applied safe audit fixes: ${fixed}.\n${(data.summary || []).join('\n')}`, shouldSpeak);
+      await checkWatchpoints('Accessibility fix');
     } catch (error) {
+      if (!isAsyncFresh(token)) return;
+      stopHeartbeat(token);
       writeOutput(error.message, true);
     }
   }
@@ -1254,16 +1411,21 @@ if (cta) {
   async function previewHtml(shouldSpeak = false, options = {}) {
     const html = getHtml();
     const silent = !!options.silent;
+    const token = silent ? nextAsyncToken() : startHeartbeat('Publishing preview');
     if (!silent) writeOutput(t('Publishing local preview...', 'Website local preview mein publish ho rahi hai...'));
     try {
       const url = await publish(html);
+      if (!isAsyncFresh(token)) return;
       const message = t(
         `Website is live locally at ${url}\nThe HTML is in the editor and the preview is below.`,
         `Website ready hai: ${url}\nHTML editor mein hai aur preview neeche dikh raha hai.`
       );
       if (!silent) writeOutput(message, shouldSpeak);
       announce('Website preview ready');
+      if (!silent) stopHeartbeat(token);
     } catch (error) {
+      if (!isAsyncFresh(token)) return;
+      if (!silent) stopHeartbeat(token);
       writeOutput(error.message, true);
     }
   }
@@ -1358,6 +1520,8 @@ if (cta) {
 
     writeOutput(t('Generating HTML, CSS, and JavaScript...', 'HTML, CSS aur JavaScript ban rahe hain...'));
     updateStateIndicator('PROCESSING');
+    beginReplay(isEdit ? 'Before website edit' : 'Before website generation');
+    const token = startHeartbeat(isEdit ? 'Editing website' : 'Generating website');
     try {
       const data = await apiJson('/generate-site', {
         method: 'POST',
@@ -1372,9 +1536,11 @@ if (cta) {
         }),
       });
       if (!data.html) throw new Error(data.error || 'Website generation failed.');
+      if (!isAsyncFresh(token)) return;
       snapshotVersion(isEdit ? 'Before editing website' : 'Before generating website');
       if (!isEdit) { state.currentPage = 'home'; state.pages = {}; }
       loadGeneratedFiles({ html: data.html, css: data.css, js: data.js });
+      finishReplay(isEdit ? 'After website edit' : 'After website generation');
       snapshotVersion(isEdit ? 'Edited website' : 'Generated website');
       activateTab('html');
       let url = '';
@@ -1387,8 +1553,12 @@ if (cta) {
       );
       writeOutput(message, shouldSpeak);
       updateStateIndicator('IDLE');
+      stopHeartbeat(token);
+      await checkWatchpoints('Generation');
     } catch (error) {
+      if (!isAsyncFresh(token)) return;
       updateStateIndicator('IDLE');
+      stopHeartbeat(token);
       writeOutput(error.message, true);
     }
   }
@@ -1632,6 +1802,8 @@ if (cta) {
     editor.selectionStart = editor.selectionEnd = start + text.length;
     editor.focus();
     try { sessionStorage.setItem('codeup_html_draft', editor.value); } catch (error) {}
+    state.pages[state.currentPage] = getHtml();
+    scheduleAutosave();
   }
 
   function addHtmlFromSpeech(command) {
@@ -1660,18 +1832,125 @@ if (cta) {
     return false;
   }
 
+  function setPageTitle(title) {
+    beginReplay('Before inserting page title');
+    const clean = (title || 'My Website').trim();
+    let html = getHtmlSource();
+    if (/<title\b[^>]*>[\s\S]*?<\/title>/i.test(html)) {
+      html = html.replace(/<title\b[^>]*>[\s\S]*?<\/title>/i, `<title>${clean}</title>`);
+    } else if (/<head\b[^>]*>/i.test(html)) {
+      html = html.replace(/<head\b[^>]*>/i, (match) => `${match}\n  <title>${clean}</title>`);
+    } else {
+      html = `<!doctype html>\n<html lang="en">\n<head><title>${clean}</title><link rel="stylesheet" href="style.css"></head>\n<body>\n${html}\n<script src="script.js" defer></script>\n</body>\n</html>`;
+    }
+    const editor = getEditor();
+    if (editor) editor.value = ensureManagedRefs(html, !!getCss().trim(), !!getJs().trim());
+    persistDrafts();
+    state.pages[state.currentPage] = getHtml();
+    scheduleAutosave();
+    finishReplay('After inserting page title');
+    writeOutput(`Inserted page title: ${clean}.`, true);
+  }
+
+  function addStructureBlocks() {
+    const block = [
+      '<header class="site-header">',
+      '  <h1>My Website</h1>',
+      '  <nav aria-label="Main navigation"><a href="#home">Home</a> <a href="#contact">Contact</a></nav>',
+      '</header>',
+      '<main id="home">',
+      '  <section class="hero" aria-labelledby="hero-heading">',
+      '    <h2 id="hero-heading">Welcome</h2>',
+      '    <p>This section introduces the website.</p>',
+      '  </section>',
+      '</main>',
+      '<footer>',
+      '  <p>Contact us to learn more.</p>',
+      '</footer>',
+    ].join('\n');
+    snapshotVersion('Before inserting page structure');
+    beginReplay('Before inserting page structure');
+    activateTab('html');
+    insertAtCursor('\n' + block + '\n');
+    finishReplay('After inserting page structure');
+    writeOutput('Inserted header, navigation, main, section, and footer landmarks.', true);
+  }
+
+  function addCardStyles() {
+    snapshotVersion('Before inserting card styles');
+    beginReplay('Before inserting card styles');
+    appendCssRules([
+      'body { background: #f7fbff; color: #17202a; }',
+      '.hero, .card, section { border: 1px solid #d9e2ec; border-radius: 10px; padding: 24px; background: #ffffff; }',
+      'button, .button { border: 0; border-radius: 8px; padding: 12px 18px; background: #2563eb; color: #ffffff; font-weight: 700; }',
+      'button:focus-visible, a:focus-visible { outline: 3px solid #f59e0b; outline-offset: 3px; }',
+    ]);
+    finishReplay('After inserting card styles');
+    activateTab('css');
+    writeOutput('Inserted CSS for background, cards, buttons, and focus states.', true);
+  }
+
+  function addButtonInteraction() {
+    snapshotVersion('Before adding button interaction');
+    beginReplay('Before adding button interaction');
+    if (!/<button\b[^>]*id=["']demo-action["']/i.test(getHtmlSource())) {
+      activateTab('html');
+      insertAtCursor('\n<button id="demo-action" type="button">Try interaction</button>\n<p id="demo-result" aria-live="polite"></p>\n');
+    }
+    const jsEl = getJsEditor();
+    if (jsEl && !/demo-action/.test(getJs())) {
+      jsEl.value = getJs().trim() + (getJs().trim() ? '\n\n' : '') +
+        "var demoButton = document.getElementById('demo-action');\n" +
+        "var demoResult = document.getElementById('demo-result');\n" +
+        "if (demoButton && demoResult) {\n" +
+        "  demoButton.addEventListener('click', function () {\n" +
+        "    demoResult.textContent = 'The button interaction works.';\n" +
+        "  });\n" +
+        "}";
+      persistDrafts();
+      state.pages[state.currentPage] = getHtml();
+      scheduleAutosave();
+    }
+    finishReplay('After adding button interaction');
+    activateTab('js');
+    writeOutput('Added a button interaction with a click listener in JavaScript.', true);
+  }
+
+  function handleWebInsertCommand(command, lower) {
+    const title = command.match(/\b(?:insert|add)\s+(?:page\s+)?title\s+(.+)/i);
+    if (title) { setPageTitle(title[1]); return true; }
+    if (/\b(insert|add)\b.*\bheader\b.*\bnav\b.*\bmain\b.*\bsection\b.*\bfooter\b/i.test(command)) {
+      addStructureBlocks();
+      return true;
+    }
+    if (lower.includes('insert card styles') || lower.includes('add card styles') || lower.includes('style cards')) {
+      addCardStyles();
+      return true;
+    }
+    if (lower.includes('button interaction') || lower.includes('click interaction')) {
+      addButtonInteraction();
+      return true;
+    }
+    return false;
+  }
+
   async function walkthroughPageMap() {
     const html = getHtml();
     writeOutput(t('Reading page structure...', 'Page structure padh raha hoon...'));
+    const token = startHeartbeat('Preparing walkthrough');
     try {
       const data = await apiJson('/walkthrough/page-map', {
         method: 'POST',
         body: JSON.stringify({ html }),
       });
+      if (!isAsyncFresh(token)) return;
       state.walkthrough.active = true;
       state.walkthrough.mode = 'page-map';
+      stopHeartbeat(token);
       writeOutput(data.summary, true);
     } catch (error) {
+      if (!isAsyncFresh(token)) return;
+      stopHeartbeat(token);
       writeOutput(error.message, true);
     }
   }
@@ -1707,17 +1986,22 @@ if (cta) {
   async function walkthroughKeyboardStart() {
     const html = getHtml();
     writeOutput(t('Starting keyboard journey...', 'Keyboard journey shuru ho rahi hai...'));
+    const token = startHeartbeat('Preparing keyboard journey');
     try {
       const data = await apiJson('/walkthrough/keyboard-journey', {
         method: 'POST',
         body: JSON.stringify({ html }),
       });
+      if (!isAsyncFresh(token)) return;
       state.walkthrough.active = true;
       state.walkthrough.mode = 'keyboard-journey';
       state.walkthrough.journeyElements = data.elements || [];
       state.walkthrough.journeyIndex = data.index;
+      stopHeartbeat(token);
       writeWalkthroughPosition(data.message, state.walkthrough.journeyElements[data.index]);
     } catch (error) {
+      if (!isAsyncFresh(token)) return;
+      stopHeartbeat(token);
       writeOutput(error.message, true);
     }
   }
@@ -1743,24 +2027,30 @@ if (cta) {
 
   async function walkthroughPauseOnIssues() {
     const html = getHtml();
+    const token = startHeartbeat('Checking accessibility watchpoints');
     try {
       const data = await apiJson('/walkthrough/watchpoints', {
         method: 'POST',
         body: JSON.stringify({ html }),
       });
+      if (!isAsyncFresh(token)) return;
       state.walkthrough.active = true;
       state.walkthrough.watchpointMode = true;
       state.walkthrough.watchpoints = data.watchpoints || [];
       state.walkthrough.watchpointIndex = 0;
       if (!data.watchpoints || !data.watchpoints.length) {
+        stopHeartbeat(token);
         writeOutput(t('No accessibility watchpoints found. The page passes all current checks.', 'Koi accessibility issue nahi mila.'), true);
         return;
       }
+      stopHeartbeat(token);
       writeOutput(t(
         'Watchpoint mode enabled. Navigating will pause on elements with accessibility issues. Say "start keyboard journey" or "next interactive element" to begin.',
         'Watchpoint mode on hai. Navigation accessibility issues par rukegi.'
       ), true);
     } catch (error) {
+      if (!isAsyncFresh(token)) return;
+      stopHeartbeat(token);
       writeOutput(error.message, true);
     }
   }
@@ -1801,15 +2091,19 @@ if (cta) {
     const html = getHtml();
     const wt = state.walkthrough;
     wt.htmlBeforeFix = html;
+    beginReplay('Before walkthrough fix');
+    const token = startHeartbeat('Fixing walkthrough issue');
     try {
       const data = await apiJson('/walkthrough/fix', {
         method: 'POST',
         body: JSON.stringify({ html, issue_index: wt.currentIssueIndex }),
       });
+      if (!isAsyncFresh(token)) return;
       if (data.success && data.fixed_html) {
         snapshotVersion('Before walkthrough fix');
         setHtml(data.fixed_html);
         snapshotVersion('Applied walkthrough fix');
+        finishReplay('After walkthrough fix');
         let msg = data.message;
         if (data.score_before !== undefined && data.score_after !== undefined) {
           msg += ` Accessibility score changed from ${data.score_before} to ${data.score_after}.`;
@@ -1817,10 +2111,15 @@ if (cta) {
         msg += ' Say "compare accessibility before and after" to hear the full comparison.';
         writeOutput(msg, true);
         try { await publish(data.fixed_html); } catch (e) {}
+        stopHeartbeat(token);
+        await checkWatchpoints('Walkthrough fix');
       } else {
+        stopHeartbeat(token);
         writeOutput(data.message, true);
       }
     } catch (error) {
+      if (!isAsyncFresh(token)) return;
+      stopHeartbeat(token);
       writeOutput(error.message, true);
     }
   }
@@ -1830,16 +2129,25 @@ if (cta) {
     const htmlAfter = getHtml();
     const htmlBefore = wt.htmlBeforeFix;
     if (!htmlBefore) {
+      if (state.replay.before && state.replay.after) {
+        await narrateReplay('compare accessibility before and after', 'Accessibility comparison');
+        return;
+      }
       writeOutput(t('No before version available. Fix an issue first, then compare.', 'Pehle koi issue fix karein, phir compare karein.'), true);
       return;
     }
+    const token = startHeartbeat('Comparing accessibility');
     try {
       const data = await apiJson('/walkthrough/compare', {
         method: 'POST',
         body: JSON.stringify({ html_before: htmlBefore, html_after: htmlAfter }),
       });
+      if (!isAsyncFresh(token)) return;
+      stopHeartbeat(token);
       writeOutput(data.message, true);
     } catch (error) {
+      if (!isAsyncFresh(token)) return;
+      stopHeartbeat(token);
       writeOutput(error.message, true);
     }
   }
@@ -1854,6 +2162,402 @@ if (cta) {
     state.walkthrough.watchpointIndex = 0;
     state.walkthrough.currentIssueIndex = 0;
     writeOutput(t('Walkthrough stopped.', 'Walkthrough band ho gaya.'), true);
+  }
+
+  // ----- Guided tutorial -----
+  const tutorialOrder = ['html_basics', 'structure', 'css_basics', 'javascript_basics', 'accessibility_repair', 'export_share'];
+
+  function updateTutorialPanel(message) {
+    const panel = $('tutorialPanel');
+    const status = $('tutorialStatus');
+    if (panel) panel.dataset.active = state.tutorial.active ? 'true' : 'false';
+    if (status) status.textContent = message || 'Type start tutorial for an audio-first website-building lesson.';
+  }
+
+  async function loadTutorialModules() {
+    if (state.tutorial.modules.length) return state.tutorial.modules;
+    try {
+      const data = await apiJson('/tutorial/modules');
+      state.tutorial.modules = data.modules || [];
+    } catch (error) {
+      state.tutorial.modules = [];
+    }
+    return state.tutorial.modules;
+  }
+
+  function currentTutorialModule() {
+    return state.tutorial.modules[state.tutorial.index] || null;
+  }
+
+  async function startTutorial(topic) {
+    await loadTutorialModules();
+    state.tutorial.active = true;
+    const requested = (topic || '').toLowerCase();
+    if (requested.includes('css')) state.tutorial.index = tutorialOrder.indexOf('css_basics');
+    else if (requested.includes('javascript') || requested.includes('js')) state.tutorial.index = tutorialOrder.indexOf('javascript_basics');
+    else if (requested.includes('accessibility')) state.tutorial.index = tutorialOrder.indexOf('accessibility_repair');
+    else if (requested.includes('html')) state.tutorial.index = tutorialOrder.indexOf('html_basics');
+    if (state.tutorial.index < 0) state.tutorial.index = 0;
+    state.tutorial.current = tutorialOrder[state.tutorial.index];
+    const module = currentTutorialModule();
+    const msg = `${module.title}. ${module.explanation} Say or type exactly: ${module.command}. Then I will check your work.`;
+    updateTutorialPanel(msg);
+    writeOutput(msg, true);
+  }
+
+  async function validateTutorialProgress(command) {
+    if (!state.tutorial.active || isTutorialControlCommand(command.toLowerCase())) return;
+    const module = currentTutorialModule();
+    if (!module) return;
+    const token = nextAsyncToken();
+    try {
+      const data = await apiJson('/tutorial/validate', {
+        method: 'POST',
+        body: JSON.stringify({ module: module.id, html: getHtmlSource(), css: getCss(), js: getJs() }),
+      });
+      if (!isAsyncFresh(token)) return;
+      state.tutorial.lastValidation = data;
+      updateTutorialPanel(data.message);
+      if (data.valid) {
+        const completed = loadJsonStore('codeup_tutorial_completed', {});
+        completed[module.id] = new Date().toISOString();
+        saveJsonStore('codeup_tutorial_completed', completed);
+        writeOutput(`${data.message} Say continue for the next module, practise again, recap, hint, or exit tutorial.`, true);
+      } else {
+        writeOutput(`${data.message} Say hint, repeat, try again, or exit tutorial.`, true);
+      }
+    } catch (error) {
+      if (!isAsyncFresh(token)) return;
+      writeOutput(error.message, true);
+    }
+  }
+
+  async function continueTutorial() {
+    await loadTutorialModules();
+    state.tutorial.active = true;
+    state.tutorial.index = Math.min(state.tutorial.modules.length - 1, state.tutorial.index + 1);
+    state.tutorial.current = tutorialOrder[state.tutorial.index] || (currentTutorialModule() || {}).id || '';
+    const module = currentTutorialModule();
+    const msg = module ? `${module.title}. ${module.explanation} Say or type exactly: ${module.command}.` : 'Tutorial complete. Start coding whenever you are ready.';
+    updateTutorialPanel(msg);
+    writeOutput(msg, true);
+  }
+
+  function tutorialHint() {
+    const module = currentTutorialModule();
+    const msg = module ? `Hint: ${module.hint}` : 'Start tutorial to get a hint.';
+    updateTutorialPanel(msg);
+    writeOutput(msg, true);
+  }
+
+  function tutorialRecap() {
+    const completed = loadJsonStore('codeup_tutorial_completed', {});
+    const done = Object.keys(completed);
+    const msg = done.length
+      ? `Tutorial recap. Completed modules: ${done.join(', ')}. Current module: ${(currentTutorialModule() || {}).title || 'none'}.`
+      : `Tutorial recap. No modules completed yet. Current module: ${(currentTutorialModule() || {}).title || 'none'}.`;
+    updateTutorialPanel(msg);
+    writeOutput(msg, true);
+  }
+
+  function exitTutorial() {
+    state.tutorial.active = false;
+    updateTutorialPanel('Tutorial paused. Type start tutorial to resume.');
+    writeOutput('Tutorial paused. You are back in normal coding mode.', true);
+  }
+
+  function isTutorialControlCommand(lower) {
+    return /^(continue|try again|practise again|practice again|recap|hint|repeat|give me an example|read my code|exit tutorial|start coding)$/.test(lower)
+      || lower === 'tutorial' || lower === 'start tutorial' || /^practi[cs]e\s+(html|css|javascript|accessibility)$/.test(lower);
+  }
+
+  function isLocalMetaCommand(lower) {
+    return /^(remember this as|save this command as|use macro|run macro|list macros|delete macro|bookmark this|read from bookmark|list bookmarks|delete bookmark|where am i|read breadcrumb|what am i editing|restore my last work|what did i last work on|compare before and after|replay my mistake|what changed|show changed lines|read only what changed|compare preview changes|compare code changes|give me a code map|map this website|list all buttons|list all forms|read the html|read the css|read the javascript|explain simply|explain this error|why is this broken)/.test(lower);
+  }
+
+  function isCodeMapQuestion(lower) {
+    return lower.includes('map this website')
+      || lower.includes('what is inside')
+      || lower.includes('what comes after')
+      || lower.includes('list all buttons')
+      || lower.includes('list all forms')
+      || lower.includes('what css styles')
+      || lower.includes('what javascript controls')
+      || lower.includes('how deeply nested')
+      || lower.includes('read the page structure');
+  }
+
+  function isMacroWorthyCommand(command) {
+    const lower = command.toLowerCase();
+    if (isLocalMetaCommand(lower) || isCodeMapQuestion(lower)) return false;
+    return isBuildIntent(command)
+      || /^(insert|add)\b/.test(lower)
+      || lower.includes('futuristic')
+      || lower.includes('dark mode')
+      || lower.includes('more beautiful')
+      || lower.includes('more colorful')
+      || lower.includes('more colourful')
+      || lower.includes('improve the design')
+      || lower.includes('add animation')
+      || lower.includes('add javascript')
+      || lower.includes('add interactivity');
+  }
+
+  function shouldValidateTutorialCommand(lower) {
+    if (!state.tutorial.active || isLocalMetaCommand(lower)) return false;
+    return /^(insert|add|style|fix accessibility|fix the accessibility|run preview|export|generate|make|create|build)\b/.test(lower);
+  }
+
+  async function handleTutorialCommand(command) {
+    const lower = command.toLowerCase();
+    if (lower === 'start tutorial' || lower === 'tutorial' || /^practi[cs]e\s+/.test(lower)) { await startTutorial(lower); return true; }
+    if (!state.tutorial.active && !isTutorialControlCommand(lower)) return false;
+    if (lower === 'continue') { await continueTutorial(); return true; }
+    if (lower === 'try again' || lower === 'practise again' || lower === 'practice again' || lower === 'repeat' || lower === 'give me an example') {
+      const module = currentTutorialModule();
+      const msg = module ? `Try this exact command: ${module.command}.` : 'Start tutorial first.';
+      writeOutput(msg, true);
+      updateTutorialPanel(msg);
+      return true;
+    }
+    if (lower === 'hint') { tutorialHint(); return true; }
+    if (lower === 'recap') { tutorialRecap(); return true; }
+    if (lower === 'read my code') { readCode('all'); return true; }
+    if (lower === 'exit tutorial' || lower === 'start coding') { exitTutorial(); return true; }
+    return false;
+  }
+
+  // ----- Macros and bookmarks -----
+  function macroName(command) {
+    const match = command.match(/\b(?:as|macro)\s+(.+)$/i);
+    return (match ? match[1] : '').trim();
+  }
+
+  async function saveMacro(command) {
+    const name = macroName(command);
+    if (!name || !state.lastCommand) {
+      writeOutput('No recent website command to remember yet.', true);
+      return true;
+    }
+    const macros = loadJsonStore('codeup_voice_macros', {});
+    macros[name] = { command: state.lastCommand, savedAt: new Date().toISOString() };
+    saveJsonStore('codeup_voice_macros', macros);
+    writeOutput(`Saved macro "${name}" as: ${state.lastCommand}`, true);
+    return true;
+  }
+
+  async function runMacro(command) {
+    const name = macroName(command);
+    const macros = loadJsonStore('codeup_voice_macros', {});
+    if (!name || !macros[name]) {
+      writeOutput(`Macro "${name}" not found.`, true);
+      return true;
+    }
+    writeOutput(`Running macro "${name}": ${macros[name].command}`, true);
+    await handleStudentText(macros[name].command);
+    return true;
+  }
+
+  function listMacros() {
+    const macros = loadJsonStore('codeup_voice_macros', {});
+    const names = Object.keys(macros);
+    writeOutput(names.length ? `Macros:\n${names.map(name => `- ${name}: ${macros[name].command}`).join('\n')}` : 'No macros saved yet.', true);
+    return true;
+  }
+
+  function deleteMacro(command) {
+    const name = macroName(command);
+    const macros = loadJsonStore('codeup_voice_macros', {});
+    if (name && macros[name]) {
+      delete macros[name];
+      saveJsonStore('codeup_voice_macros', macros);
+      writeOutput(`Deleted macro "${name}".`, true);
+    } else {
+      writeOutput(`Macro "${name}" not found.`, true);
+    }
+    return true;
+  }
+
+  function bookmarkName(command) {
+    const match = command.match(/\bas\s+(.+)$/i)
+      || command.match(/\bbookmark\s+(.+)$/i);
+    return (match ? match[1] : 'bookmark').trim() || 'bookmark';
+  }
+
+  function saveBookmark(command) {
+    const name = bookmarkName(command);
+    const bookmarks = loadJsonStore('codeup_bookmarks', {});
+    bookmarks[name] = {
+      output: state.lastOutput,
+      codeMap: state.lastCodeMap,
+      issue: state.lastPauseReason || (((state.lastAudit || {}).issues || [])[0] || {}).description || '',
+      editor: state.activeTab || 'html',
+      line: currentEditorLine(),
+      savedAt: new Date().toISOString(),
+    };
+    saveJsonStore('codeup_bookmarks', bookmarks);
+    writeOutput(`Bookmarked "${name}".`, true);
+    return true;
+  }
+
+  function readBookmark(command) {
+    const name = bookmarkName(command);
+    const bookmarks = loadJsonStore('codeup_bookmarks', {});
+    const item = bookmarks[name];
+    if (!item) {
+      writeOutput(`Bookmark "${name}" not found.`, true);
+      return true;
+    }
+    const msg = `Bookmark ${name}. Editor ${item.editor}, line ${item.line}. ${item.issue || item.output || item.codeMap || 'No saved details.'}`;
+    writeOutput(msg, true);
+    return true;
+  }
+
+  function listBookmarks() {
+    const bookmarks = loadJsonStore('codeup_bookmarks', {});
+    const names = Object.keys(bookmarks);
+    writeOutput(names.length ? `Bookmarks:\n${names.map(name => `- ${name}`).join('\n')}` : 'No bookmarks saved yet.', true);
+    return true;
+  }
+
+  function deleteBookmark(command) {
+    const name = bookmarkName(command);
+    const bookmarks = loadJsonStore('codeup_bookmarks', {});
+    if (name && bookmarks[name]) {
+      delete bookmarks[name];
+      saveJsonStore('codeup_bookmarks', bookmarks);
+      writeOutput(`Deleted bookmark "${name}".`, true);
+    } else {
+      writeOutput(`Bookmark "${name}" not found.`, true);
+    }
+    return true;
+  }
+
+  function currentEditorLine() {
+    const which = state.activeTab || 'html';
+    const editor = which === 'css' ? getCssEditor() : which === 'js' ? getJsEditor() : getEditor();
+    if (!editor) return 1;
+    return editor.value.slice(0, editor.selectionStart || 0).split('\n').length;
+  }
+
+  function breadcrumb() {
+    const which = state.activeTab || 'html';
+    const editor = which === 'css' ? getCssEditor() : which === 'js' ? getJsEditor() : getEditor();
+    const line = currentEditorLine();
+    const lines = ((editor || {}).value || '').split('\n');
+    const current = lines[line - 1] || '';
+    let msg = '';
+    if (which === 'html') {
+      const before = lines.slice(0, line).join('\n');
+      const tags = [...before.matchAll(/<\/?([a-zA-Z][\w-]*)\b[^>]*>/g)]
+        .map(m => ({ tag: m[1].toLowerCase(), close: m[0].startsWith('</') }))
+        .reduce((stack, item) => {
+          if (item.close) {
+            const idx = stack.lastIndexOf(item.tag);
+            if (idx !== -1) stack.splice(idx);
+          } else if (!['meta', 'link', 'img', 'input', 'br', 'hr'].includes(item.tag)) stack.push(item.tag);
+          return stack;
+        }, []);
+      msg = `HTML, ${tags.join(' landmark, ') || 'document'}, line ${line}. Current text: ${current.trim() || 'blank line'}.`;
+    } else if (which === 'css') {
+      const selectorLine = [...lines.slice(0, line).reverse()].find(text => text.includes('{')) || '';
+      const selector = selectorLine.split('{')[0].trim() || 'current selector';
+      const prop = (current.match(/([\w-]+)\s*:/) || [])[1] || 'property';
+      msg = `CSS, selector ${selector}, property ${prop}, line ${line}.`;
+    } else {
+      const fnLine = [...lines.slice(0, line).reverse()].find(text => /function\s+|addEventListener|=>/.test(text)) || '';
+      const fn = (fnLine.match(/function\s+([A-Za-z0-9_]+)/) || fnLine.match(/([A-Za-z0-9_]+)\.addEventListener/) || [])[1] || 'top level script';
+      msg = `JavaScript, ${fn}, line ${line}.`;
+    }
+    writeOutput(msg, true);
+    return true;
+  }
+
+  async function explainErrors(fixFirst = false) {
+    if (fixFirst) beginReplay('Before fix and explain');
+    if (fixFirst) await applyAuditFix('', false);
+    const token = nextAsyncToken();
+    try {
+      const data = await apiJson('/explain-errors', {
+        method: 'POST',
+        body: JSON.stringify({ html: getHtmlSource(), css: getCss(), js: getJs() }),
+      });
+      if (!isAsyncFresh(token)) return true;
+      if (fixFirst) finishReplay('After fix and explain');
+      writeOutput(data.message, true);
+    } catch (error) {
+      if (!isAsyncFresh(token)) return true;
+      writeOutput(error.message, true);
+    }
+    return true;
+  }
+
+  async function checkWatchpoints(context) {
+    if (!state.watchpointRules.length) return;
+    try {
+      const data = await apiJson('/watchpoints/check', {
+        method: 'POST',
+        body: JSON.stringify({ html: getHtml(), enabled: state.watchpointRules }),
+      });
+      if (data.paused) {
+        state.lastPauseReason = `${context || 'Check'}: ${data.reason}`;
+        const output = $('output');
+        if (output && output.textContent.trim()) {
+          output.textContent += `\n\n${state.lastPauseReason}`;
+          state.lastOutput = output.textContent;
+          speak(state.lastPauseReason);
+        } else {
+          writeOutput(state.lastPauseReason, true);
+        }
+      }
+    } catch (error) {}
+  }
+
+  async function enableWatchpoint(command, slots = {}) {
+    const type = slots.watchpoint || (/heading/i.test(command) ? 'heading_order'
+      : /alt|image/i.test(command) ? 'image_alt'
+      : /button/i.test(command) ? 'button_label'
+      : /form|input|label/i.test(command) ? 'form_label'
+      : /contrast/i.test(command) ? 'contrast'
+      : 'accessibility');
+    if (!state.watchpointRules.includes(type)) state.watchpointRules.push(type);
+    saveJsonStore('codeup_watchpoints', state.watchpointRules);
+    await walkthroughPauseOnIssues();
+    await checkWatchpoints('Watchpoint armed');
+    return true;
+  }
+
+  function restoreLastWork(describeOnly = false) {
+    const saved = loadJsonStore('codeup_last_work', null);
+    if (!saved) {
+      writeOutput('No saved local work found yet.', true);
+      return true;
+    }
+    if (!describeOnly) {
+      loadGeneratedFiles({ html: saved.html || starterBodyHtml, css: saved.css || '', js: saved.js || '' });
+      state.projectId = saved.projectId || state.projectId;
+      state.projectName = saved.projectName || state.projectName;
+      state.currentPage = saved.currentPage || state.currentPage;
+      state.lastUrl = saved.previewUrl || state.lastUrl;
+    }
+    writeOutput(`Last work: ${saved.projectName || 'Untitled Project'}, saved ${saved.savedAt || 'recently'}. HTML ${String(saved.html || '').split('\n').length} lines, CSS ${String(saved.css || '').split('\n').length} lines, JavaScript ${String(saved.js || '').split('\n').length} lines.`, true);
+    return true;
+  }
+
+  function restoreLocalFeatureState() {
+    const watchpoints = loadJsonStore('codeup_watchpoints', []);
+    state.watchpointRules = Array.isArray(watchpoints) ? watchpoints : [];
+    const saved = loadJsonStore('codeup_last_work', null);
+    if (saved && saved.previewUrl && /^\/student-site\//.test(saved.previewUrl)) {
+      state.lastUrl = saved.previewUrl;
+      const frame = ensurePreviewFrame();
+      if (frame && !frame.getAttribute('src')) frame.src = saved.previewUrl;
+      const openBtn = $('sitePreviewOpenBtn');
+      if (openBtn) {
+        openBtn.disabled = false;
+        openBtn.dataset.url = saved.previewUrl;
+      }
+    }
   }
 
   // ----- Tabs -----
@@ -1980,7 +2684,22 @@ if (cta) {
     return { sections, headings, selectors, fns, events };
   }
 
-  function codeMap() {
+  async function codeMap(query = '') {
+    const token = nextAsyncToken();
+    try {
+      const data = await apiJson('/code-map', {
+        method: 'POST',
+        body: JSON.stringify({ html: getHtmlSource(), css: getCss(), js: getJs(), query }),
+      });
+      if (!isAsyncFresh(token)) return;
+      state.lastCodeMap = data.summary || '';
+      writeOutput(state.lastCodeMap, false);
+      const spoken = data.answer || `Code map. ${data.landmarks.length} landmarks, ${data.headings.length} headings, ${data.buttons.length} buttons, ${data.forms.length} forms, ${data.css.length} CSS rules, and ${data.javascript.functions.length} JavaScript functions. Full map is on screen.`;
+      speak(spoken);
+      return;
+    } catch (error) {}
+
+    if (!isAsyncFresh(token)) return;
     const map = buildCodeMap();
     const detail = [
       t('CODE MAP', 'CODE MAP'),
@@ -2000,6 +2719,7 @@ if (cta) {
       t('JavaScript events:', 'JavaScript events:'),
       ...(map.events.length ? map.events.map((e) => '  - ' + e) : ['  (none found)']),
     ].join('\n');
+    state.lastCodeMap = detail;
     writeOutput(detail, false);
     const spoken = t(
       `Code map. ${map.sections.length} HTML sections, ${map.headings.length} headings, ${map.selectors.length} CSS rules, and ${map.fns.length} JavaScript functions handling ${map.events.length} events. Full map is on screen.`,
@@ -2023,6 +2743,7 @@ if (cta) {
 
   // ----- Analyze: structured checks across HTML/CSS/JS with a short spoken summary -----
   async function analyzeCode() {
+    const token = nextAsyncToken();
     writeOutput(t('Analyzing the code...', 'Code analyze ho raha hai...'));
     try {
       const response = await fetch('/html-audit', {
@@ -2032,6 +2753,7 @@ if (cta) {
       });
       const data = await response.json();
       if (!data.success) throw new Error(data.error || 'Analyze failed.');
+      if (!isAsyncFresh(token)) return;
       const audit = data.audit;
       state.lastAudit = audit;
       const issues = audit.issues || [];
@@ -2065,6 +2787,7 @@ if (cta) {
           );
       speak(spoken);
     } catch (error) {
+      if (!isAsyncFresh(token)) return;
       writeOutput(error.message, true);
     }
   }
@@ -2093,11 +2816,14 @@ if (cta) {
 
   // ----- Stop everything -----
   function stopEverything() {
+    nextAsyncToken();
     cancelSpeech();
+    stopHeartbeat();
     if (_sonifyTimer) { clearTimeout(_sonifyTimer); _sonifyTimer = null; }
     if (window.VoiceMemoryEngine && typeof window.VoiceMemoryEngine.interrupt === 'function') {
       try { window.VoiceMemoryEngine.interrupt(); } catch (error) {}
     }
+    updateStateIndicator('IDLE');
     announce(t('Stopped.', 'Ruk gaya.'));
     const output = $('output');
     if (output) output.textContent = t('Stopped speaking.', 'Bolna band ho gaya.');
@@ -2126,7 +2852,9 @@ if (cta) {
     const rules = presets[name];
     if (!rules) return false;
     snapshotVersion('Before design preset');
+    beginReplay('Before design preset');
     appendCssRules(rules);
+    finishReplay('After design preset');
     writeOutput(t(`Applied a ${name} design.`, `${name} design apply ho gaya.`), true);
     previewHtml(false, { silent: true });
     return true;
@@ -2135,6 +2863,7 @@ if (cta) {
   // ----- Add a contact section into the HTML pane -----
   function addContactSection() {
     snapshotVersion('Before adding contact section');
+    beginReplay('Before adding contact section');
     const block = '\n<section id="contact" aria-labelledby="contact-heading">\n' +
       '  <h2 id="contact-heading">Contact Us</h2>\n' +
       '  <p>Have a question? Send us a message.</p>\n' +
@@ -2151,6 +2880,7 @@ if (cta) {
     activateTab('html');
     insertAtCursor(block);
     state.pages[state.currentPage] = getHtml();
+    finishReplay('After adding contact section');
     writeOutput(t('Added a contact section with an accessible form.', 'Accessible form ke saath contact section add ho gaya.'), true);
     previewHtml(false, { silent: true });
     return true;
@@ -2208,13 +2938,29 @@ if (cta) {
   // Natural-language commands that are specific to the 3-file IDE. Returns true
   // when handled. Shared by both the voice route and the typed command box.
   function handleIdeCommand(command, lower) {
+    if (handleWebInsertCommand(command, lower)) return true;
+    if (lower.includes('where am i') || lower.includes('read breadcrumb') || lower.includes('what am i editing')) { breadcrumb(); return true; }
+    if (lower.includes('explain simply') || lower.includes('explain this error') || lower.includes('why is this broken')) { explainErrors(false); return true; }
+    if (lower.includes('fix and explain')) { explainErrors(true); return true; }
+    if (lower.includes('compare before and after') || lower.includes('replay my mistake') || lower.includes('show changed lines') || lower.includes('read only what changed') || lower.includes('compare preview changes') || lower.includes('compare code changes')) { narrateReplay(command); return true; }
+    if (lower.startsWith('remember this as') || lower.startsWith('save this command as')) { saveMacro(command); return true; }
+    if (lower.startsWith('use macro') || lower.startsWith('run macro')) { runMacro(command); return true; }
+    if (lower === 'list macros') { listMacros(); return true; }
+    if (lower.startsWith('delete macro')) { deleteMacro(command); return true; }
+    if (lower.startsWith('bookmark this')) { saveBookmark(command); return true; }
+    if (lower.startsWith('read from bookmark')) { readBookmark(command); return true; }
+    if (lower === 'list bookmarks') { listBookmarks(); return true; }
+    if (lower.startsWith('delete bookmark')) { deleteBookmark(command); return true; }
+    if (lower.includes('restore my last work')) { restoreLastWork(false); return true; }
+    if (lower.includes('what did i last work on')) { restoreLastWork(true); return true; }
+    if (isCodeMapQuestion(lower)) { codeMap(command); return true; }
     if (/\bread\b/.test(lower) && !/\bread\s+paragraph\b/.test(lower) && !lower.includes('page structure')) {
       if (lower.includes('css') || lower.includes('style')) { readCode('css'); return true; }
       if (lower.includes('javascript') || lower.includes('java script') || /\bjs\b/.test(lower) || lower.includes('script')) { readCode('js'); return true; }
       if (lower.includes('html') || lower.includes('markup')) { readCode('html'); return true; }
       if (lower.includes('all') || lower.includes('everything') || lower.includes('whole') || lower.includes('current') || lower.includes('the code') || lower.includes('read code') || lower === 'read') { readCode('all'); return true; }
     }
-    if (lower.includes('code map') || lower.includes('codemap') || lower.includes('structure map') || lower.includes('map of the code') || lower.includes('map the code')) { codeMap(); return true; }
+    if (lower.includes('code map') || lower.includes('codemap') || lower.includes('structure map') || lower.includes('map of the code') || lower.includes('map the code')) { codeMap(command); return true; }
     if ((lower.includes('explain') || lower.includes('what does')) && (lower.includes('javascript') || lower.includes('java script') || /\bjs\b/.test(lower) || lower.includes('the script'))) { explainJs(); return true; }
     if ((lower.includes('explain') || lower.includes('what does')) && (lower.includes('css') || lower.includes('the style'))) { readCode('css'); return true; }
     if (lower.includes('analyze') || lower.includes('analyse') || lower.includes('find problems') || lower.includes('check the code')) { analyzeCode(); return true; }
@@ -2318,12 +3064,25 @@ if (cta) {
     if (action === 'walkthrough_keyboard_start') { await walkthroughKeyboardStart(); return true; }
     if (action === 'walkthrough_next_element') { await walkthroughKeyboardMove('next'); return true; }
     if (action === 'walkthrough_prev_element') { await walkthroughKeyboardMove('previous'); return true; }
-    if (action === 'walkthrough_pause_issues') { await walkthroughPauseOnIssues(); return true; }
+    if (action === 'walkthrough_pause_issues') { await enableWatchpoint(command, slots); return true; }
     if (action === 'walkthrough_list_watchpoints') { await walkthroughListWatchpoints(); return true; }
     if (action === 'walkthrough_explain_issue') { await walkthroughExplainIssue(); return true; }
     if (action === 'walkthrough_fix_issue') { await walkthroughFixIssue(); return true; }
     if (action === 'walkthrough_compare') { await walkthroughCompare(); return true; }
     if (action === 'walkthrough_stop') { walkthroughStop(); return true; }
+    if (action === 'tutorial_start') { await startTutorial(command); return true; }
+    if (action === 'tutorial_control') { await handleTutorialCommand(command); return true; }
+    if (action === 'breadcrumb') { breadcrumb(); return true; }
+    if (action === 'explain_errors') { await explainErrors(command.toLowerCase().includes('fix')); return true; }
+    if (action === 'save_macro') return saveMacro(command);
+    if (action === 'run_macro') return runMacro(command);
+    if (action === 'list_macros') return listMacros();
+    if (action === 'delete_macro') return deleteMacro(command);
+    if (action === 'save_bookmark') return saveBookmark(command);
+    if (action === 'read_bookmark') return readBookmark(command);
+    if (action === 'list_bookmarks') return listBookmarks();
+    if (action === 'delete_bookmark') return deleteBookmark(command);
+    if (action === 'restore_work') return restoreLastWork(command.toLowerCase().includes('what did'));
     if (action === 'set_wake_word') {
       state.wakeWord = command.toLowerCase().replace(/^set wake word to |^change wake word to /, '').trim() || 'hey codeup';
       localStorage.setItem('codeup_wake_word', state.wakeWord);
@@ -2336,7 +3095,7 @@ if (cta) {
     if (action === 'stop_speaking') { cancelSpeech(); announce('Speech stopped'); return true; }
     if (action === 'set_voice_language') return false;
     if (action === 'read_code') { readCode(slots.target || 'all'); return true; }
-    if (action === 'code_map') { codeMap(); return true; }
+    if (action === 'code_map') { await codeMap(command); return true; }
     if (action === 'analyze_code') { await analyzeCode(); return true; }
     if (action === 'explain_javascript') { explainJs(); return true; }
     if (action === 'design_preset') { applyDesignPreset(slots.preset || 'vibrant'); return true; }
@@ -2349,7 +3108,7 @@ if (cta) {
     if (action === 'announce_contrast') { announceContrast(); return true; }
     if (action === 'explain_concept' && explainConcept(command)) return true;
     if (action === 'undo_version') { await undoByVoice(command); return true; }
-    if (action === 'review_changes') { snapshotVersion('Current version for comparison'); reviewChanges(); return true; }
+    if (action === 'review_changes') { await narrateReplay(command); return true; }
     if (action === 'create_multipage_site') { createMultiPageSite(command); return true; }
     if (action === 'add_contact_page') return addContactPage();
     if (action === 'switch_page') { switchPage(slots.page || command); return true; }
@@ -2489,6 +3248,7 @@ if (cta) {
   async function handleVoiceCommand(raw) {
     const command = raw.trim();
     if (!command) return;
+    nextAsyncToken();
     cancelSpeech();
     const lower = command.toLowerCase();
     // Instant control commands (must work without any network round-trip).
@@ -2689,7 +3449,7 @@ if (cta) {
     await chatWithAI(command, true);
   }
 
-  async function handleStudentText(raw) {
+  async function handleStudentTextCore(raw) {
     const text = raw.trim();
     if (!text) {
       writeOutput(t(
@@ -2698,6 +3458,7 @@ if (cta) {
       ), true);
       return;
     }
+    nextAsyncToken();
     state.wakeUntil = Date.now() + 45000;
     const lower = text.toLowerCase();
     // Control + IDE commands route through the same handler as voice.
@@ -2920,6 +3681,24 @@ if (cta) {
     }
   }
 
+  async function handleStudentText(raw) {
+    const text = (raw || '').trim();
+    if (!text) {
+      await handleStudentTextCore(raw);
+      return;
+    }
+    const lower = text.toLowerCase();
+    if (isTutorialControlCommand(lower)) {
+      await handleTutorialCommand(text);
+      return;
+    }
+    await handleStudentTextCore(text);
+    if (isMacroWorthyCommand(text)) {
+      state.lastCommand = text;
+    }
+    if (shouldValidateTutorialCommand(lower)) await validateTutorialProgress(text);
+  }
+
   function startWakeListener() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition || state.wakeListening || (state.activeVoice && !state.paused && !state.manualVoiceStop)) return;
@@ -3059,6 +3838,10 @@ if (cta) {
     replaceButton('helpBtn', 'Help', 'Hear what CodeUp can do', () => writeOutput(helpText(), true));
     replaceButton('sendCommandBtn', 'Ask / Build', 'Run the typed command', submitCommandFromInput);
     replaceButton('stopBtn', 'Stop Speaking', 'Stop speaking immediately', stopEverything);
+    replaceButton('tutorialStartBtn', 'Start Tutorial', 'Start the guided web tutorial', () => startTutorial(''));
+    replaceButton('tutorialContinueBtn', 'Continue', 'Continue the guided tutorial', continueTutorial);
+    replaceButton('tutorialHintBtn', 'Hint', 'Hear a tutorial hint', tutorialHint);
+    replaceButton('tutorialExitBtn', 'Exit', 'Exit the guided tutorial', exitTutorial);
 
     const field = $('commandInput');
     if (field) {
@@ -3075,7 +3858,9 @@ if (cta) {
     setupTabs();
     ensureEditors();
     ensurePreviewFrame();
+    restoreLocalFeatureState();
     refreshSnippetSelect();
+    updateTutorialPanel();
     window.runCode = () => previewHtml(true);
     window.analyzeCode = analyzeCode;
     window.explainWebsite = explainWebsite;
@@ -3156,6 +3941,13 @@ if (cta) {
     $('projectNameInput')?.addEventListener('change', renameProject);
     $('auditFixOneBtn')?.addEventListener('click', applyFirstAuditFix);
     $('auditFixAllBtn')?.addEventListener('click', applyAllAuditFixes);
+
+    document.addEventListener('keydown', (event) => {
+      if (event.altKey && event.key.toLowerCase() === 'b') {
+        event.preventDefault();
+        breadcrumb();
+      }
+    });
 
     $('snippetSelect')?.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') { event.preventDefault(); loadSnippetFromUi(); }
@@ -3242,12 +4034,21 @@ if (cta) {
   async function handleVoiceCommandWithInterrupt(raw) {
     const command = raw.trim();
     if (!command) return;
+    const lower = command.toLowerCase();
+    if (isTutorialControlCommand(lower)) {
+      await handleTutorialCommand(command);
+      return;
+    }
     if (window.VoiceMemoryEngine) {
       if (!window.VoiceMemoryEngine.handleTranscript(command)) {
         return;
       }
     }
     await originalHandleVoiceCommand(command);
+    if (isMacroWorthyCommand(command)) {
+      state.lastCommand = command;
+    }
+    if (shouldValidateTutorialCommand(lower)) await validateTutorialProgress(command);
   }
 
   if (window.__codeupEnableTestHooks) {
@@ -3279,6 +4080,24 @@ if (cta) {
       sonifyHtml,
       readCode,
       codeMap,
+      handleStudentText,
+      handleTutorialCommand,
+      validateTutorialProgress,
+      saveMacro,
+      runMacro,
+      listMacros,
+      deleteMacro,
+      saveBookmark,
+      readBookmark,
+      listBookmarks,
+      deleteBookmark,
+      breadcrumb,
+      explainErrors,
+      narrateReplay,
+      walkthroughCompare,
+      checkWatchpoints,
+      startHeartbeat,
+      stopHeartbeat,
       stopEverything,
       handleIdeCommand,
       activateTab,
@@ -3291,6 +4110,7 @@ if (cta) {
     setupUi();
     state.pages.home = getHtml();
     await ensureProject();
+    restoreLocalFeatureState();
     document.body.dataset.htmlModeReady = 'true';
     initVoiceMemoryEngine();
     if (!state.versions.length) snapshotVersion('Initial version');

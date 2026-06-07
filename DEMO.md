@@ -76,6 +76,49 @@ To recover quickly:
 
 ---
 
+## CodeUp feature ports
+
+- **Guided Web Tutorial**: `start tutorial`, `continue`, `hint`, `recap`.
+- **Web Code Map 2.0**: `give me a code map`, `what CSS styles the hero section`.
+- **Mistake Replay**: `compare before and after`, `show changed lines`.
+- **Accessibility Watchpoints**: `pause on accessibility issues`.
+- **Macros**: `remember this as robotics demo`, `use macro robotics demo`.
+- **Bookmarks**: `bookmark this as bakery review`, `read from bookmark bakery review`.
+- **Breadcrumbs**: `Alt+B` or `where am I`.
+- **Beginner Errors**: `explain this error`, `fix and explain`.
+- **Output Diff Narration**: `read only what changed`.
+
+### Simple feature-port demo
+
+```text
+generate a website for a bakery
+start tutorial
+give me a code map
+audit website
+fix accessibility issues
+compare before and after
+bookmark this as bakery review
+stop everything
+```
+
+### Advanced feature-port demo
+
+```text
+generate a website for the robotics lab of my school with projects, achievements, student team, equipment, events, and a join form
+make the design futuristic with dark mode and animated stats
+what JavaScript controls the dark mode button
+what CSS styles the hero section
+pause on accessibility issues
+audit website
+fix accessibility issues
+compare accessibility before and after
+remember this as robotics demo
+use macro robotics demo
+export website
+```
+
+---
+
 ## Command reference
 
 ### Generate
@@ -117,6 +160,35 @@ find problems
 summarize the website
 outline the website
 audit the website
+```
+
+### Guided learning and memory
+
+```text
+start tutorial
+insert page title Demo
+continue
+hint
+recap
+exit tutorial
+map this website
+list all buttons
+what CSS styles the hero section
+compare before and after
+replay my mistake
+show changed lines
+pause when an image has no alt text
+pause when a button has no label
+where am I
+explain simply
+fix and explain
+remember this as robotics site
+use macro robotics site
+list macros
+bookmark this as hero section
+read from bookmark hero section
+list bookmarks
+restore my last work
 ```
 
 ### Control

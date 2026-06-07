@@ -125,8 +125,20 @@ body.theme-night .cu-button-danger { color: #2a0a00; }
   font-size: 0.78rem; font-weight: 800; letter-spacing: 0.12em;
   text-transform: uppercase; color: var(--text-dim); margin-bottom: 10px;
 }
-.ide-preview, .ide-output, .ide-snippets, .ide-projects { display: flex; flex-direction: column; }
+.ide-preview, .ide-output, .ide-tutorial, .ide-snippets, .ide-projects { display: flex; flex-direction: column; }
 .ide-preview .cu-site-preview { margin-top: 0; border-top: none; padding-top: 0; }
+
+.ide-tutorial {
+  border-left: 4px solid var(--accent);
+}
+.ide-tutorial p {
+  margin: 0;
+  color: var(--text-main);
+  line-height: 1.5;
+}
+.ide-tutorial[data-active="true"] {
+  background: var(--bg-main);
+}
 
 .ide-field-row { display: flex; flex-wrap: wrap; gap: 12px; }
 .ide-field-row .ide-field { flex: 1 1 160px; }

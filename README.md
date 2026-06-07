@@ -348,6 +348,28 @@ English examples:
 - `fix this issue`
 - `compare accessibility before and after`
 - `stop walkthrough`
+- `start tutorial`
+- `practise html`
+- `continue`
+- `hint`
+- `recap`
+- `exit tutorial`
+- `map this website`
+- `list all buttons`
+- `what CSS styles the hero section`
+- `compare before and after`
+- `replay my mistake`
+- `show changed lines`
+- `pause when an image has no alt text`
+- `pause when a button has no label`
+- `where am I`
+- `explain simply`
+- `fix and explain`
+- `remember this as robotics site`
+- `use macro robotics site`
+- `bookmark this as hero section`
+- `read from bookmark hero section`
+- `restore my last work`
 - `voice language Hindi`
 - `voice language English`
 - `voice language auto`
@@ -392,6 +414,109 @@ why is this inaccessible
 fix this issue
 compare accessibility before and after
 stop walkthrough
+```
+
+## CodeUp Feature Ports
+
+The current CodeUp-Web build includes these original CodeUp learning features,
+adapted for HTML, CSS, JavaScript, and the web preview:
+
+- **Guided Web Tutorial**: audio-first lessons driven by real CodeUp commands.
+- **Web Code Map 2.0**: deterministic HTML landmarks, headings, CSS, and JS map.
+- **Mistake Replay**: before/after narration for code and accessibility fixes.
+- **Accessibility Watchpoints**: spoken pauses for watched audit issues.
+- **Macros**: remember and replay useful website-building commands.
+- **Bookmarks**: save and reread output, code-map, issue, or editor context.
+- **Breadcrumbs**: `Alt+B` or `where am I` reports the current editor context.
+- **Beginner Errors**: grounded explanations for HTML, CSS, JS, and a11y issues.
+- **Output Diff Narration**: concise spoken summaries of what changed.
+
+Demo script, simple:
+
+```text
+generate a website for a bakery
+start tutorial
+give me a code map
+audit website
+fix accessibility issues
+compare before and after
+bookmark this as bakery review
+stop everything
+```
+
+Demo script, advanced:
+
+```text
+generate a website for the robotics lab of my school with projects, achievements, student team, equipment, events, and a join form
+make the design futuristic with dark mode and animated stats
+what JavaScript controls the dark mode button
+what CSS styles the hero section
+pause on accessibility issues
+audit website
+fix accessibility issues
+compare accessibility before and after
+remember this as robotics demo
+use macro robotics demo
+export website
+```
+
+## Guided Learning And Memory Tools
+
+CodeUp-Web includes an opt-in, audio-first guided tutorial for blind beginners.
+It teaches by asking students to say or type real website-building commands
+like `insert page title Demo`, `insert header nav main section footer`,
+`insert card styles`, and `add a button interaction`. Tutorial controls such as
+`continue`, `hint`, `recap`, and `exit tutorial` are intercepted only as
+tutorial controls; normal coding commands still go through the same voice and
+typed command pipeline.
+
+New deterministic learning commands:
+
+```text
+start tutorial
+practise html
+practise css
+practise javascript
+practise accessibility
+continue
+try again
+recap
+hint
+repeat
+read my code
+exit tutorial
+map this website
+what is inside the hero section
+what comes after the navigation
+list all buttons
+list all forms
+what CSS styles the hero section
+what JavaScript controls the dark mode button
+how deeply nested am I
+compare before and after
+replay my mistake
+why does the fixed version work
+show changed lines
+pause when heading order breaks
+pause when an image has no alt text
+pause when a button has no label
+pause when form input has no label
+pause when contrast is low
+where am I
+read breadcrumb
+explain simply
+why is this broken
+fix and explain
+remember this as robotics site
+use macro robotics site
+list macros
+delete macro robotics site
+bookmark this as hero section
+read from bookmark hero section
+list bookmarks
+delete bookmark hero section
+restore my last work
+what did I last work on
 ```
 
 Note: the walkthrough describes keyboard focus order based on deterministic HTML
