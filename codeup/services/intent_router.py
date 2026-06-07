@@ -99,8 +99,54 @@ def _snippet_slots(command: str) -> dict[str, Any]:
     return {}
 
 
+def _named_slot(command: str) -> dict[str, Any]:
+    match = re.search(r"\bbookmark\s+this(?:\s+issue)?\s+as\s+(.+)$", command, re.IGNORECASE)
+    if match:
+        return {"name": match.group(1).strip()}
+    match = re.search(r"\b(?:as|called|named|macro|bookmark)\s+(.+)$", command, re.IGNORECASE)
+    if match:
+        return {"name": match.group(1).strip()}
+    return {}
+
+
+def _watchpoint_slots(command: str) -> dict[str, Any]:
+    lower = command.lower()
+    if "heading" in lower:
+        return {"watchpoint": "heading_order"}
+    if "alt" in lower or "image" in lower:
+        return {"watchpoint": "image_alt"}
+    if "button" in lower:
+        return {"watchpoint": "button_label"}
+    if "form" in lower or "input" in lower or "label" in lower:
+        return {"watchpoint": "form_label"}
+    if "contrast" in lower:
+        return {"watchpoint": "contrast"}
+    return {"watchpoint": "accessibility"}
+
+
 RULES: tuple[IntentRule, ...] = (
     IntentRule("set_wake_word", 100, (r"\b(set|change)\s+wake\s+word\s+to\b",)),
+    IntentRule(
+        "tutorial_start",
+        100,
+        (r"^start\s+tutorial$", r"^tutorial$", r"\bpracti[cs]e\s+(html|css|javascript|accessibility)\b"),
+    ),
+    IntentRule(
+        "tutorial_control",
+        100,
+        (
+            r"^continue$",
+            r"^try\s+again$",
+            r"^practi[cs]e\s+again$",
+            r"^recap$",
+            r"^hint$",
+            r"^repeat$",
+            r"^give\s+me\s+an\s+example$",
+            r"^read\s+my\s+code$",
+            r"^exit\s+tutorial$",
+            r"^start\s+coding$",
+        ),
+    ),
     IntentRule(
         "walkthrough_page",
         99,
@@ -128,7 +174,15 @@ RULES: tuple[IntentRule, ...] = (
     IntentRule(
         "walkthrough_pause_issues",
         99,
-        (r"\bpause\s+on\s+accessibility\s+issues\b",),
+        (
+            r"\bpause\s+on\s+accessibility\s+issues\b",
+            r"\bpause\s+when\s+heading\s+order\s+breaks\b",
+            r"\bpause\s+when\s+(?:an?\s+)?image\s+has\s+no\s+alt\s+text\b",
+            r"\bpause\s+when\s+a\s+button\s+has\s+no\s+label\b",
+            r"\bpause\s+when\s+form\s+input\s+has\s+no\s+label\b",
+            r"\bpause\s+when\s+contrast\s+is\s+low\b",
+        ),
+        slotter=_watchpoint_slots,
     ),
     IntentRule(
         "walkthrough_list_watchpoints",
@@ -141,6 +195,7 @@ RULES: tuple[IntentRule, ...] = (
         (
             r"\bexplain\s+first\s+issue\b",
             r"\bwhy\s+is\s+this\s+inaccessible\b",
+            r"\bwhy\s+did\s+it\s+pause\b",
         ),
     ),
     IntentRule(
@@ -158,6 +213,7 @@ RULES: tuple[IntentRule, ...] = (
         99,
         (r"\bstop\s+walkthrough\b",),
     ),
+    IntentRule("walkthrough_next_element", 99, (r"\bcontinue\s+walkthrough\b",)),
     IntentRule(
         "pause_voice",
         98,
@@ -194,15 +250,32 @@ RULES: tuple[IntentRule, ...] = (
     IntentRule("navigate_page", 90, (r"\b(next|previous)\s+(heading|section)\b", r"\bread\s+paragraph\s+\d+\b")),
     IntentRule("read_current_section", 89, (r"\bread\s+current\s+section\b", r"\bcurrent\s+section\s+read\b")),
     IntentRule("read_next_section", 89, (r"\bread\s+next\s+section\b", r"\bnext\s+section\b")),
-    IntentRule("darken_theme", 88, (r"\bdarken\b", r"\bdark\s+theme\b", r"\bdark\s+mode\b", r"\bnight\s+mode\b")),
-    IntentRule("lighten_theme", 88, (r"\blighten\b", r"\blighter\s+theme\b", r"\blight\s+theme\b")),
+    IntentRule(
+        "code_map",
+        88,
+        (
+            r"\bcode\s+map\b",
+            r"\bmap\s+of\s+the\s+code\b",
+            r"\bmap\s+the\s+code\b",
+            r"\bmap\s+this\s+website\b",
+            r"\bwhat\s+is\s+inside\s+the\s+hero\s+section\b",
+            r"\bwhat\s+comes\s+after\s+the\s+navigation\b",
+            r"\blist\s+all\s+buttons\b",
+            r"\blist\s+all\s+forms\b",
+            r"\bwhat\s+css\s+styles\s+the\s+hero\s+section\b",
+            r"\bwhat\s+javascript\s+controls\s+the\s+dark\s+mode\s+button\b",
+            r"\bhow\s+deeply\s+nested\s+am\s+i\b",
+            r"\bread\s+the\s+page\s+structure\b",
+        ),
+    ),
+    IntentRule("darken_theme", 87, (r"\bdarken\b", r"\bdark\s+theme\b", r"\bdark\s+mode\b", r"\bnight\s+mode\b")),
+    IntentRule("lighten_theme", 87, (r"\blighten\b", r"\blighter\s+theme\b", r"\blight\s+theme\b")),
     IntentRule(
         "read_code",
         87,
         (r"\bread\s+(the\s+)?(code|html|css|javascript|java script|js|script)\b",),
         slotter=_read_code_slots,
     ),
-    IntentRule("code_map", 87, (r"\bcode\s+map\b", r"\bmap\s+of\s+the\s+code\b", r"\bmap\s+the\s+code\b")),
     IntentRule(
         "analyze_code",
         86,
@@ -250,7 +323,60 @@ RULES: tuple[IntentRule, ...] = (
         (r"\bwhat\s+is\s+a\s+div\b", r"\baria-label\b", r"\bwhat\s+does\b", r"\bexplain\s+concept\b"),
     ),
     IntentRule("undo_version", 80, (r"\bgo\s+back\b", r"^undo\b")),
-    IntentRule("review_changes", 79, (r"\bwhat\s+changed\b", r"\bcompare\s+versions\b", r"\breview\s+changes\b")),
+    IntentRule(
+        "review_changes",
+        79,
+        (
+            r"\bwhat\s+changed\b",
+            r"\bcompare\s+versions\b",
+            r"\breview\s+changes\b",
+            r"\bcompare\s+before\s+and\s+after\b",
+            r"\breplay\s+my\s+mistake\b",
+            r"\bwhy\s+does\s+the\s+fixed\s+version\s+work\b",
+            r"\bshow\s+changed\s+lines\b",
+            r"\bread\s+only\s+what\s+changed\b",
+            r"\bcompare\s+preview\s+changes\b",
+            r"\bcompare\s+code\s+changes\b",
+        ),
+    ),
+    IntentRule(
+        "explain_errors",
+        79,
+        (
+            r"\bexplain\s+simply\b",
+            r"\bexplain\s+this\s+error\b",
+            r"\bwhy\s+is\s+this\s+broken\b",
+            r"\bfix\s+and\s+explain\b",
+        ),
+    ),
+    IntentRule(
+        "breadcrumb",
+        79,
+        (r"\bwhere\s+am\s+i\b", r"\bread\s+breadcrumb\b", r"\bwhat\s+am\s+i\s+editing\b"),
+    ),
+    IntentRule(
+        "save_macro",
+        79,
+        (r"\bremember\s+this\s+as\b", r"\bsave\s+this\s+command\s+as\b"),
+        slotter=_named_slot,
+    ),
+    IntentRule("run_macro", 79, (r"\b(use|run)\s+macro\b",), slotter=_named_slot),
+    IntentRule("list_macros", 79, (r"\blist\s+macros\b",)),
+    IntentRule("delete_macro", 79, (r"\bdelete\s+macro\b",), slotter=_named_slot),
+    IntentRule(
+        "save_bookmark",
+        79,
+        (r"\bbookmark\s+this\b", r"\bbookmark\s+this\s+issue\b"),
+        slotter=_named_slot,
+    ),
+    IntentRule("read_bookmark", 79, (r"\bread\s+from\s+bookmark\b",), slotter=_named_slot),
+    IntentRule("list_bookmarks", 79, (r"\blist\s+bookmarks\b",)),
+    IntentRule("delete_bookmark", 79, (r"\bdelete\s+bookmark\b",), slotter=_named_slot),
+    IntentRule(
+        "restore_work",
+        79,
+        (r"\brestore\s+my\s+last\s+work\b", r"\bwhat\s+did\s+i\s+last\s+work\s+on\b"),
+    ),
     IntentRule("create_multipage_site", 78, (r"\bmulti[- ]?page\b", r"\bmultiple\s+page\b", r"\bhomepage\s+plus\b")),
     IntentRule("add_contact_page", 77, (r"\badd\s+(a\s+)?contact\s+page\b",), slotter=_page_slots),
     IntentRule("switch_page", 76, (r"\b(go|switch|open)\s+to\s+page\b",), slotter=_page_slots),

@@ -145,6 +145,31 @@ class TestPreviewButton:
         assert "previewJsFlag" in hosted_html
 
 
+class TestGuidedLearning:
+    def test_tutorial_macro_bookmark_breadcrumb_and_replay_commands(self, browser_page):
+        page, _, _ = browser_page
+
+        def command(text: str, marker: str):
+            page.locator("#commandInput").fill(text)
+            page.locator("#sendCommandBtn").click()
+            page.wait_for_function(
+                "marker => document.querySelector('#output').textContent.includes(marker)"
+                " || document.querySelector('#tutorialStatus').textContent.includes(marker)",
+                arg=marker,
+                timeout=15000,
+            )
+
+        command("start tutorial", "HTML basics")
+        command("insert page title Demo", "Success")
+        assert "Demo" in page.locator("#htmlEditor").input_value()
+
+        command("remember this as title demo", "Saved macro")
+        command("bookmark this as tutorial point", "Bookmarked")
+        command("read from bookmark tutorial point", "Bookmark tutorial point")
+        command("where am I", "HTML")
+        command("compare before and after", "Mistake replay")
+
+
 class TestAuditAndFix:
     def test_audit_button_reports_issues(self, browser_page):
         page, _, _ = browser_page

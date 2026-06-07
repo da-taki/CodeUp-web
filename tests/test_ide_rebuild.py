@@ -353,14 +353,204 @@ def test_frontend_snippets_stop_speaking_and_code_map_behaviour():
         api.deleteSnippet('bakery demo');
         assert(!JSON.parse(storage.get('codeup_snippets'))['bakery demo'], 'snippet should delete');
 
-        api.codeMap();
-        assert(elements.output.textContent.includes('HTML sections:'), 'code map should describe HTML');
-        assert(elements.output.textContent.includes('CSS selectors:'), 'code map should describe CSS');
-        assert(elements.output.textContent.includes('JavaScript events:'), 'code map should describe JS events');
+        (async () => {
+          await api.codeMap();
+          assert(elements.output.textContent.includes('HTML sections:'), 'code map should describe HTML');
+          assert(elements.output.textContent.includes('CSS selectors:'), 'code map should describe CSS');
+          assert(elements.output.textContent.includes('JavaScript events:'), 'code map should describe JS events');
 
-        api.stopEverything();
-        assert(cancelCount > 0, 'stop everything should cancel speech synthesis');
-        assert(elements.output.textContent.includes('Stopped speaking'), 'stop everything should update visible output');
+          api.stopEverything();
+          assert(cancelCount > 0, 'stop everything should cancel speech synthesis');
+          assert(elements.output.textContent.includes('Stopped speaking'), 'stop everything should update visible output');
+        })().catch((error) => {
+          console.error(error);
+          process.exit(1);
+        });
+        """
+    )
+
+    subprocess.run([node, "-e", harness], check=True, cwd=".")
+
+
+def test_frontend_tutorial_macros_bookmarks_breadcrumbs_and_heartbeat():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is required for the frontend IDE harness")
+
+    harness = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function assert(condition, message) {
+          if (!condition) throw new Error(message);
+        }
+
+        function makeElement(id) {
+          return {
+            id,
+            value: '',
+            textContent: '',
+            innerHTML: '',
+            dataset: {},
+            children: [],
+            attributes: {},
+            disabled: false,
+            selectionStart: 0,
+            selectionEnd: 0,
+            classList: { toggle() { return false; }, add() {}, remove() {}, contains() { return false; } },
+            appendChild(child) { this.children.push(child); return child; },
+            setAttribute(name, value) { this.attributes[name] = String(value); },
+            getAttribute(name) { return this.attributes[name]; },
+            removeAttribute(name) { delete this.attributes[name]; },
+            addEventListener() {},
+            focus() {},
+          };
+        }
+
+        const storage = new Map();
+        const elements = {
+          htmlEditor: makeElement('htmlEditor'),
+          cssEditor: makeElement('cssEditor'),
+          jsEditor: makeElement('jsEditor'),
+          output: makeElement('output'),
+          srAnnouncer: makeElement('srAnnouncer'),
+          languageSelector: Object.assign(makeElement('languageSelector'), { value: 'en' }),
+          tutorialPanel: makeElement('tutorialPanel'),
+          tutorialStatus: makeElement('tutorialStatus'),
+          tabHtml: makeElement('tabHtml'),
+          tabCss: makeElement('tabCss'),
+          tabJs: makeElement('tabJs'),
+          panelHtml: makeElement('panelHtml'),
+          panelCss: makeElement('panelCss'),
+          panelJs: makeElement('panelJs'),
+        };
+        let cancelCount = 0;
+        let intervalCallback = null;
+        let delayedCodeMapResolve = null;
+        let useDelayedCodeMap = false;
+        const modules = [
+          { id: 'html_basics', title: 'HTML basics', explanation: 'Explain HTML.', command: 'insert page title Demo', hint: 'Add title heading paragraph.' },
+          { id: 'structure', title: 'Structure', explanation: 'Explain structure.', command: 'insert header nav main section footer', hint: 'Add landmarks.' },
+        ];
+        const context = {
+          console,
+          Date,
+          setTimeout(callback) { callback(); return 1; },
+          clearTimeout() {},
+          setInterval(callback) { intervalCallback = callback; return 42; },
+          clearInterval(id) { if (id === 42) intervalCallback = null; },
+          DOMParser: class DOMParser { parseFromString() { return { body: { querySelectorAll() { return []; } }, querySelectorAll() { return []; } }; } },
+          SpeechSynthesisUtterance: function SpeechSynthesisUtterance(text) { this.text = text; },
+          fetch: async function fetch(url, options) {
+            const body = options && options.body ? JSON.parse(options.body) : {};
+            if (url === '/tutorial/modules') return { json: async () => ({ success: true, modules }) };
+            if (url === '/tutorial/validate') return { json: async () => ({ success: true, valid: body.html.includes('<title>Demo</title>'), message: 'Success. HTML basics is complete.', hint: 'Add title heading paragraph.' }) };
+            if (url === '/voice-command') return { json: async () => ({ success: true, action: 'chat', slots: {}, confidence: 0.35 }) };
+            if (url === '/code-map' && useDelayedCodeMap) {
+              return new Promise((resolve) => {
+                delayedCodeMapResolve = () => resolve({ json: async () => ({ success: true, summary: 'Stale code map response.', answer: 'Stale code map response.' }) });
+              });
+            }
+            if (url === '/code-map') return { json: async () => ({ success: true, summary: 'Dark mode JavaScript: line 8 [data-theme-toggle].', answer: 'Dark mode JavaScript: line 8 [data-theme-toggle].' }) };
+            if (url === '/mistake-replay') return { json: async () => ({ success: true, message: 'Mistake replay:\n- Added HTML line: <title>Demo</title>', changes: ['Added HTML line'] }) };
+            if (url === '/watchpoints/check') return { json: async () => ({ success: true, paused: true, reason: 'Paused because an image has no alt text.', issue: { id: 'missing_image_alt' } }) };
+            return { json: async () => ({ success: true }) };
+          },
+          sessionStorage: { getItem() { return null; }, setItem() {}, removeItem() {} },
+          localStorage: {
+            getItem(key) { return storage.has(key) ? storage.get(key) : null; },
+            setItem(key, value) { storage.set(key, String(value)); },
+            removeItem(key) { storage.delete(key); },
+          },
+          document: {
+            activeElement: { id: '' },
+            getElementById(id) { return elements[id] || null; },
+            querySelector() { return null; },
+            createElement(tag) { return makeElement(tag); },
+            addEventListener() {},
+            body: { dataset: {}, classList: { toggle() { return false; }, remove() {}, add() {}, contains() { return false; } } },
+          },
+          window: {
+            __codeupEnableTestHooks: true,
+            speechSynthesis: { speaking: false, cancel() { cancelCount += 1; }, speak() {} },
+            addEventListener() {},
+          },
+        };
+        context.window.window = context.window;
+        context.window.document = context.document;
+        context.window.sessionStorage = context.sessionStorage;
+        context.window.localStorage = context.localStorage;
+        context.window.DOMParser = context.DOMParser;
+
+        vm.runInNewContext(fs.readFileSync('static/codeup-html.js', 'utf8'), context);
+        const api = context.window.__codeupVoiceTest;
+
+        (async () => {
+          api.loadGeneratedFiles({ html: '<!doctype html><html lang="en"><head><title>Old</title><link rel="stylesheet" href="style.css"></head><body><h1>Old</h1><p>Start</p><script src="script.js" defer></script></body></html>', css: '', js: '' });
+          await api.handleTutorialCommand('start tutorial');
+          assert(api.state.tutorial.active, 'tutorial should become active');
+          await api.handleStudentText('insert page title Demo');
+          assert(api.getHtml().includes('<title>Demo</title>'), 'tutorial exercise should route through normal command parser');
+          assert(elements.tutorialStatus.textContent.includes('Success'), 'tutorial should validate after normal command');
+
+          api.state.lastCommand = 'insert page title Macro Demo';
+          await api.saveMacro('remember this as title macro');
+          assert(JSON.parse(storage.get('codeup_voice_macros'))['title macro'], 'macro should save last command');
+          await api.runMacro('use macro title macro');
+          assert(api.getHtml().includes('<title>Macro Demo</title>'), 'macro should replay website command');
+
+          api.saveBookmark('bookmark this as hero section');
+          assert(JSON.parse(storage.get('codeup_bookmarks'))['hero section'], 'bookmark should persist');
+          api.readBookmark('read from bookmark hero section');
+          assert(elements.output.textContent.includes('Bookmark hero section'), 'bookmark should read');
+
+          api.state.watchpointRules = ['image_alt'];
+          elements.output.textContent = 'Accessibility score: 80/100';
+          await api.checkWatchpoints('Audit');
+          assert(elements.output.textContent.includes('Accessibility score: 80/100'), 'watchpoint should preserve current audit output');
+          assert(elements.output.textContent.includes('Paused because an image has no alt text'), 'watchpoint should append pause reason');
+
+          api.state.walkthrough.htmlBeforeFix = '';
+          api.state.replay.before = { html: '<button></button>', css: '', js: '' };
+          api.state.replay.after = { html: '<button>Send</button>', css: '', js: '' };
+          await api.walkthroughCompare();
+          assert(elements.output.textContent.includes('Accessibility comparison'), 'accessibility compare should fall back to replay after main fix');
+
+          api.loadGeneratedFiles({ html: '<main><h1>Theme demo</h1><button data-theme-toggle>Dark</button></main>', css: '', js: 'var themeBtn = document.querySelector("[data-theme-toggle]");' });
+          api.state.lastCommand = 'make the design futuristic with dark mode and animated stats';
+          api.handleIdeCommand('what JavaScript controls the dark mode button', 'what javascript controls the dark mode button');
+          for (let i = 0; i < 8; i += 1) await Promise.resolve();
+          assert(elements.output.textContent.includes('Dark mode JavaScript'), 'dark-mode code map query should not become a CSS edit');
+          assert(!api.getCss().includes('background: #111827'), 'dark-mode code map query should not edit CSS');
+          await api.handleStudentText('what JavaScript controls the dark mode button');
+          for (let i = 0; i < 8; i += 1) await Promise.resolve();
+          assert(api.state.lastCommand === 'make the design futuristic with dark mode and animated stats', 'code-map questions should not replace macro command memory');
+
+          elements.htmlEditor.selectionStart = api.getHtml().indexOf('<h1>');
+          elements.htmlEditor.selectionEnd = elements.htmlEditor.selectionStart;
+          api.activateTab('html');
+          api.breadcrumb();
+          assert(elements.output.textContent.includes('HTML'), 'breadcrumb should describe HTML context');
+
+          api.startHeartbeat('Testing heartbeat');
+          assert(api.state.heartbeatTimer, 'heartbeat should start');
+          api.stopEverything();
+          assert(!api.state.heartbeatTimer, 'stop everything should cancel heartbeat');
+          assert(cancelCount > 0, 'stop everything should cancel speech');
+
+          useDelayedCodeMap = true;
+          const staleMap = api.codeMap('give me a code map');
+          await Promise.resolve();
+          api.stopEverything();
+          delayedCodeMapResolve();
+          await staleMap;
+          assert(elements.output.textContent.includes('Stopped speaking'), 'stop everything should keep stopped output');
+          assert(!elements.output.textContent.includes('Stale code map response'), 'stale code map response should not overwrite output');
+        })().catch((error) => {
+          console.error(error);
+          process.exit(1);
+        });
         """
     )
 
