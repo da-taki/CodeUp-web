@@ -115,6 +115,35 @@ class TestPreviewButton:
         src = page.locator("#sitePreviewFrame").get_attribute("src")
         assert src and "/student-site/" in src
 
+    def test_preview_uses_current_css_and_javascript_panes(self, browser_page):
+        page, _, _ = browser_page
+        page.locator("#htmlEditor").fill(
+            "<!doctype html><html lang='en'><head><title>Preview</title></head>"
+            "<body><main class='hero'><h1>Preview</h1></main></body></html>"
+        )
+        page.locator("#cssEditor").evaluate(
+            """element => {
+                element.value = ".hero { border-top: 9px solid rgb(255, 0, 0); }";
+                element.dispatchEvent(new Event("input", { bubbles: true }));
+            }"""
+        )
+        page.locator("#jsEditor").evaluate(
+            """element => {
+                element.value = "window.previewJsFlag = 'yes';";
+                element.dispatchEvent(new Event("input", { bubbles: true }));
+            }"""
+        )
+
+        with page.expect_response(
+            lambda response: "/student-site/" in response.url and response.request.resource_type == "document",
+            timeout=10000,
+        ) as response_info:
+            page.locator("#runBtn").click()
+
+        hosted_html = response_info.value.text()
+        assert "border-top: 9px" in hosted_html
+        assert "previewJsFlag" in hosted_html
+
 
 class TestAuditAndFix:
     def test_audit_button_reports_issues(self, browser_page):

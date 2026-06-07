@@ -43,6 +43,9 @@ add a contact section
 read the HTML
 give me a code map
 stop everything
+save snippet as bakery demo
+load snippet bakery demo
+delete snippet bakery demo
 ```
 
 Advanced:
@@ -54,6 +57,8 @@ analyze the code
 fix the accessibility issues
 explain the JavaScript
 save snippet as robotics demo
+run preview
+stop everything
 ```
 
 See `DEMO.md` for the full command catalogue.
@@ -66,13 +71,30 @@ Start the server:
 python app.py
 ```
 
+PowerShell no-key demo:
+
+```text
+$env:AI_CLOUD_ENABLED="0"
+python app.py
+```
+
 Open:
 
 ```text
 http://127.0.0.1:5000/
 ```
 
-Try this full review loop:
+Demo recovery notes:
+
+Click the command box first, then type or speak the commands from the quick demo above.
+If microphone access fails, keep using the command box; it uses the same routing as voice.
+Press **Stop Speaking** or type `stop everything` to cancel narration instantly.
+
+For the robotics lab demo, show the audience the three editor tabs, run the
+preview, click the generated dark-mode toggle, filter the projects, run
+**Analyze**, run **Fix**, then open **Code Map**.
+
+Older review-loop commands still work:
 
 ```text
 Hello, what all can I do in here?
