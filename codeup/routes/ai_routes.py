@@ -16,6 +16,7 @@ from codeup.services.fallbacks import (
 )
 from codeup.services.html_utils import extract_html, fallback_site, summarize_html_changes, wrap_html
 from codeup.services.memory_service import build_context, store_smart_memory
+from codeup.services.natural_website_editor import plan_website_edit, validate_website_files
 from codeup.services.site_generator import (
     combine_site_files,
     generate_site_files,
@@ -35,8 +36,8 @@ SITE_SYSTEM_PROMPT = (
     '- index.html must link the CSS with <link rel="stylesheet" href="style.css"> and load the JS with '
     '<script src="script.js" defer></script>.\n'
     "- Use semantic HTML5 (header, nav, main, section, footer) with headings in order and ARIA where useful.\n"
-    "- Make it visually polished and modern, not generic: a hero section plus several rich content sections, "
-    "cards, a clear visual hierarchy, and a footer.\n"
+    "- Make it visually polished and modern, not generic: a hero section plus useful content sections, "
+    "cards, a clear visual hierarchy, and a footer. Keep the output beginner-friendly, not bloated.\n"
     "- Use meaningful, specific sample content based on the user's request.\n"
     "- Add keyboard support, visible focus styles, strong colour contrast, and full mobile responsiveness.\n"
     "- Never use external images, fonts, CDNs, or broken links. Use CSS gradients, CSS shapes, and emoji instead.\n"
@@ -223,34 +224,93 @@ def generate_site():
     session_id = get_session_id()
 
     if is_edit:
-        user = (
-            f"Edit the existing website according to this instruction:\n{prompt}\n\n"
-            "Keep the parts that already work and return all three updated files.\n\n"
-            f"Current index.html:\n```html\n{current_html[:MAX_HTML_SIZE]}\n```\n\n"
-            f"Current style.css:\n```css\n{current_css[:MAX_HTML_SIZE]}\n```\n\n"
-            f"Current script.js:\n```javascript\n{current_js[:MAX_HTML_SIZE]}\n```"
+        plan = plan_website_edit(
+            current_html=current_html,
+            current_css=current_css,
+            current_js=current_js,
+            metadata=body.get("metadata") if isinstance(body.get("metadata"), dict) else {},
+            previous_generation_request=str(body.get("previous_generation_request") or ""),
+            instruction=prompt,
+            language=language,
+        )
+        if plan.action != "update_website":
+            question = f" {plan.clarification_question}" if plan.clarification_question else ""
+            return jsonify(
+                {
+                    "success": False,
+                    "error": f"{plan.summary}{question}".strip(),
+                    "plan": plan.to_dict(),
+                }
+            ), 400
+        html_file = plan.files["index.html"]
+        css_file = plan.files.get("style.css", "")
+        js_file = plan.files.get("script.js", "")
+        combined = combine_site_files(html_file, css_file, js_file)
+        summary = [plan.summary]
+        append_memory(session_id, prompt=prompt, note=f"Edited 3-file website: {plan.summary}", html=combined)
+        store_smart_memory(session_id, f"Edited website: {prompt}", "instruction")
+        if project_id:
+            create_project_version(
+                project_id,
+                label="Edited website",
+                source="edit-site",
+                html=combined,
+                summary=summary,
+            )
+        return jsonify(
+            {
+                "success": True,
+                "html": html_file,
+                "css": css_file,
+                "js": js_file,
+                "combined": combined,
+                "summary": summary,
+                "plan": plan.to_dict(),
+                "warnings": plan.safety_notes,
+            }
         )
     else:
         user = f"Build request:\n{prompt}\n\nGenerate a complete, beautiful, accessible website for this request."
 
     raw = call_ai(SITE_SYSTEM_PROMPT, user, temperature=0.35, language=language)
     files = parse_file_blocks(raw) if not is_ai_unavailable(raw) else {}
+    used_fallback = False
 
     if not files.get("html"):
         # AI unavailable or unparseable: use the deterministic offline generator.
         generated = generate_site_files(prompt)
         files = {"html": generated["html"], "css": generated["css"], "js": generated["js"]}
+        used_fallback = True
     else:
         files.setdefault("css", current_css)
         files.setdefault("js", current_js)
 
-    html_file = files["html"]
-    css_file = files.get("css", "")
-    js_file = files.get("js", "")
+    validation = validate_website_files(
+        {"index.html": files["html"], "style.css": files.get("css", ""), "script.js": files.get("js", "")}
+    )
+    if not validation.valid and not used_fallback:
+        generated = generate_site_files(prompt)
+        files = {"html": generated["html"], "css": generated["css"], "js": generated["js"]}
+        used_fallback = True
+        validation = validate_website_files(
+            {"index.html": files["html"], "style.css": files.get("css", ""), "script.js": files.get("js", "")}
+        )
+    if not validation.valid:
+        return jsonify(
+            {"success": False, "error": "; ".join(validation.errors), "validation": validation.to_dict()}
+        ), 400
+
+    html_file = validation.files["index.html"]
+    css_file = validation.files.get("style.css", "")
+    js_file = validation.files.get("script.js", "")
     combined = combine_site_files(html_file, css_file, js_file)
 
     previous = combine_site_files(current_html, current_css, current_js) if current_html else ""
     summary = summarize_html_changes(previous, combined) if previous else ["Generated a new website."]
+    if used_fallback:
+        summary.insert(
+            0, "I created a simple accessible starter website. You can ask me to change sections, colors, or text."
+        )
 
     append_memory(session_id, prompt=prompt, note="Generated 3-file website", html=combined)
     store_smart_memory(session_id, f"Built website: {prompt}", "instruction")
@@ -267,6 +327,71 @@ def generate_site():
             "js": js_file,
             "combined": combined,
             "summary": summary,
+            "fallback": used_fallback,
+            "warnings": validation.warnings,
+        }
+    )
+
+
+@ai_bp.route("/edit-site", methods=["POST"])
+def edit_site():
+    body = safejson()
+    instruction = str(body.get("instruction") or body.get("prompt") or "").strip()
+    current_html = str(body.get("html") or body.get("current_html") or "")
+    current_css = str(body.get("css") or body.get("current_css") or "")
+    current_js = str(body.get("js") or body.get("current_js") or "")
+    language = str(body.get("language") or "en")
+    project_id = str(body.get("project_id") or "").strip()
+
+    if not instruction:
+        return jsonify({"success": False, "error": "Instruction cannot be empty"}), 400
+    if (
+        len(instruction) > MAX_MESSAGE_SIZE
+        or len(current_html) > MAX_HTML_SIZE
+        or len(current_css) > MAX_HTML_SIZE
+        or len(current_js) > MAX_HTML_SIZE
+    ):
+        return jsonify({"success": False, "error": "Request too large"}), 413
+
+    plan = plan_website_edit(
+        current_html=current_html,
+        current_css=current_css,
+        current_js=current_js,
+        metadata=body.get("metadata") if isinstance(body.get("metadata"), dict) else {},
+        previous_generation_request=str(body.get("previous_generation_request") or ""),
+        instruction=instruction,
+        language=language,
+    )
+    if plan.action != "update_website":
+        question = f" {plan.clarification_question}" if plan.clarification_question else ""
+        return jsonify({"success": False, "error": f"{plan.summary}{question}".strip(), "plan": plan.to_dict()}), 400
+
+    html_file = plan.files["index.html"]
+    css_file = plan.files.get("style.css", "")
+    js_file = plan.files.get("script.js", "")
+    combined = combine_site_files(html_file, css_file, js_file)
+    summary = [plan.summary]
+    session_id = get_session_id()
+    append_memory(session_id, prompt=instruction, note=f"Edited website: {plan.summary}", html=combined)
+    store_smart_memory(session_id, f"Edited website: {instruction}", "instruction")
+    if project_id:
+        create_project_version(
+            project_id,
+            label="Edited website",
+            source="edit-site",
+            html=combined,
+            summary=summary,
+        )
+    return jsonify(
+        {
+            "success": True,
+            "html": html_file,
+            "css": css_file,
+            "js": js_file,
+            "combined": combined,
+            "summary": summary,
+            "plan": plan.to_dict(),
+            "warnings": plan.safety_notes,
         }
     )
 

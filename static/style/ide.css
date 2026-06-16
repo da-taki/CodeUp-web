@@ -67,6 +67,34 @@
 .ide-command-hint { margin-top: 8px; font-size: 0.82rem; color: var(--text-dim); }
 .ide-command-hint em { font-style: normal; font-weight: 700; color: var(--accent); }
 
+.ide-help {
+  margin: 12px 4% 0;
+}
+.ide-help p {
+  margin: 0;
+  color: var(--text-main);
+  line-height: 1.5;
+}
+.ide-help-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.ide-help-list li {
+  padding: 6px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-main);
+}
+.ide-help-list code {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--text-main);
+}
+
 .cu-button-danger {
   background: var(--danger); color: #fff; border-color: var(--danger); font-weight: 700;
 }

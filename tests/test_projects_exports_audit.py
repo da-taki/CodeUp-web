@@ -146,8 +146,9 @@ def test_publish_updates_project_version_and_zip_export_contains_pages(client):
     assert "attachment" in response.headers["Content-Disposition"]
 
     with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
-        assert set(archive.namelist()) == {"index.html", "about.html", "manifest.json"}
+        assert set(archive.namelist()) == {"index.html", "about.html", "README.txt", "manifest.json"}
         assert "href='about.html'" in archive.read("index.html").decode("utf-8")
+        assert "accessibility-first website builder" in archive.read("README.txt").decode("utf-8")
         manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
         assert manifest["pages"]["home"] == "index.html"
 
@@ -238,6 +239,21 @@ def test_audit_autofix_labels_only_unlabeled_form_controls(client):
     assert "missing_form_label" not in remaining_ids
 
 
+def test_accessibility_audit_reports_vague_links_focus_and_why_matters(client):
+    html = (
+        "<!doctype html><html lang='en'><head><title>Audit</title><style>a { color: #0645ad; }</style></head>"
+        "<body><main><h1>Audit</h1><p>Read more below.</p><a href='details.html'>click here</a></main></body></html>"
+    )
+
+    audit = client.post("/html-audit", json={"html": html}).get_json()["audit"]
+    issues = {issue["id"]: issue for issue in audit["issues"]}
+
+    assert "vague_link_text" in issues
+    assert "missing_focus_style" in issues
+    assert issues["vague_link_text"]["why_matters"]
+    assert issues["missing_focus_style"]["suggested_fix"].startswith("Add a visible")
+
+
 def test_voice_command_uses_structured_intent_router(client):
     routed = client.post("/voice-command", json={"text": "add contact page"}).get_json()
     assert routed["action"] == "add_contact_page"
@@ -249,3 +265,62 @@ def test_voice_command_uses_structured_intent_router(client):
 
     chat = client.post("/voice-command", json={"text": "tell me about good website colors"}).get_json()
     assert chat["action"] == "chat"
+
+
+def test_product_help_and_edit_commands_route(client):
+    expected = {
+        "what can I do here": "help_guide",
+        "make it more professional": "edit_website",
+        "add a section about competitions": "edit_website",
+        "change website name to CodeUp Web": "edit_website",
+        "make the buttons clearer": "edit_website",
+        "add a footer": "edit_website",
+        "start over": "reset_session",
+    }
+
+    for command, action in expected.items():
+        routed = client.post("/voice-command", json={"text": command}).get_json()
+        assert routed["action"] == action, command
+
+
+def test_export_zip_includes_readme_and_accessibility_report_when_audit_supplied(client):
+    audit = {
+        "score": 70,
+        "issues": [
+            {
+                "severity": "high",
+                "description": "An image is missing alt text.",
+                "why_matters": "Screen reader users need image purpose.",
+                "suggested_fix": "Add alt text.",
+            }
+        ],
+        "suggestions": ["Add meaningful alt text."],
+    }
+
+    response = client.post(
+        "/export-site.zip",
+        json={
+            "name": "Audit Export",
+            "audit": audit,
+            "files": {
+                "index.html": "<!doctype html><html lang='en'><head><title>Demo</title></head><body><main><h1>Demo</h1></main></body></html>",
+                "style.css": "a:focus-visible { outline: 3px solid #f59e0b; }",
+                "script.js": "",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
+        names = set(archive.namelist())
+        assert {
+            "index.html",
+            "style.css",
+            "script.js",
+            "README.txt",
+            "accessibility_report.txt",
+            "manifest.json",
+        } <= names
+        report = archive.read("accessibility_report.txt").decode("utf-8")
+        assert "Accessibility score: 70/100" in report
+        assert "Why it matters: Screen reader users need image purpose." in report

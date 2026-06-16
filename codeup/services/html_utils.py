@@ -328,11 +328,13 @@ def _issue(
     suggestion: str,
     selector: str = "document",
     autofix: bool = False,
+    why_matters: str = "This can make the website harder to understand or use.",
 ) -> dict[str, Any]:
     return {
         "id": issue_id,
         "severity": severity,
         "description": description,
+        "why_matters": why_matters,
         "selector": selector,
         "suggested_fix": suggestion,
         "autofix": autofix,
@@ -346,6 +348,7 @@ def audit_html(html: str) -> AuditResult:
     images = iter_nodes(root, {"img"})
     links = iter_nodes(root, {"a"})
     buttons = iter_nodes(root, {"button"})
+    divs = iter_nodes(root, {"div"})
     headings = [node for node in iter_nodes(root) if re.fullmatch(r"h[1-6]", node.tag)]
     labels = iter_nodes(root, {"label"})
     inputs = iter_nodes(root, {"input", "textarea", "select"})
@@ -464,6 +467,18 @@ def audit_html(html: str) -> AuditResult:
                     True,
                 )
             )
+        elif accessible_name(link).strip().lower() in {"click here", "here", "read more", "more", "learn more"}:
+            issues.append(
+                _issue(
+                    "vague_link_text",
+                    "medium",
+                    "A link uses vague text that does not explain its destination.",
+                    "Use link text that describes where the link goes.",
+                    link.selector(),
+                    False,
+                    "Screen reader users often list links out of context, so vague labels are confusing.",
+                )
+            )
     if not landmark_nodes:
         issues.append(
             _issue(
@@ -473,6 +488,18 @@ def audit_html(html: str) -> AuditResult:
                 "Wrap body content in main and section landmarks.",
                 "body",
                 True,
+            )
+        )
+    if len(divs) >= 6 and len(landmark_nodes) < 2:
+        issues.append(
+            _issue(
+                "non_semantic_div_structure",
+                "medium",
+                "The page relies heavily on div elements instead of semantic sections.",
+                "Use header, nav, main, section, article, and footer where they match the content.",
+                "body",
+                False,
+                "Semantic elements give screen reader users a map of the page.",
             )
         )
     for control in unlabeled_controls:
@@ -496,6 +523,7 @@ def audit_html(html: str) -> AuditResult:
                 "Use heading levels in order.",
                 "headings",
                 False,
+                "Screen reader users navigate by heading level, so skipped levels can hide the page structure.",
             )
         )
     suggestions: list[str] = []
@@ -519,9 +547,24 @@ def audit_html(html: str) -> AuditResult:
                 "Increase contrast to at least 4.5:1.",
                 "style",
                 False,
+                "Low contrast can make text unreadable for low-vision users and many mobile users.",
             )
         )
         suggestions.append("Increase text/background contrast until each normal text pair is at least 4.5:1.")
+    has_interactive_controls = bool(links or buttons or inputs)
+    has_author_styles = bool(re.search(r"<style\b|\sstyle\s*=", html, re.I))
+    if has_interactive_controls and has_author_styles and not re.search(r":focus(?:-visible)?\b", html, re.I):
+        issues.append(
+            _issue(
+                "missing_focus_style",
+                "medium",
+                "The CSS does not define a clear keyboard focus style.",
+                "Add a visible :focus-visible outline for links, buttons, and form fields.",
+                "style",
+                False,
+                "Keyboard users need a visible marker that shows where they are on the page.",
+            )
+        )
     if any(not check["passed"] for check in src):
         suggestions.append(
             "Run the page by headings, landmarks, and control names to match common screen reader navigation patterns."

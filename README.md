@@ -1,12 +1,12 @@
-# CodeUp HTML
+# CodeUp Web
 
 [![CI](https://github.com/da-taki/CodeUp-web/actions/workflows/ci.yml/badge.svg)](https://github.com/da-taki/CodeUp-web/actions/workflows/ci.yml)
 
-CodeUp HTML (CodeUp-Web) is a blind-first **web IDE** for students who want to
-create real websites through voice, a typed command box, and the keyboard. It
-ships a serious three-pane editor (HTML, CSS, and JavaScript), a live preview,
-and a voice/command engine that can generate a complete, polished website from a
-single request such as *"generate a website for my robotics lab"*.
+CodeUp Web is an accessibility-first, voice-first website builder for beginners,
+especially blind and visually impaired students. A student can describe a
+website, generate a complete HTML/CSS/JavaScript project, preview it, improve it
+with natural-language edits, check accessibility, fix safe issues, and export a
+ZIP, using either speech or the typed command box.
 
 Every generation produces all three files — `index.html`, `style.css`, and
 `script.js` — wired together correctly, then loads them into the matching
@@ -14,7 +14,27 @@ editors. Generated sites are responsive, accessible, and visually polished, and
 they never rely on external/broken assets (gradients, CSS shapes, and emoji are
 used instead). You can also save named projects, preview locally, hear a visual
 review, read the code aloud, get a beginner-friendly code map, audit/fix
-accessibility, save/load snippets, and export a single HTML file or a ZIP.
+accessibility, save/load snippets, and export a ZIP with source files,
+instructions, and the latest accessibility report when one exists.
+
+### Accessibility-first workflow
+
+Use the command box or the microphone for the same commands:
+
+- `what can I do here` gives a short spoken/displayed guide.
+- `make a website for my school robotics club` creates an accessible starter website.
+- `add an about section`, `make it more professional`, or `change website name to CodeUp Web` edits the current website instead of replacing it.
+- `check accessibility` reports issues with severity, why they matter, and suggested fixes.
+- `fix accessibility issues` applies safe deterministic fixes.
+- `preview website` refreshes the hosted local preview.
+- `export website` downloads a ZIP containing `index.html`, `style.css`, `script.js`, `README.txt`, and `accessibility_report.txt` if an audit has run.
+
+CodeUp Web works without cloud AI. Set `AI_CLOUD_ENABLED=0` for deterministic
+offline templates covering portfolio, school club, project showcase,
+event/workshop, small business, accessibility project, and simple landing-page
+requests. Voice recognition depends on browser support; Chrome or Edge is
+recommended. If microphone APIs are unavailable, the command box exercises the
+same routes.
 
 ### IDE controls
 

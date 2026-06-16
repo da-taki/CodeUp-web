@@ -127,6 +127,16 @@ def _watchpoint_slots(command: str) -> dict[str, Any]:
 RULES: tuple[IntentRule, ...] = (
     IntentRule("set_wake_word", 100, (r"\b(set|change)\s+wake\s+word\s+to\b",)),
     IntentRule(
+        "help_guide",
+        100,
+        (
+            r"^what\s+can\s+i\s+do\s+here\??$",
+            r"^help$",
+            r"\bshow\s+examples\b",
+            r"\bwhat\s+can\s+codeup\s+web\s+do\b",
+        ),
+    ),
+    IntentRule(
         "tutorial_start",
         100,
         (r"^start\s+tutorial$", r"^tutorial$", r"\bpracti[cs]e\s+(html|css|javascript|accessibility)\b"),
@@ -460,6 +470,8 @@ RULES: tuple[IntentRule, ...] = (
             r"\bpage\s+clear\s+karo\b",
             r"\bnaya\s+page\s+shuru\s+karo\b",
             r"\bclear\s+editor\b",
+            r"^start\s+over$",
+            r"\bstart\s+over\b",
         ),
     ),
     IntentRule(
@@ -478,6 +490,23 @@ RULES: tuple[IntentRule, ...] = (
         ),
     ),
     IntentRule("polish_html", 63, (r"\bpolish\b", r"\bfix\s+html\b", r"\bimprove\b", r"\btheek\b")),
+    IntentRule(
+        "edit_website",
+        64,
+        (
+            r"\bmake\s+it\s+more\s+professional\b",
+            r"\bmake\s+it\s+simpler\b",
+            r"\bmake\s+(?:the\s+)?text\s+easier\s+to\s+read\b",
+            r"\badd\s+(?:an?\s+)?about\s+section\b",
+            r"\badd\s+(?:an?\s+)?section\s+about\b",
+            r"\badd\s+(?:an?\s+)?section\s+for\b",
+            r"\bchange\s+(?:the\s+)?(?:website\s+)?(?:name|title)\s+to\b",
+            r"\bmake\s+(?:the\s+)?title\s+shorter\b",
+            r"\bimprove\s+(?:the\s+)?navigation\b",
+            r"\bmake\s+(?:the\s+)?buttons?\s+clearer\b",
+            r"\badd\s+(?:a\s+)?footer\b",
+        ),
+    ),
     IntentRule(
         "save_snippet",
         62,
