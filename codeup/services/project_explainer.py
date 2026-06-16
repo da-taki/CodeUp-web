@@ -310,6 +310,351 @@ def build_preview_description(
     return "\n".join(lines).strip() + "\n"
 
 
+_NUMBER_WORDS = {
+    0: "no",
+    1: "one",
+    2: "two",
+    3: "three",
+    4: "four",
+    5: "five",
+    6: "six",
+    7: "seven",
+    8: "eight",
+    9: "nine",
+    10: "ten",
+}
+
+
+def _count_phrase(count: int, singular: str, plural: str | None = None) -> str:
+    plural = plural or f"{singular}s"
+    word = _NUMBER_WORDS.get(count, str(count))
+    return f"{word} {singular if count == 1 else plural}"
+
+
+def _join_clause(parts: list[str]) -> str:
+    parts = [part for part in parts if part]
+    if not parts:
+        return "nothing yet"
+    if len(parts) == 1:
+        return parts[0]
+    if len(parts) == 2:
+        return f"{parts[0]} and {parts[1]}"
+    return ", ".join(parts[:-1]) + f", and {parts[-1]}"
+
+
+def build_landmarks_summary(
+    html: str,
+    css: str = "",
+    js: str = "",
+    *,
+    name: str = "",
+    project_type: str = "",
+    audit: dict[str, Any] | None = None,
+) -> str:
+    ctx = project_context(html, css, js, name=name, project_type=project_type, audit=audit)
+    records = ctx["records"]
+
+    def count(tag: str) -> int:
+        return sum(1 for record in records if record.tag == tag)
+
+    headers, navs, mains = count("header"), count("nav"), count("main")
+    sections, articles, asides = count("section"), count("article"), count("aside")
+    forms, footers = count("form"), count("footer")
+    buttons = len([record for record in records if record.tag == "button"])
+
+    spoken_parts: list[str] = []
+    if headers:
+        spoken_parts.append("a header")
+    if navs:
+        spoken_parts.append("navigation")
+    if mains:
+        spoken_parts.append("a main content area")
+    if sections:
+        spoken_parts.append(_count_phrase(sections, "section"))
+    if articles:
+        spoken_parts.append(_count_phrase(articles, "article"))
+    if asides:
+        spoken_parts.append(_count_phrase(asides, "complementary area", "complementary areas"))
+    if forms:
+        spoken_parts.append(_count_phrase(forms, "contact form" if project_type == "contact_form" else "form"))
+    if buttons:
+        spoken_parts.append(_count_phrase(buttons, "button"))
+    if footers:
+        spoken_parts.append("a footer")
+    spoken = f"This website has {_join_clause(spoken_parts)}."
+
+    landmark_records = [
+        record
+        for record in records
+        if record.tag in {"header", "nav", "main", "section", "article", "aside", "footer", "form"}
+    ]
+    lines = [
+        f"WEB LANDMARKS: {ctx['name']}",
+        "",
+        spoken,
+        "",
+        "Landmarks and sections in reading order:",
+    ]
+    if landmark_records:
+        lines.extend(
+            f"- {record.tag}{': ' + _clean_text(record.name) if record.name else ''}" for record in landmark_records
+        )
+    else:
+        lines.append("- no landmark elements found yet")
+    lines.extend(
+        [
+            "",
+            f"Forms: {forms}. Buttons: {buttons}. Footer: {'yes' if footers else 'no'}.",
+            "Tip: landmarks let screen reader users jump straight to a region instead of reading everything.",
+        ]
+    )
+    return "\n".join(lines).strip() + "\n"
+
+
+def build_trainer_notes(
+    html: str,
+    css: str = "",
+    js: str = "",
+    *,
+    name: str = "",
+    project_type: str = "",
+    audit: dict[str, Any] | None = None,
+) -> str:
+    ctx = project_context(html, css, js, name=name, project_type=project_type, audit=audit)
+    issues = ctx["audit"].get("issues") if isinstance(ctx["audit"].get("issues"), list) else []
+    concepts = ["Semantic HTML landmarks and a clear heading outline"]
+    if ctx["css_rules"]:
+        concepts.append("CSS selectors that connect visual style to HTML")
+    if ctx["js_map"]["listeners"]:
+        concepts.append("JavaScript event listeners that respond to the visitor")
+    if ctx["controls"]:
+        concepts.append("Labels and names so assistive technology can announce controls")
+    discussion = [
+        f"How does a screen reader move through {ctx['title']}?",
+        "Which heading helps a visitor understand the page first?",
+        "Why do buttons and links need readable names?",
+    ]
+    next_task = "Ask the learner to add one more section and re-run the accessibility check."
+    if ctx["project_type"] in {"quiz_app", "calculator_app", "todo_app", "flashcard_app", "poll_page"}:
+        next_task = "Ask the learner to add one more interaction and explain it with step narration."
+    mistakes = [
+        "Images without alt text, or decorative images that should be empty alt.",
+        "Buttons or links whose text does not say what they do.",
+        "Skipping heading levels (for example h1 then h3).",
+    ]
+    lines = [
+        f"TRAINER NOTES: {ctx['name']}",
+        "",
+        "Project summary:",
+        f"- {ctx['project_type_label']} with {len(ctx['headings'])} headings, "
+        f"{len(ctx['sections'])} landmark or section elements, and {len(ctx['controls'])} controls.",
+        f"- Latest accessibility score: {ctx['audit'].get('score', 'unknown')}/100.",
+        "",
+        "Concepts used:",
+        *(f"- {item}" for item in concepts),
+        "",
+        "Accessibility ideas to highlight:",
+        "- Semantic landmarks, headings, labels, alt text, visible focus, and readable contrast.",
+        "- Encourage testing with the keyboard only and with a screen reader.",
+        "",
+        "Suggested discussion questions:",
+        *(f"- {item}" for item in discussion),
+        "",
+        f"Suggested next task:\n- {next_task}",
+        "",
+        "Common mistakes to watch for:",
+        *(f"- {item}" for item in mistakes),
+    ]
+    if issues:
+        lines.extend(
+            [
+                "",
+                "Issues from the latest audit to review together:",
+                *(
+                    f"- {issue.get('severity', 'unknown')}: {issue.get('description', issue.get('id', 'issue'))}"
+                    for issue in issues[:5]
+                    if isinstance(issue, dict)
+                ),
+            ]
+        )
+    return "\n".join(lines).strip() + "\n"
+
+
+def build_student_recap(
+    html: str,
+    css: str = "",
+    js: str = "",
+    *,
+    name: str = "",
+    project_type: str = "",
+    audit: dict[str, Any] | None = None,
+    commands: list[str] | None = None,
+) -> str:
+    ctx = project_context(html, css, js, name=name, project_type=project_type, audit=audit)
+    commands = [str(item).strip() for item in (commands or []) if str(item).strip()][-8:]
+    html_concepts = ["You used HTML landmarks and headings to give the page meaning and reading order."]
+    css_concepts = (
+        ["You used CSS selectors to style the page without changing its meaning."]
+        if ctx["css_rules"]
+        else ["Next time, try CSS to change colors, spacing, or layout."]
+    )
+    js_concepts = (
+        ["You used JavaScript event listeners so the page responds to clicks or typing."]
+        if ctx["js_map"]["listeners"]
+        else ["Next time, try a small JavaScript button interaction."]
+    )
+    a11y_concepts = [
+        "You practiced accessibility: labels, alt text, button names, focus, and contrast.",
+        f"Your latest accessibility score was {ctx['audit'].get('score', 'unknown')}/100.",
+    ]
+    lines = [
+        f"STUDENT RECAP: {ctx['name']}",
+        "",
+        f"What you created:\n- A {ctx['project_type_label'].lower()} called {ctx['title']}.",
+        "",
+        "Commands you used:",
+    ]
+    if commands:
+        lines.extend(f"- {item}" for item in commands)
+    else:
+        lines.append("- (command history was not recorded this session)")
+    lines.extend(
+        [
+            "",
+            "HTML concepts:",
+            *(f"- {item}" for item in html_concepts),
+            "",
+            "CSS concepts:",
+            *(f"- {item}" for item in css_concepts),
+            "",
+            "JavaScript concepts:",
+            *(f"- {item}" for item in js_concepts),
+            "",
+            "Accessibility concepts:",
+            *(f"- {item}" for item in a11y_concepts),
+            "",
+            "Next steps:",
+            "- Ask for a code map, edit one section, check accessibility, then export your project.",
+        ]
+    )
+    return "\n".join(lines).strip() + "\n"
+
+
+def build_screen_reader_summary(
+    html: str,
+    css: str = "",
+    js: str = "",
+    *,
+    name: str = "",
+    project_type: str = "",
+    audit: dict[str, Any] | None = None,
+) -> str:
+    """Describe the project for screen-reader testing. Never generates code."""
+    ctx = project_context(html, css, js, name=name, project_type=project_type, audit=audit)
+    records = ctx["records"]
+    reading_order = [
+        record.tag
+        for record in records
+        if record.tag in {"header", "nav", "main", "section", "article", "aside", "footer", "form"}
+    ]
+    headings = [f"{record.tag.upper()} {_clean_text(record.text, record.tag)}" for record in ctx["headings"][:10]]
+    links = [record for record in records if record.tag == "a"]
+    buttons = [record for record in records if record.tag == "button"]
+    forms = [record for record in records if record.tag == "form"]
+    issues = ctx["audit"].get("issues") if isinstance(ctx["audit"].get("issues"), list) else []
+    heading_lines = [f"- {item}" for item in headings] or ["- no headings found"]
+    lines = [
+        f"SCREEN READER SUMMARY: {ctx['name']}",
+        "",
+        f"Project title: {ctx['title']}.",
+        "",
+        "Reading order (landmarks): " + (", ".join(reading_order) if reading_order else "no landmarks found") + ".",
+        "",
+        "Heading structure:",
+        *heading_lines,
+        "",
+        f"Forms, buttons, and links: {len(forms)} form(s), {len(buttons)} button(s), {len(links)} link(s).",
+        "",
+        "Known accessibility issues:",
+    ]
+    if issues:
+        lines.extend(
+            f"- {issue.get('severity', 'unknown')}: {issue.get('description', issue.get('id', 'issue'))}"
+            for issue in issues[:8]
+            if isinstance(issue, dict)
+        )
+    else:
+        lines.append("- none reported in the latest audit")
+    lines.extend(
+        [
+            "",
+            "Suggested screen-reader testing path:",
+            "1. Read the page top to bottom and confirm the title and main heading make sense.",
+            "2. Move by landmarks (header, navigation, main, footer) and by headings.",
+            "3. Tab through links, buttons, and form fields; confirm each announces a clear name.",
+            "4. Check images announce useful alt text and that focus is always visible.",
+            "Recommended tools: NVDA or Narrator on Windows, VoiceOver on macOS; Chrome or Edge.",
+        ]
+    )
+    return "\n".join(lines).strip() + "\n"
+
+
+def build_change_replay(
+    *,
+    html_before: str = "",
+    html_after: str = "",
+    css_before: str = "",
+    css_after: str = "",
+    js_before: str = "",
+    js_after: str = "",
+    instruction: str = "",
+    provided: str = "",
+) -> str:
+    """Explain the most recent edit. Reuses the deterministic mistake-replay diff."""
+    if provided.strip():
+        body = provided.strip()
+    else:
+        from codeup.services.web_learning import mistake_replay
+
+        replay = mistake_replay(
+            html_before=html_before,
+            html_after=html_after,
+            css_before=css_before,
+            css_after=css_after,
+            js_before=js_before,
+            js_after=js_after,
+        )
+        body = "\n".join(f"- {change}" for change in replay["changes"])
+    header = "CHANGE REPLAY"
+    asked = (
+        f"You asked: {instruction.strip()}." if instruction.strip() else "Your most recent edit changed the project."
+    )
+    return f"{header}\n\n{asked}\n\nWhat changed:\n{body}\n".strip() + "\n"
+
+
+def build_bookmarks_report(bookmarks: Any) -> str:
+    lines = ["BOOKMARKS", "", "Saved sections and notes you can revisit:"]
+    entries: list[str] = []
+    if isinstance(bookmarks, dict):
+        for label, value in bookmarks.items():
+            detail = ""
+            if isinstance(value, dict):
+                detail = str(value.get("section") or value.get("issue") or value.get("editor") or "").strip()
+            entries.append(f"- {label}{': ' + detail if detail else ''}")
+    elif isinstance(bookmarks, list):
+        for item in bookmarks:
+            if isinstance(item, dict):
+                label = str(item.get("name") or item.get("label") or "bookmark").strip()
+                detail = str(item.get("section") or item.get("note") or "").strip()
+                entries.append(f"- {label}{': ' + detail if detail else ''}")
+            elif str(item).strip():
+                entries.append(f"- {str(item).strip()}")
+    if not entries:
+        entries.append("- no bookmarks saved")
+    lines.extend(entries)
+    return "\n".join(lines).strip() + "\n"
+
+
 def build_export_artifacts(
     html: str,
     css: str = "",
@@ -319,10 +664,13 @@ def build_export_artifacts(
     project_type: str = "",
     audit: dict[str, Any] | None = None,
     provided: dict[str, str] | None = None,
+    commands: list[str] | None = None,
+    change_replay: dict[str, Any] | None = None,
+    bookmarks: Any = None,
 ) -> dict[str, str]:
     provided = provided or {}
     code_map = provided.get("code_map") or build_code_map(html, css, js).get("summary", "")
-    return {
+    artifacts = {
         "CODE_MAP.txt": code_map.strip() + "\n",
         "STEP_NARRATION.txt": (
             provided.get("step_narration")
@@ -354,4 +702,52 @@ def build_export_artifacts(
             or build_preview_description(html, css, js, name=name, project_type=project_type)
         ).strip()
         + "\n",
+        # Learner-support artifacts ported from the main CodeUp project. These are
+        # always generated from the current project state at export time.
+        "TRAINER_NOTES.txt": (
+            provided.get("trainer_notes")
+            or build_trainer_notes(html, css, js, name=name, project_type=project_type, audit=audit)
+        ).strip()
+        + "\n",
+        "STUDENT_RECAP.txt": (
+            provided.get("student_recap")
+            or build_student_recap(html, css, js, name=name, project_type=project_type, audit=audit, commands=commands)
+        ).strip()
+        + "\n",
+        "SCREEN_READER_SUMMARY.txt": (
+            provided.get("screen_reader_summary")
+            or build_screen_reader_summary(html, css, js, name=name, project_type=project_type, audit=audit)
+        ).strip()
+        + "\n",
     }
+
+    # CHANGE_REPLAY only when an edit actually happened (text provided or before/after given).
+    replay_text = ""
+    if provided.get("change_replay"):
+        replay_text = build_change_replay(
+            provided=provided["change_replay"], instruction=provided.get("instruction", "")
+        )
+    elif isinstance(change_replay, dict) and any(
+        str(change_replay.get(key) or "").strip()
+        for key in ("html_before", "html_after", "css_before", "css_after", "js_before", "js_after")
+    ):
+        replay_text = build_change_replay(
+            html_before=str(change_replay.get("html_before") or ""),
+            html_after=str(change_replay.get("html_after") or ""),
+            css_before=str(change_replay.get("css_before") or ""),
+            css_after=str(change_replay.get("css_after") or ""),
+            js_before=str(change_replay.get("js_before") or ""),
+            js_after=str(change_replay.get("js_after") or ""),
+            instruction=str(change_replay.get("instruction") or ""),
+        )
+    if replay_text.strip():
+        artifacts["CHANGE_REPLAY.txt"] = replay_text.strip() + "\n"
+
+    # BOOKMARKS only when bookmarks exist.
+    has_bookmarks = bool(bookmarks) and (
+        (isinstance(bookmarks, dict) and len(bookmarks) > 0) or (isinstance(bookmarks, list) and len(bookmarks) > 0)
+    )
+    if has_bookmarks:
+        artifacts["BOOKMARKS.txt"] = build_bookmarks_report(bookmarks).strip() + "\n"
+
+    return artifacts

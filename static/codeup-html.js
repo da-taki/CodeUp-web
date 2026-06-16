@@ -481,7 +481,41 @@ if (cta) {
 
   function finishReplay(label) {
     state.replay.after = sourceSnapshot(label || 'After change');
+    // A fresh generation is not an "edit"; everything else counts as a change.
+    if (!/generation/i.test(label || '')) {
+      state.editHappened = true;
+      state.lastEditInstruction = state.lastCommand || (state.commandHistory || []).slice(-1)[0] || state.lastEditInstruction || '';
+    }
     persistDrafts();
+  }
+
+  // Snapshot of the most recent edit for export, only when an edit actually happened.
+  function exportChangeReplay() {
+    if (!state.editHappened) return null;
+    const before = state.replay && state.replay.before;
+    if (!before) return null;
+    const after = (state.replay && state.replay.after) || sourceSnapshot('Current code');
+    return {
+      html_before: before.html,
+      html_after: after.html,
+      css_before: before.css,
+      css_after: after.css,
+      js_before: before.js,
+      js_after: after.js,
+      instruction: state.lastEditInstruction || '',
+    };
+  }
+
+  // Append a friendly, accessible "Try this next" line to the output panel.
+  function suggestNext(suggestions) {
+    const list = (suggestions || []).filter(Boolean);
+    if (!list.length) return;
+    const line = 'Try this next: ' + list.map((item) => `"${item}"`).join(', ') + '.';
+    const output = $('output');
+    if (output && (output.textContent || '').trim()) {
+      output.textContent += `\n\n${line}`;
+      state.lastOutput = output.textContent;
+    }
   }
 
   async function narrateReplay(reason, title) {
@@ -1012,6 +1046,12 @@ if (cta) {
           project_review: state.lastProjectReview,
           preview_description: state.lastPreviewDescription,
           project_summary: state.lastProjectSummary,
+          trainer_notes: state.lastTrainerNotes,
+          student_recap: state.lastStudentRecap,
+          screen_reader_summary: state.lastScreenReaderSummary,
+          commands: (state.commandHistory || []).slice(-20),
+          change_replay: exportChangeReplay(),
+          bookmarks: loadJsonStore('codeup_bookmarks', {}),
         }),
       });
       if (!response.ok) {
@@ -1030,8 +1070,8 @@ if (cta) {
       setTimeout(() => URL.revokeObjectURL(objectUrl), 500);
       state.exportStatus = 'exported';
       writeOutput(t(
-        'Exported your project ZIP with HTML, CSS, JavaScript, code map, step narration, learning notes, accessibility report, review, and preview description.',
-        'Aapka project ZIP HTML, CSS, JavaScript, code map, step narration, learning notes, accessibility report, review aur preview description ke saath export ho gaya.'
+        'Done! Your ZIP includes index.html, style.css, script.js, README.txt, and learning notes: CODE_MAP.txt, STEP_NARRATION.txt, LEARNING_NOTES.txt, PROJECT_SUMMARY.txt, PROJECT_REVIEW.txt, PREVIEW_DESCRIPTION.txt, TRAINER_NOTES.txt, STUDENT_RECAP.txt, and SCREEN_READER_SUMMARY.txt. Open index.html to view your site.',
+        'Ho gaya! Aapke ZIP mein index.html, style.css, script.js, README.txt, aur learning notes hain: CODE_MAP.txt, STEP_NARRATION.txt, LEARNING_NOTES.txt, PROJECT_SUMMARY.txt, PROJECT_REVIEW.txt, PREVIEW_DESCRIPTION.txt, TRAINER_NOTES.txt, STUDENT_RECAP.txt, aur SCREEN_READER_SUMMARY.txt. Site dekhne ke liye index.html kholiye.'
       ), true);
       stopHeartbeat(token);
     } catch (error) {
@@ -1318,6 +1358,8 @@ if (cta) {
       if (!isAsyncFresh(token)) return;
       stopHeartbeat(token);
       writeOutput(message, shouldSpeak);
+      const issueCount = (audit.issues || []).length;
+      suggestNext(issueCount ? ['fix accessibility issues', 'accessibility map'] : ['describe preview', 'export website']);
       await checkWatchpoints('Audit');
     } catch (error) {
       if (!isAsyncFresh(token)) return;
@@ -1641,6 +1683,9 @@ if (cta) {
           : `Ho gaya. Alag index.html, style.css aur script.js files ban gayi aur preview update ho gaya. ${summary}`
       );
       writeOutput(message, shouldSpeak);
+      suggestNext(isEdit
+        ? ['replay change', 'check accessibility', 'describe preview']
+        : ['code map', 'add a section about competitions', 'check accessibility']);
       updateStateIndicator('IDLE');
       stopHeartbeat(token);
       await checkWatchpoints('Generation');
@@ -2289,7 +2334,8 @@ if (cta) {
     if (state.tutorial.index < 0) state.tutorial.index = 0;
     state.tutorial.current = tutorialOrder[state.tutorial.index];
     const module = currentTutorialModule();
-    const msg = `${module.title}. ${module.explanation} Say or type exactly: ${module.command}. Then I will check your work.`;
+    const tour = 'Guided tutorial. We will build a website, ask for a code map, edit it, check accessibility, then export it. Say "next" to move on, "repeat" to hear the step again, or "exit tutorial" to stop.';
+    const msg = `${tour}\n\nStep 1 — ${module.title}. ${module.explanation} Say or type exactly: ${module.command}. Then I will check your work.`;
     updateTutorialPanel(msg);
     writeOutput(msg, true);
   }
@@ -2356,7 +2402,7 @@ if (cta) {
   }
 
   function isTutorialControlCommand(lower) {
-    return /^(continue|try again|practise again|practice again|recap|hint|repeat|give me an example|read my code|exit tutorial|start coding)$/.test(lower)
+    return /^(continue|next|next step|try again|practise again|practice again|recap|hint|repeat|give me an example|read my code|exit tutorial|start coding)$/.test(lower)
       || lower === 'tutorial' || lower === 'start tutorial' || /^practi[cs]e\s+(html|css|javascript|accessibility)$/.test(lower);
   }
 
@@ -2408,7 +2454,7 @@ if (cta) {
     const lower = command.toLowerCase();
     if (lower === 'start tutorial' || lower === 'tutorial' || /^practi[cs]e\s+/.test(lower)) { await startTutorial(lower); return true; }
     if (!state.tutorial.active && !isTutorialControlCommand(lower)) return false;
-    if (lower === 'continue') { await continueTutorial(); return true; }
+    if (lower === 'continue' || lower === 'next' || lower === 'next step') { await continueTutorial(); return true; }
     if (lower === 'try again' || lower === 'practise again' || lower === 'practice again' || lower === 'repeat' || lower === 'give me an example') {
       const module = currentTutorialModule();
       const msg = module ? `Try this exact command: ${module.command}.` : 'Start tutorial first.';
@@ -2482,8 +2528,11 @@ if (cta) {
 
   function saveBookmark(command) {
     const name = bookmarkName(command);
+    const sectionMatch = command.match(/\bbookmark\s+(?:this|the|current|that)?\s*(.+?)\s+as\s+/i);
+    const section = (sectionMatch ? sectionMatch[1] : '').trim();
     const bookmarks = loadJsonStore('codeup_bookmarks', {});
     bookmarks[name] = {
+      section,
       output: state.lastOutput,
       codeMap: state.lastCodeMap,
       issue: state.lastPauseReason || (((state.lastAudit || {}).issues || [])[0] || {}).description || '',
@@ -2882,6 +2931,25 @@ if (cta) {
     return projectText('/project-summary', 'lastProjectSummary', 'Building project summary');
   }
 
+  // ----- Learner-support features ported from the main CodeUp project -----
+  async function landmarks() {
+    return projectText('/project-landmarks', 'lastLandmarks', 'Listing page landmarks');
+  }
+
+  async function trainerNotes() {
+    return projectText('/trainer-notes', 'lastTrainerNotes', 'Writing trainer notes');
+  }
+
+  async function studentRecap() {
+    return projectText('/student-recap', 'lastStudentRecap', 'Building your learning recap', {
+      commands: (state.commandHistory || []).slice(-12),
+    });
+  }
+
+  async function screenReaderSummary() {
+    return projectText('/screen-reader-summary', 'lastScreenReaderSummary', 'Preparing screen reader summary');
+  }
+
   function explainJs() {
     const map = buildCodeMap();
     if (!map.fns.length && !map.events.length) {
@@ -3089,6 +3157,41 @@ if (cta) {
     refreshSnippetSelect();
   }
 
+  // Gentle command repair: fix common web-command typos before routing. This only
+  // rewrites whole command tokens (and a couple of phrases), so it never touches the
+  // contents of generated HTML, CSS, or JavaScript.
+  const COMMAND_PHRASE_REPAIRS = [
+    [/\bexport\s+side\b/gi, 'export site'],
+    [/\bmake\s+webside\b/gi, 'make website'],
+  ];
+  const COMMAND_TOKEN_REPAIRS = {
+    webside: 'website', wesbite: 'website', websit: 'website', wbsite: 'website',
+    accessiblity: 'accessibility', accesibility: 'accessibility', accessibilty: 'accessibility', acessibility: 'accessibility',
+    explane: 'explain', explian: 'explain',
+    profeshnal: 'professional', profesional: 'professional', professionl: 'professional',
+    cantact: 'contact', conatct: 'contact',
+    naration: 'narration', nardation: 'narration',
+    mapp: 'map',
+  };
+  const COMMAND_TOKEN_RE = new RegExp('\\b(' + Object.keys(COMMAND_TOKEN_REPAIRS).join('|') + ')\\b', 'gi');
+
+  function repairCommand(text) {
+    if (!text) return text;
+    let repaired = text;
+    COMMAND_PHRASE_REPAIRS.forEach(([pattern, replacement]) => { repaired = repaired.replace(pattern, replacement); });
+    repaired = repaired.replace(COMMAND_TOKEN_RE, (match) => COMMAND_TOKEN_REPAIRS[match.toLowerCase()] || match);
+    return repaired;
+  }
+
+  function recordCommand(text) {
+    const clean = (text || '').trim();
+    if (!clean) return;
+    state.commandHistory = state.commandHistory || [];
+    if (state.commandHistory[state.commandHistory.length - 1] === clean) return;
+    state.commandHistory.push(clean);
+    if (state.commandHistory.length > 40) state.commandHistory.shift();
+  }
+
   // Natural-language commands that are specific to the 3-file IDE. Returns true
   // when handled. Shared by both the voice route and the typed command box.
   function handleIdeCommand(command, lower) {
@@ -3101,7 +3204,11 @@ if (cta) {
     if (handleWebInsertCommand(command, lower)) return true;
     if (lower.includes('where am i') || lower.includes('read breadcrumb') || lower.includes('what am i editing')) { breadcrumb(); return true; }
     if (lower.includes('step narration') || lower.includes('narrate steps') || lower.includes('walk me through') || lower.includes('how this runs') || lower.includes('how does this code work') || lower.includes('teach me this website')) { stepNarration(); return true; }
-    if (lower.includes('learning notes') || lower.includes('what did i learn') || lower.includes('trainer notes') || lower.includes('lesson notes') || lower.includes('concepts used') || lower.includes('concepts are in this project')) { learningNotes(); return true; }
+    if (lower.includes('trainer notes') || lower.includes('teacher notes') || lower.includes('trainer handoff') || lower.includes('lesson notes') || /notes? for (the )?teacher/.test(lower)) { trainerNotes(); return true; }
+    if (lower.includes('what did i learn') || lower.includes('session recap') || lower.includes('learning recap')) { studentRecap(); return true; }
+    if (lower === 'landmarks' || lower.includes('list landmarks') || lower.includes('website landmarks') || lower.includes('page landmarks') || lower.includes('show landmarks') || lower === 'sections' || lower === 'show sections' || lower.includes('show me the sections') || lower.includes('list sections') || lower.includes('page sections')) { landmarks(); return true; }
+    if (/prepare (this )?for nvda/.test(lower) || /prepare (this )?for (a )?screen reader/.test(lower) || lower.includes('screen reader summary') || lower.includes('nvda summary') || lower === 'nvda') { screenReaderSummary(); return true; }
+    if (lower.includes('learning notes') || lower.includes('concepts used') || lower.includes('concepts are in this project')) { learningNotes(); return true; }
     if (lower.includes('accessibility map') || lower.includes('explain accessibility') || lower.includes('accessibility explanation') || lower.includes('accessibility notes')) { accessibilityMap(); return true; }
     if (lower.includes('review project') || lower.includes('review this project') || lower.includes('review this code') || lower.includes('is this website good') || lower.includes('what should i improve')) { reviewProject(); return true; }
     if (lower.includes('describe preview') || lower.includes('describe output') || lower.includes('what does the website look like') || lower.includes('what will the user see')) { describePreview(); return true; }
@@ -3109,15 +3216,15 @@ if (cta) {
     if ((lower.includes('explain') || lower.includes('summarize') || lower.includes('summarise') || lower.includes('what does')) && (lower.includes('index.html') || lower.includes('html file') || lower.includes('css') || lower.includes('style.css') || lower.includes('style file') || lower.includes('javascript') || lower.includes('java script') || /\bjs\b/.test(lower) || lower.includes('script.js') || lower.includes('script file'))) { explainProjectFile(command); return true; }
     if (lower.includes('explain simply') || lower.includes('explain this error') || lower.includes('why is this broken')) { explainErrors(false); return true; }
     if (lower.includes('fix and explain')) { explainErrors(true); return true; }
-    if (lower.includes('compare before and after') || lower.includes('replay my mistake') || lower.includes('show changed lines') || lower.includes('read only what changed') || lower.includes('compare preview changes') || lower.includes('compare code changes')) { narrateReplay(command); return true; }
+    if (lower.includes('compare before and after') || lower.includes('replay my mistake') || lower.includes('replay change') || lower.includes('replay the change') || lower === 'what changed' || lower.includes('show changed lines') || lower.includes('read only what changed') || lower.includes('compare preview changes') || lower.includes('compare code changes')) { narrateReplay(command); return true; }
     if (lower.startsWith('remember this as') || lower.startsWith('save this command as')) { saveMacro(command); return true; }
     if (lower.startsWith('use macro') || lower.startsWith('run macro')) { runMacro(command); return true; }
     if (lower === 'list macros') { listMacros(); return true; }
     if (lower.startsWith('delete macro')) { deleteMacro(command); return true; }
-    if (lower.startsWith('bookmark this')) { saveBookmark(command); return true; }
-    if (lower.startsWith('read from bookmark')) { readBookmark(command); return true; }
     if (lower === 'list bookmarks') { listBookmarks(); return true; }
+    if (lower.startsWith('read from bookmark') || lower.startsWith('go to bookmark') || lower.startsWith('open bookmark')) { readBookmark(command); return true; }
     if (lower.startsWith('delete bookmark')) { deleteBookmark(command); return true; }
+    if (lower.startsWith('bookmark ') && (lower.includes(' as ') || /^bookmark (this|the|current|that)\b/.test(lower))) { saveBookmark(command); return true; }
     if (lower.includes('restore my last work')) { restoreLastWork(false); return true; }
     if (lower.includes('what did i last work on')) { restoreLastWork(true); return true; }
     if (isCodeMapQuestion(lower)) { codeMap(command); return true; }
@@ -3269,6 +3376,10 @@ if (cta) {
     if (action === 'step_narration') { await stepNarration(); return true; }
     if (action === 'file_explanation') { await explainProjectFile(slots.target || command); return true; }
     if (action === 'learning_notes') { await learningNotes(); return true; }
+    if (action === 'landmarks') { await landmarks(); return true; }
+    if (action === 'trainer_notes') { await trainerNotes(); return true; }
+    if (action === 'student_recap') { await studentRecap(); return true; }
+    if (action === 'screen_reader_prep') { await screenReaderSummary(); return true; }
     if (action === 'accessibility_map') { await accessibilityMap(); return true; }
     if (action === 'review_project') { await reviewProject(); return true; }
     if (action === 'describe_preview') { await describePreview(); return true; }
@@ -3424,8 +3535,9 @@ if (cta) {
   }
 
   async function handleVoiceCommand(raw) {
-    const command = raw.trim();
+    const command = repairCommand(raw.trim());
     if (!command) return;
+    recordCommand(command);
     nextAsyncToken();
     cancelSpeech();
     const lower = command.toLowerCase();
@@ -3630,7 +3742,7 @@ if (cta) {
   }
 
   async function handleStudentTextCore(raw) {
-    const text = raw.trim();
+    const text = repairCommand(raw.trim());
     if (!text) {
       writeOutput(t(
         'Type or say what you want to build, or ask a question about your website.',
@@ -3638,6 +3750,7 @@ if (cta) {
       ), true);
       return;
     }
+    recordCommand(text);
     nextAsyncToken();
     state.wakeUntil = Date.now() + 45000;
     const lower = text.toLowerCase();
@@ -4035,6 +4148,17 @@ if (cta) {
       });
     }
 
+    // Example command chips in the help panel run the same command pipeline.
+    document.querySelectorAll('.ide-chip[data-cmd]').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const cmd = chip.getAttribute('data-cmd') || '';
+        const box = $('commandInput');
+        if (box) { box.value = cmd; box.focus(); }
+        cancelSpeech();
+        handleStudentText(cmd);
+      });
+    });
+
     setupTabs();
     ensureEditors();
     ensurePreviewFrame();
@@ -4274,6 +4398,11 @@ if (cta) {
       reviewProject,
       describePreview,
       projectSummary,
+      landmarks,
+      trainerNotes,
+      studentRecap,
+      screenReaderSummary,
+      repairCommand,
       handleStudentText,
       handleTutorialCommand,
       validateTutorialProgress,
