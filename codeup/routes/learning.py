@@ -7,11 +7,15 @@ from codeup.routes.helpers import safejson
 from codeup.services.project_explainer import (
     build_accessibility_map,
     build_file_explanation,
+    build_landmarks_summary,
     build_learning_notes,
     build_preview_description,
     build_project_review,
     build_project_summary,
+    build_screen_reader_summary,
     build_step_narration,
+    build_student_recap,
+    build_trainer_notes,
 )
 from codeup.services.web_learning import (
     build_code_map,
@@ -161,6 +165,52 @@ def project_summary_route():
     body = safejson()
     text = build_project_summary(html, css, js, **_project_metadata(body))
     return jsonify({"success": True, "text": text, "summary": text})
+
+
+@learning_bp.route("/project-landmarks", methods=["POST"])
+def project_landmarks_route():
+    try:
+        html, css, js = _sources()
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 413
+    body = safejson()
+    text = build_landmarks_summary(html, css, js, **_project_metadata(body))
+    return jsonify({"success": True, "text": text, "landmarks": text})
+
+
+@learning_bp.route("/trainer-notes", methods=["POST"])
+def trainer_notes_route():
+    try:
+        html, css, js = _sources()
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 413
+    body = safejson()
+    text = build_trainer_notes(html, css, js, **_project_metadata(body))
+    return jsonify({"success": True, "text": text, "trainer_notes": text})
+
+
+@learning_bp.route("/student-recap", methods=["POST"])
+def student_recap_route():
+    try:
+        html, css, js = _sources()
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 413
+    body = safejson()
+    raw_commands = body.get("commands")
+    commands = [str(item) for item in raw_commands] if isinstance(raw_commands, list) else None
+    text = build_student_recap(html, css, js, commands=commands, **_project_metadata(body))
+    return jsonify({"success": True, "text": text, "student_recap": text})
+
+
+@learning_bp.route("/screen-reader-summary", methods=["POST"])
+def screen_reader_summary_route():
+    try:
+        html, css, js = _sources()
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 413
+    body = safejson()
+    text = build_screen_reader_summary(html, css, js, **_project_metadata(body))
+    return jsonify({"success": True, "text": text, "screen_reader_summary": text})
 
 
 @learning_bp.route("/mistake-replay", methods=["POST"])

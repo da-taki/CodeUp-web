@@ -124,6 +124,64 @@ def _watchpoint_slots(command: str) -> dict[str, Any]:
     return {"watchpoint": "accessibility"}
 
 
+def _bookmark_slots(command: str) -> dict[str, Any]:
+    # Prefer the name after "as", e.g. "bookmark the contact form as contact area".
+    match = re.search(r"\bas\s+(.+)$", command, re.IGNORECASE)
+    if match:
+        return {"name": match.group(1).strip(" .:-")}
+    match = re.search(r"\bbookmark\s+(?:this|the|current|that)?\s*(.+)$", command, re.IGNORECASE)
+    if match and match.group(1).strip():
+        return {"name": match.group(1).strip(" .:-")}
+    return {}
+
+
+# Command repair maps gentle spelling slips to the intended web command. It only
+# rewrites whole command tokens (and a couple of known phrases) so it never
+# touches the contents of generated HTML, CSS, or JavaScript.
+_COMMAND_PHRASE_REPAIRS: tuple[tuple[str, str], ...] = (
+    (r"\bexport\s+side\b", "export site"),
+    (r"\bmake\s+webside\b", "make website"),
+)
+
+_COMMAND_TOKEN_REPAIRS: dict[str, str] = {
+    "webside": "website",
+    "wesbite": "website",
+    "websit": "website",
+    "wbsite": "website",
+    "accessiblity": "accessibility",
+    "accesibility": "accessibility",
+    "accessibilty": "accessibility",
+    "acessibility": "accessibility",
+    "explane": "explain",
+    "explian": "explain",
+    "profeshnal": "professional",
+    "profesional": "professional",
+    "professionl": "professional",
+    "cantact": "contact",
+    "conatct": "contact",
+    "naration": "narration",
+    "nardation": "narration",
+    "mapp": "map",
+}
+
+_TOKEN_REPAIR_PATTERN = re.compile(
+    r"\b(" + "|".join(re.escape(token) for token in _COMMAND_TOKEN_REPAIRS) + r")\b",
+    re.IGNORECASE,
+)
+
+
+def repair_command(text: str) -> str:
+    """Fix common web-command typos without altering generated code content."""
+    if not text:
+        return text
+    repaired = text
+    for pattern, replacement in _COMMAND_PHRASE_REPAIRS:
+        repaired = re.sub(pattern, replacement, repaired, flags=re.IGNORECASE)
+    if _TOKEN_REPAIR_PATTERN.search(repaired):
+        repaired = _TOKEN_REPAIR_PATTERN.sub(lambda match: _COMMAND_TOKEN_REPAIRS[match.group(0).lower()], repaired)
+    return repaired
+
+
 RULES: tuple[IntentRule, ...] = (
     IntentRule("set_wake_word", 100, (r"\b(set|change)\s+wake\s+word\s+to\b",)),
     IntentRule(
@@ -146,6 +204,8 @@ RULES: tuple[IntentRule, ...] = (
         100,
         (
             r"^continue$",
+            r"^next$",
+            r"^next\s+step$",
             r"^try\s+again$",
             r"^practi[cs]e\s+again$",
             r"^recap$",
@@ -272,13 +332,60 @@ RULES: tuple[IntentRule, ...] = (
         ),
     ),
     IntentRule(
+        "trainer_notes",
+        91,
+        (
+            r"\bmake\s+trainer\s+notes\b",
+            r"\btrainer\s+notes\b",
+            r"\bteacher\s+notes\b",
+            r"\btrainer\s+handoff\b",
+            r"\blesson\s+notes(?:\s+for\s+(?:the\s+)?teacher)?\b",
+            r"\bnotes?\s+for\s+(?:the\s+)?teacher\b",
+        ),
+    ),
+    IntentRule(
+        "student_recap",
+        91,
+        (
+            r"\bwhat\s+did\s+i\s+learn(?:\s+today)?\b",
+            r"\bsession\s+recap\b",
+            r"\blearning\s+recap\b",
+            r"\brecap\s+(?:my|the|this)\s+session\b",
+        ),
+    ),
+    IntentRule(
+        "screen_reader_prep",
+        91,
+        (
+            r"\bprepare\s+(?:this\s+)?for\s+nvda\b",
+            r"\bprepare\s+(?:this\s+)?for\s+(?:a\s+)?screen\s+reader\b",
+            r"\bscreen\s+reader\s+summary\b",
+            r"\bnvda\s+summary\b",
+            r"^nvda$",
+        ),
+    ),
+    IntentRule(
+        "landmarks",
+        91,
+        (
+            r"^landmarks$",
+            r"\blist\s+landmarks\b",
+            r"\bwebsite\s+landmarks\b",
+            r"\bpage\s+landmarks\b",
+            r"\bshow\s+landmarks\b",
+            r"\blandmarks\b",
+            r"^sections$",
+            r"^show\s+sections$",
+            r"\bshow\s+(?:me\s+)?(?:the\s+)?sections\b",
+            r"\blist\s+sections\b",
+            r"\bpage\s+sections\b",
+        ),
+    ),
+    IntentRule(
         "learning_notes",
         89,
         (
             r"\blearning\s+notes\b",
-            r"\bwhat\s+did\s+i\s+learn\b",
-            r"\btrainer\s+notes\b",
-            r"\blesson\s+notes\b",
             r"\bconcepts?\s+(?:used|are\s+in\s+this\s+project)\b",
         ),
     ),
@@ -411,6 +518,8 @@ RULES: tuple[IntentRule, ...] = (
         79,
         (
             r"\bwhat\s+changed\b",
+            r"\breplay\s+change\b",
+            r"\breplay\s+(?:the\s+|my\s+)?changes?\b",
             r"\bcompare\s+versions\b",
             r"\breview\s+changes\b",
             r"\bcompare\s+before\s+and\s+after\b",
@@ -449,10 +558,18 @@ RULES: tuple[IntentRule, ...] = (
     IntentRule(
         "save_bookmark",
         79,
-        (r"\bbookmark\s+this\b", r"\bbookmark\s+this\s+issue\b"),
-        slotter=_named_slot,
+        (
+            r"\bbookmark\s+(?:this|the|current|that)\b",
+            r"\bbookmark\b[^?]*\bas\b",
+        ),
+        slotter=_bookmark_slots,
     ),
-    IntentRule("read_bookmark", 79, (r"\bread\s+from\s+bookmark\b",), slotter=_named_slot),
+    IntentRule(
+        "read_bookmark",
+        79,
+        (r"\bread\s+from\s+bookmark\b", r"\bgo\s+to\s+bookmark\b", r"\bopen\s+bookmark\b"),
+        slotter=_bookmark_slots,
+    ),
     IntentRule("list_bookmarks", 79, (r"\blist\s+bookmarks\b",)),
     IntentRule("delete_bookmark", 79, (r"\bdelete\s+bookmark\b",), slotter=_named_slot),
     IntentRule(
@@ -618,7 +735,7 @@ RULES: tuple[IntentRule, ...] = (
 
 
 def route_intent(text: str) -> IntentResult:
-    command = (text or "").strip()
+    command = repair_command((text or "").strip())
     if not command:
         return IntentResult("unknown", 0.0, command, needs_clarification=True, message="No command heard")
 

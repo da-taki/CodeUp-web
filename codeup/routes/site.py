@@ -109,7 +109,9 @@ def _readme_text(name: str, files: list[str], project_type: str = "") -> str:
         "Files included:\n"
         f"{listed}\n\n"
         "Learning artifacts include CODE_MAP.txt, STEP_NARRATION.txt, LEARNING_NOTES.txt, "
-        "PROJECT_SUMMARY.txt, ACCESSIBILITY_REPORT.txt, PROJECT_REVIEW.txt, and PREVIEW_DESCRIPTION.txt.\n\n"
+        "PROJECT_SUMMARY.txt, ACCESSIBILITY_REPORT.txt, PROJECT_REVIEW.txt, PREVIEW_DESCRIPTION.txt, "
+        "TRAINER_NOTES.txt, STUDENT_RECAP.txt, and SCREEN_READER_SUMMARY.txt. CHANGE_REPLAY.txt is "
+        "included when you edited the project, and BOOKMARKS.txt when you saved bookmarks.\n\n"
         "Open index.html in a browser to view the website. Edit style.css for visual design "
         "and script.js for small interactive behavior. Keep headings, labels, alt text, and "
         "keyboard focus styles when you make changes.\n"
@@ -151,16 +153,28 @@ def _provided_artifacts_from_body(body: dict) -> dict[str, str]:
         "accessibility_map",
         "project_review",
         "preview_description",
+        "trainer_notes",
+        "student_recap",
+        "screen_reader_summary",
+        "instruction",
     )
-    return {key: str(body.get(key) or "") for key in keys if str(body.get(key) or "").strip()}
+    provided = {key: str(body.get(key) or "") for key in keys if str(body.get(key) or "").strip()}
+    # change_replay may arrive as a precomputed string from the editor session.
+    replay = body.get("change_replay")
+    if isinstance(replay, str) and replay.strip():
+        provided["change_replay"] = replay
+    return provided
 
 
-def _write_export_artifacts(
-    bundle: zipfile.ZipFile, body: dict, source_files: dict[str, str], audit: dict | None
-) -> None:
+def _collect_export_artifacts(body: dict, source_files: dict[str, str], audit: dict | None) -> dict[str, str]:
     html = source_files.get("index.html") or next(iter(source_files.values()), "")
     css = source_files.get("style.css", "")
     js = source_files.get("script.js", "")
+    raw_commands = body.get("commands")
+    commands = [str(item) for item in raw_commands] if isinstance(raw_commands, list) else None
+    replay = body.get("change_replay")
+    change_replay = replay if isinstance(replay, dict) else None
+    bookmarks = body.get("bookmarks")
     artifacts = build_export_artifacts(
         html,
         css,
@@ -169,11 +183,18 @@ def _write_export_artifacts(
         project_type=str(body.get("project_type") or ""),
         audit=audit,
         provided=_provided_artifacts_from_body(body),
+        commands=commands,
+        change_replay=change_replay,
+        bookmarks=bookmarks,
     )
     if audit:
         artifacts["ACCESSIBILITY_REPORT.txt"] = (
             artifacts["ACCESSIBILITY_REPORT.txt"].rstrip() + "\n\nDETAILED AUDIT\n\n" + _audit_report_text(audit)
         )
+    return artifacts
+
+
+def _write_export_artifacts(bundle: zipfile.ZipFile, artifacts: dict[str, str]) -> None:
     for filename, content in artifacts.items():
         bundle.writestr(filename, content)
 
@@ -315,15 +336,8 @@ def export_site_zip():
         if total_size > MAX_HTML_SIZE * 5:
             return jsonify({"success": False, "error": f"Project too large (max {MAX_HTML_SIZE * 5} bytes)"}), 413
         project_type = str(body.get("project_type") or "")
-        artifact_files = [
-            "CODE_MAP.txt",
-            "STEP_NARRATION.txt",
-            "LEARNING_NOTES.txt",
-            "PROJECT_SUMMARY.txt",
-            "ACCESSIBILITY_REPORT.txt",
-            "PROJECT_REVIEW.txt",
-            "PREVIEW_DESCRIPTION.txt",
-        ]
+        artifacts = _collect_export_artifacts(body, source_files, audit)
+        artifact_files = list(artifacts)
         archive = io.BytesIO()
         manifest = {
             "project_id": project_id or "",
@@ -343,7 +357,7 @@ def export_site_zip():
                     project_type,
                 ),
             )
-            _write_export_artifacts(bundle, body, source_files, audit)
+            _write_export_artifacts(bundle, artifacts)
             bundle.writestr("manifest.json", json.dumps(manifest, indent=2))
         archive.seek(0)
         filename = safe_page_filename(str(body.get("name") or "codeup-site"))[:-5] + ".zip"
@@ -366,20 +380,11 @@ def export_site_zip():
         return jsonify({"success": False, "error": f"Page names collide after slug normalization ({details})"}), 400
     archive = io.BytesIO()
     project_type = str(body.get("project_type") or "")
-    artifact_files = [
-        "CODE_MAP.txt",
-        "STEP_NARRATION.txt",
-        "LEARNING_NOTES.txt",
-        "PROJECT_SUMMARY.txt",
-        "ACCESSIBILITY_REPORT.txt",
-        "PROJECT_REVIEW.txt",
-        "PREVIEW_DESCRIPTION.txt",
-    ]
     manifest = {
         "project_id": project_id or "",
         "pages": {name: filename for name, filename, _ in plan},
         "project_type": project_type,
-        "artifacts": artifact_files,
+        "artifacts": [],
     }
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
         exported_files = []
@@ -392,6 +397,9 @@ def export_site_zip():
             exported_files.append(filename)
             if not artifact_source_files:
                 artifact_source_files["index.html"] = sanitized
+        artifacts = _collect_export_artifacts(body, artifact_source_files, audit)
+        artifact_files = list(artifacts)
+        manifest["artifacts"] = artifact_files
         bundle.writestr(
             "README.txt",
             _readme_text(
@@ -400,7 +408,7 @@ def export_site_zip():
                 project_type,
             ),
         )
-        _write_export_artifacts(bundle, body, artifact_source_files, audit)
+        _write_export_artifacts(bundle, artifacts)
         bundle.writestr("manifest.json", json.dumps(manifest, indent=2))
     archive.seek(0)
     filename = safe_page_filename(str(body.get("name") or "codeup-site"))[:-5] + ".zip"
