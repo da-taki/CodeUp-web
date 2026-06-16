@@ -17,6 +17,7 @@ from codeup.services.fallbacks import (
 from codeup.services.html_utils import extract_html, fallback_site, summarize_html_changes, wrap_html
 from codeup.services.memory_service import build_context, store_smart_memory
 from codeup.services.natural_website_editor import plan_website_edit, validate_website_files
+from codeup.services.project_type_router import classify_project_type
 from codeup.services.site_generator import (
     combine_site_files,
     generate_site_files,
@@ -210,6 +211,9 @@ def generate_site():
     language = str(body.get("language") or "en")
     project_id = str(body.get("project_id") or "").strip()
     is_edit = bool(body.get("edit")) and bool(current_html.strip())
+    project_type_result = classify_project_type(prompt, language=language, use_ai=False)
+    project_type = project_type_result.project_type
+    project_type_source = project_type_result.source
 
     if not prompt:
         return jsonify({"success": False, "error": "Prompt cannot be empty"}), 400
@@ -275,11 +279,14 @@ def generate_site():
     raw = call_ai(SITE_SYSTEM_PROMPT, user, temperature=0.35, language=language)
     files = parse_file_blocks(raw) if not is_ai_unavailable(raw) else {}
     used_fallback = False
+    generated: dict[str, str] = {}
 
     if not files.get("html"):
         # AI unavailable or unparseable: use the deterministic offline generator.
         generated = generate_site_files(prompt)
         files = {"html": generated["html"], "css": generated["css"], "js": generated["js"]}
+        project_type = generated.get("project_type", project_type)
+        project_type_source = generated.get("project_type_source", project_type_source)
         used_fallback = True
     else:
         files.setdefault("css", current_css)
@@ -291,6 +298,8 @@ def generate_site():
     if not validation.valid and not used_fallback:
         generated = generate_site_files(prompt)
         files = {"html": generated["html"], "css": generated["css"], "js": generated["js"]}
+        project_type = generated.get("project_type", project_type)
+        project_type_source = generated.get("project_type_source", project_type_source)
         used_fallback = True
         validation = validate_website_files(
             {"index.html": files["html"], "style.css": files.get("css", ""), "script.js": files.get("js", "")}
@@ -329,6 +338,8 @@ def generate_site():
             "summary": summary,
             "fallback": used_fallback,
             "warnings": validation.warnings,
+            "project_type": project_type,
+            "project_type_source": project_type_source,
         }
     )
 

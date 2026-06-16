@@ -19,6 +19,7 @@ from codeup.services.html_utils import (
     summarize_html_changes,
     wrap_html,
 )
+from codeup.services.project_explainer import build_export_artifacts
 from codeup.storage import (
     append_memory,
     append_project_audit,
@@ -97,14 +98,18 @@ def _audit_from_body_or_project(body: dict, project_id: str | None = None) -> di
     return None
 
 
-def _readme_text(name: str, files: list[str]) -> str:
+def _readme_text(name: str, files: list[str], project_type: str = "") -> str:
     title = (name or "CodeUp Web export").strip() or "CodeUp Web export"
     listed = "\n".join(f"- {filename}" for filename in files)
+    type_line = f"Project type: {project_type}\n\n" if project_type else ""
     return (
         f"{title}\n\n"
         "This ZIP was exported from CodeUp Web, an accessibility-first website builder.\n\n"
+        f"{type_line}"
         "Files included:\n"
         f"{listed}\n\n"
+        "Learning artifacts include CODE_MAP.txt, STEP_NARRATION.txt, LEARNING_NOTES.txt, "
+        "PROJECT_SUMMARY.txt, ACCESSIBILITY_REPORT.txt, PROJECT_REVIEW.txt, and PREVIEW_DESCRIPTION.txt.\n\n"
         "Open index.html in a browser to view the website. Edit style.css for visual design "
         "and script.js for small interactive behavior. Keep headings, labels, alt text, and "
         "keyboard focus styles when you make changes.\n"
@@ -135,6 +140,42 @@ def _audit_report_text(audit: dict | None) -> str:
         lines.append("Suggestions:")
         lines.extend(f"- {item}" for item in suggestions)
     return "\n".join(lines).strip() + "\n"
+
+
+def _provided_artifacts_from_body(body: dict) -> dict[str, str]:
+    keys = (
+        "code_map",
+        "step_narration",
+        "learning_notes",
+        "project_summary",
+        "accessibility_map",
+        "project_review",
+        "preview_description",
+    )
+    return {key: str(body.get(key) or "") for key in keys if str(body.get(key) or "").strip()}
+
+
+def _write_export_artifacts(
+    bundle: zipfile.ZipFile, body: dict, source_files: dict[str, str], audit: dict | None
+) -> None:
+    html = source_files.get("index.html") or next(iter(source_files.values()), "")
+    css = source_files.get("style.css", "")
+    js = source_files.get("script.js", "")
+    artifacts = build_export_artifacts(
+        html,
+        css,
+        js,
+        name=str(body.get("name") or "CodeUp Web export"),
+        project_type=str(body.get("project_type") or ""),
+        audit=audit,
+        provided=_provided_artifacts_from_body(body),
+    )
+    if audit:
+        artifacts["ACCESSIBILITY_REPORT.txt"] = (
+            artifacts["ACCESSIBILITY_REPORT.txt"].rstrip() + "\n\nDETAILED AUDIT\n\n" + _audit_report_text(audit)
+        )
+    for filename, content in artifacts.items():
+        bundle.writestr(filename, content)
 
 
 @site_bp.route("/publish-site", methods=["POST"])
@@ -273,20 +314,36 @@ def export_site_zip():
         total_size = sum(len(value) for value in source_files.values())
         if total_size > MAX_HTML_SIZE * 5:
             return jsonify({"success": False, "error": f"Project too large (max {MAX_HTML_SIZE * 5} bytes)"}), 413
+        project_type = str(body.get("project_type") or "")
+        artifact_files = [
+            "CODE_MAP.txt",
+            "STEP_NARRATION.txt",
+            "LEARNING_NOTES.txt",
+            "PROJECT_SUMMARY.txt",
+            "ACCESSIBILITY_REPORT.txt",
+            "PROJECT_REVIEW.txt",
+            "PREVIEW_DESCRIPTION.txt",
+        ]
         archive = io.BytesIO()
         manifest = {
             "project_id": project_id or "",
             "files": list(source_files),
             "entry": "index.html",
+            "project_type": project_type,
+            "artifacts": artifact_files,
         }
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
             for filename, content in source_files.items():
                 bundle.writestr(filename, content)
             bundle.writestr(
-                "README.txt", _readme_text(str(body.get("name") or "CodeUp Web export"), list(source_files))
+                "README.txt",
+                _readme_text(
+                    str(body.get("name") or "CodeUp Web export"),
+                    [*list(source_files), *artifact_files, "manifest.json"],
+                    project_type,
+                ),
             )
-            if audit:
-                bundle.writestr("accessibility_report.txt", _audit_report_text(audit))
+            _write_export_artifacts(bundle, body, source_files, audit)
             bundle.writestr("manifest.json", json.dumps(manifest, indent=2))
         archive.seek(0)
         filename = safe_page_filename(str(body.get("name") or "codeup-site"))[:-5] + ".zip"
@@ -308,21 +365,42 @@ def export_site_zip():
         details = "; ".join(f"{filename}: {', '.join(names)}" for filename, names in sorted(collisions.items()))
         return jsonify({"success": False, "error": f"Page names collide after slug normalization ({details})"}), 400
     archive = io.BytesIO()
+    project_type = str(body.get("project_type") or "")
+    artifact_files = [
+        "CODE_MAP.txt",
+        "STEP_NARRATION.txt",
+        "LEARNING_NOTES.txt",
+        "PROJECT_SUMMARY.txt",
+        "ACCESSIBILITY_REPORT.txt",
+        "PROJECT_REVIEW.txt",
+        "PREVIEW_DESCRIPTION.txt",
+    ]
     manifest = {
         "project_id": project_id or "",
         "pages": {name: filename for name, filename, _ in plan},
+        "project_type": project_type,
+        "artifacts": artifact_files,
     }
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
         exported_files = []
+        artifact_source_files: dict[str, str] = {}
         for _, filename, page_html in plan:
             if len(page_html) > MAX_HTML_SIZE:
                 return jsonify({"success": False, "error": f"Page {filename} too large"}), 413
             sanitized, _warnings = sanitize_hosted_html(wrap_html(page_html))
             bundle.writestr(filename, sanitized)
             exported_files.append(filename)
-        bundle.writestr("README.txt", _readme_text(str(body.get("name") or "CodeUp Web export"), exported_files))
-        if audit:
-            bundle.writestr("accessibility_report.txt", _audit_report_text(audit))
+            if not artifact_source_files:
+                artifact_source_files["index.html"] = sanitized
+        bundle.writestr(
+            "README.txt",
+            _readme_text(
+                str(body.get("name") or "CodeUp Web export"),
+                [*exported_files, *artifact_files, "manifest.json"],
+                project_type,
+            ),
+        )
+        _write_export_artifacts(bundle, body, artifact_source_files, audit)
         bundle.writestr("manifest.json", json.dumps(manifest, indent=2))
     archive.seek(0)
     filename = safe_page_filename(str(body.get("name") or "codeup-site"))[:-5] + ".zip"

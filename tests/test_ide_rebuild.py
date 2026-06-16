@@ -111,7 +111,17 @@ def test_export_project_zip_contains_three_source_files(client):
 
     assert response.status_code == 200
     with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
-        assert set(archive.namelist()) == {"index.html", "style.css", "script.js", "README.txt", "manifest.json"}
+        names = set(archive.namelist())
+        assert {"index.html", "style.css", "script.js", "README.txt", "manifest.json"} <= names
+        assert {
+            "CODE_MAP.txt",
+            "STEP_NARRATION.txt",
+            "LEARNING_NOTES.txt",
+            "PROJECT_SUMMARY.txt",
+            "ACCESSIBILITY_REPORT.txt",
+            "PROJECT_REVIEW.txt",
+            "PREVIEW_DESCRIPTION.txt",
+        } <= names
         index = archive.read("index.html").decode("utf-8")
         assert 'href="style.css"' in index
         assert 'src="script.js"' in index
@@ -120,6 +130,7 @@ def test_export_project_zip_contains_three_source_files(client):
         assert "Open index.html in a browser" in archive.read("README.txt").decode("utf-8")
         manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
         assert manifest["files"] == ["index.html", "style.css", "script.js"]
+        assert "CODE_MAP.txt" in manifest["artifacts"]
 
 
 def test_fallback_generation_covers_product_categories_and_reports_fallback(client):
@@ -246,7 +257,7 @@ def test_voice_command_catalogue_routes_new_ide_commands(client):
         "read the CSS": "read_code",
         "read the JavaScript": "read_code",
         "explain the code": "explain_site",
-        "explain the JavaScript": "explain_javascript",
+        "explain the JavaScript": "file_explanation",
         "give me a code map": "code_map",
         "analyze the code": "analyze_code",
         "find problems": "analyze_code",

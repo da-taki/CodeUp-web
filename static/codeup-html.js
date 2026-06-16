@@ -140,6 +140,15 @@ if (cta) {
     watchpointRules: [],
     lastPauseReason: '',
     lastCodeMap: '',
+    lastStepNarration: '',
+    lastLearningNotes: '',
+    lastAccessibilityMap: '',
+    lastFileExplanation: '',
+    lastProjectReview: '',
+    lastPreviewDescription: '',
+    lastProjectSummary: '',
+    projectType: 'generic_website',
+    speechQueue: [],
     tutorial: {
       active: false,
       modules: [],
@@ -199,6 +208,33 @@ if (cta) {
     utterance.rate = opts.rate || 1;
     utterance.pitch = opts.pitch || 1;
     window.speechSynthesis.speak(utterance);
+  }
+
+  function speakChunked(text) {
+    const clean = (text || '').replace(/\s+/g, ' ').trim();
+    if (!clean) return;
+    const chunks = [];
+    let remaining = clean;
+    while (remaining.length > 700) {
+      let splitAt = remaining.lastIndexOf('. ', 700);
+      if (splitAt < 240) splitAt = remaining.lastIndexOf(' ', 700);
+      if (splitAt < 240) splitAt = 700;
+      chunks.push(remaining.slice(0, splitAt + 1).trim());
+      remaining = remaining.slice(splitAt + 1).trim();
+    }
+    if (remaining) chunks.push(remaining);
+    state.speechQueue = chunks.slice(1);
+    speak(chunks[0] + (state.speechQueue.length ? ' Say "say more" to continue.' : ''));
+  }
+
+  function speakMore() {
+    const next = state.speechQueue.shift();
+    if (!next) {
+      speak('No more spoken explanation is queued.');
+      return true;
+    }
+    speak(next + (state.speechQueue.length ? ' Say "say more" to continue.' : ''));
+    return true;
   }
 
   window.speak = speak;
@@ -554,6 +590,7 @@ if (cta) {
     const project = data.project;
     state.projectId = project.id;
     state.projectName = project.name || 'Untitled Project';
+    state.projectType = 'generic_website';
     state.pages = project.pages || {};
     state.currentPage = project.current_page || Object.keys(state.pages)[0] || 'home';
     if (!state.pages[state.currentPage]) state.pages[state.currentPage] = starterHtml;
@@ -939,6 +976,18 @@ if (cta) {
     writeOutput(`Loaded ${name} template.`, true);
   }
 
+  function projectPayload(extra = {}) {
+    return Object.assign({
+      html: getHtmlSource(),
+      css: getCss(),
+      js: getJs(),
+      name: state.projectName,
+      project_name: state.projectName,
+      project_type: state.projectType || 'generic_website',
+      audit: state.lastAudit || null,
+    }, extra);
+  }
+
   async function exportHtml() {
     const token = startHeartbeat('Exporting project');
     const fileExport = {
@@ -954,7 +1003,15 @@ if (cta) {
           project_id: state.projectId,
           files: fileExport,
           name: state.projectName,
+          project_type: state.projectType || 'generic_website',
           audit: state.lastAudit || null,
+          code_map: state.lastCodeMap,
+          step_narration: state.lastStepNarration,
+          learning_notes: state.lastLearningNotes,
+          accessibility_map: state.lastAccessibilityMap,
+          project_review: state.lastProjectReview,
+          preview_description: state.lastPreviewDescription,
+          project_summary: state.lastProjectSummary,
         }),
       });
       if (!response.ok) {
@@ -973,8 +1030,8 @@ if (cta) {
       setTimeout(() => URL.revokeObjectURL(objectUrl), 500);
       state.exportStatus = 'exported';
       writeOutput(t(
-        'Exported your website as a ZIP with HTML, CSS, JavaScript, and instructions.',
-        'Aapki website HTML, CSS, JavaScript aur instructions ke ZIP ke roop mein export ho gayi.'
+        'Exported your project ZIP with HTML, CSS, JavaScript, code map, step narration, learning notes, accessibility report, review, and preview description.',
+        'Aapka project ZIP HTML, CSS, JavaScript, code map, step narration, learning notes, accessibility report, review aur preview description ke saath export ho gaya.'
       ), true);
       stopHeartbeat(token);
     } catch (error) {
@@ -1199,6 +1256,15 @@ if (cta) {
     state.currentPage = 'home';
     state.projectId = '';
     state.projectName = 'Untitled Project';
+    state.projectType = 'generic_website';
+    state.lastCodeMap = '';
+    state.lastStepNarration = '';
+    state.lastLearningNotes = '';
+    state.lastAccessibilityMap = '';
+    state.lastFileExplanation = '';
+    state.lastProjectReview = '';
+    state.lastPreviewDescription = '';
+    state.lastProjectSummary = '';
     try {
       sessionStorage.removeItem('codeup_html_draft');
       sessionStorage.removeItem('codeup_css_draft');
@@ -1544,6 +1610,15 @@ if (cta) {
       snapshotVersion(isEdit ? 'Before editing website' : 'Before generating website');
       if (!isEdit) { state.currentPage = 'home'; state.pages = {}; }
       loadGeneratedFiles({ html: data.html, css: data.css, js: data.js });
+      state.projectType = data.project_type || state.projectType || 'generic_website';
+      state.lastCodeMap = '';
+      state.lastStepNarration = '';
+      state.lastLearningNotes = '';
+      state.lastAccessibilityMap = '';
+      state.lastFileExplanation = '';
+      state.lastProjectReview = '';
+      state.lastPreviewDescription = '';
+      state.lastProjectSummary = '';
       if (isEdit) {
         state.lastEditRequest = prompt;
         state.lastEditSummary = (data.summary || []).join(' ');
@@ -2286,11 +2361,18 @@ if (cta) {
   }
 
   function isLocalMetaCommand(lower) {
-    return /^(remember this as|save this command as|use macro|run macro|list macros|delete macro|bookmark this|read from bookmark|list bookmarks|delete bookmark|where am i|read breadcrumb|what am i editing|restore my last work|what did i last work on|compare before and after|replay my mistake|what changed|show changed lines|read only what changed|compare preview changes|compare code changes|give me a code map|map this website|list all buttons|list all forms|read the html|read the css|read the javascript|explain simply|explain this error|why is this broken)/.test(lower);
+    return /^(remember this as|save this command as|use macro|run macro|list macros|delete macro|bookmark this|read from bookmark|list bookmarks|delete bookmark|where am i|read breadcrumb|what am i editing|restore my last work|what did i last work on|compare before and after|replay my mistake|what changed|show changed lines|read only what changed|compare preview changes|compare code changes|give me a code map|map this website|website map|project map|list all buttons|list all forms|read the html|read the css|read the javascript|explain simply|explain this error|why is this broken|step narration|learning notes|accessibility map|review project|describe preview|say more)/.test(lower);
   }
 
   function isCodeMapQuestion(lower) {
     return lower.includes('map this website')
+      || lower.includes('website map')
+      || lower.includes('project map')
+      || lower.includes('explain the structure')
+      || lower.includes('summarize structure')
+      || lower.includes('summarise structure')
+      || lower.includes('what files are here')
+      || lower.includes('what sections')
       || lower.includes('what is inside')
       || lower.includes('what comes after')
       || lower.includes('list all buttons')
@@ -2742,6 +2824,64 @@ if (cta) {
     speak(spoken);
   }
 
+  async function projectText(endpoint, stateKey, label, extra = {}) {
+    const token = nextAsyncToken();
+    writeOutput(`${label}...`);
+    try {
+      const data = await apiJson(endpoint, {
+        method: 'POST',
+        body: JSON.stringify(projectPayload(extra)),
+      });
+      if (!isAsyncFresh(token)) return '';
+      const text = data.text || data.summary || data.explanation || data.review || data.description || '';
+      if (!text) throw new Error(`${label} returned no text.`);
+      state[stateKey] = text;
+      writeOutput(text, false);
+      speakChunked(text);
+      return text;
+    } catch (error) {
+      if (!isAsyncFresh(token)) return '';
+      writeOutput(error.message || `${label} failed.`, true);
+      return '';
+    }
+  }
+
+  async function stepNarration() {
+    return projectText('/project-step-narration', 'lastStepNarration', 'Building step narration');
+  }
+
+  async function explainProjectFile(target = '') {
+    let file = target || state.activeTab || 'html';
+    const lower = String(file).toLowerCase();
+    if (lower.includes('css') || lower.includes('style')) file = 'style.css';
+    else if (lower.includes('javascript') || lower.includes('java script') || /\bjs\b/.test(lower) || lower.includes('script')) file = 'script.js';
+    else file = 'index.html';
+    if (file === 'style.css') activateTab('css');
+    else if (file === 'script.js') activateTab('js');
+    else activateTab('html');
+    return projectText('/project-file-explanation', 'lastFileExplanation', `Explaining ${file}`, { file });
+  }
+
+  async function learningNotes() {
+    return projectText('/project-learning-notes', 'lastLearningNotes', 'Building learning notes');
+  }
+
+  async function accessibilityMap() {
+    return projectText('/project-accessibility-map', 'lastAccessibilityMap', 'Building accessibility map');
+  }
+
+  async function reviewProject() {
+    return projectText('/project-review', 'lastProjectReview', 'Reviewing project');
+  }
+
+  async function describePreview() {
+    return projectText('/preview-description', 'lastPreviewDescription', 'Describing preview');
+  }
+
+  async function projectSummary() {
+    return projectText('/project-summary', 'lastProjectSummary', 'Building project summary');
+  }
+
   function explainJs() {
     const map = buildCodeMap();
     if (!map.fns.length && !map.events.length) {
@@ -2957,8 +3097,16 @@ if (cta) {
       writeOutput(helpText(), true);
       return true;
     }
+    if (lower === 'say more' || lower === 'continue explanation' || lower === 'more explanation') { return speakMore(); }
     if (handleWebInsertCommand(command, lower)) return true;
     if (lower.includes('where am i') || lower.includes('read breadcrumb') || lower.includes('what am i editing')) { breadcrumb(); return true; }
+    if (lower.includes('step narration') || lower.includes('narrate steps') || lower.includes('walk me through') || lower.includes('how this runs') || lower.includes('how does this code work') || lower.includes('teach me this website')) { stepNarration(); return true; }
+    if (lower.includes('learning notes') || lower.includes('what did i learn') || lower.includes('trainer notes') || lower.includes('lesson notes') || lower.includes('concepts used') || lower.includes('concepts are in this project')) { learningNotes(); return true; }
+    if (lower.includes('accessibility map') || lower.includes('explain accessibility') || lower.includes('accessibility explanation') || lower.includes('accessibility notes')) { accessibilityMap(); return true; }
+    if (lower.includes('review project') || lower.includes('review this project') || lower.includes('review this code') || lower.includes('is this website good') || lower.includes('what should i improve')) { reviewProject(); return true; }
+    if (lower.includes('describe preview') || lower.includes('describe output') || lower.includes('what does the website look like') || lower.includes('what will the user see')) { describePreview(); return true; }
+    if (lower.includes('project summary') || lower.includes('what did i build') || lower.includes('what project type')) { projectSummary(); return true; }
+    if ((lower.includes('explain') || lower.includes('summarize') || lower.includes('summarise') || lower.includes('what does')) && (lower.includes('index.html') || lower.includes('html file') || lower.includes('css') || lower.includes('style.css') || lower.includes('style file') || lower.includes('javascript') || lower.includes('java script') || /\bjs\b/.test(lower) || lower.includes('script.js') || lower.includes('script file'))) { explainProjectFile(command); return true; }
     if (lower.includes('explain simply') || lower.includes('explain this error') || lower.includes('why is this broken')) { explainErrors(false); return true; }
     if (lower.includes('fix and explain')) { explainErrors(true); return true; }
     if (lower.includes('compare before and after') || lower.includes('replay my mistake') || lower.includes('show changed lines') || lower.includes('read only what changed') || lower.includes('compare preview changes') || lower.includes('compare code changes')) { narrateReplay(command); return true; }
@@ -2980,8 +3128,8 @@ if (cta) {
       if (lower.includes('all') || lower.includes('everything') || lower.includes('whole') || lower.includes('current') || lower.includes('the code') || lower.includes('read code') || lower === 'read') { readCode('all'); return true; }
     }
     if (lower.includes('code map') || lower.includes('codemap') || lower.includes('structure map') || lower.includes('map of the code') || lower.includes('map the code')) { codeMap(command); return true; }
-    if ((lower.includes('explain') || lower.includes('what does')) && (lower.includes('javascript') || lower.includes('java script') || /\bjs\b/.test(lower) || lower.includes('the script'))) { explainJs(); return true; }
-    if ((lower.includes('explain') || lower.includes('what does')) && (lower.includes('css') || lower.includes('the style'))) { readCode('css'); return true; }
+    if ((lower.includes('explain') || lower.includes('what does')) && (lower.includes('javascript') || lower.includes('java script') || /\bjs\b/.test(lower) || lower.includes('the script'))) { explainProjectFile('script.js'); return true; }
+    if ((lower.includes('explain') || lower.includes('what does')) && (lower.includes('css') || lower.includes('the style'))) { explainProjectFile('style.css'); return true; }
     if (lower.includes('analyze') || lower.includes('analyse') || lower.includes('find problems') || lower.includes('check the code')) { analyzeCode(); return true; }
     if (lower.includes('summarize') || lower.includes('summarise')) { explainWebsite(true); return true; }
     if (lower.includes('fix the accessibility') || lower.includes('fix accessibility') || lower.includes('fix the accessibility issues')) { applyAllAuditFixes(); return true; }
@@ -3001,16 +3149,16 @@ if (cta) {
 
   function helpText() {
     return t(
-      'You can create a website, improve it, check accessibility, preview it, or export it. Try saying: make a website for my school club. Then ask: add an about section, check accessibility, or export website.',
-      'Aap website bana sakte hain, improve kar sakte hain, accessibility check kar sakte hain, preview dekh sakte hain, ya export kar sakte hain. Bolkar dekhiye: mere school club ke liye website banao.'
+      'You can create websites and small apps, improve them, explain files, map the project, check accessibility, preview, and export. Try: make a quiz app about Python basics. Then ask: code map, step narration, explain CSS, learning notes, accessibility map, review project, describe preview, or export website.',
+      'Aap websites aur chhote apps bana sakte hain, explain kar sakte hain, accessibility check kar sakte hain, preview dekh sakte hain, aur export kar sakte hain. Try kijiye: Python basics ka quiz app banao. Phir boliye: code map, step narration, explain CSS, learning notes, accessibility map, review project, describe preview, ya export website.'
     );
   }
 
   function isBuildIntent(text) {
     const lower = text.toLowerCase();
     return (
-      /\b(build|make|create|generate)\b.*\b(website|site|page|webpage)\b/i.test(text) ||
-      /\b(website|site|page|webpage)\s+for\b/i.test(text) ||
+      /\b(build|make|create|generate)\b.*\b(website|site|page|webpage|app|project|quiz|calculator|todo|to-do|flashcard|poll|dashboard|timetable|tracker)\b/i.test(text) ||
+      /\b(website|site|page|webpage|app|project|quiz|calculator|todo|to-do|flashcard|poll|dashboard|timetable|tracker)\s+(for|about)\b/i.test(text) ||
       /\b(banao|bana do|banaiye|banaye|banaao)\b/i.test(lower)
     );
   }
@@ -3118,6 +3266,13 @@ if (cta) {
     if (action === 'set_voice_language') return false;
     if (action === 'read_code') { readCode(slots.target || 'all'); return true; }
     if (action === 'code_map') { await codeMap(command); return true; }
+    if (action === 'step_narration') { await stepNarration(); return true; }
+    if (action === 'file_explanation') { await explainProjectFile(slots.target || command); return true; }
+    if (action === 'learning_notes') { await learningNotes(); return true; }
+    if (action === 'accessibility_map') { await accessibilityMap(); return true; }
+    if (action === 'review_project') { await reviewProject(); return true; }
+    if (action === 'describe_preview') { await describePreview(); return true; }
+    if (action === 'project_summary') { await projectSummary(); return true; }
     if (action === 'analyze_code') { await analyzeCode(); return true; }
     if (action === 'explain_javascript') { explainJs(); return true; }
     if (action === 'design_preset') { applyDesignPreset(slots.preset || 'vibrant'); return true; }
@@ -3456,7 +3611,9 @@ if (cta) {
       if (handleSnippetCommand(command)) return;
     }
 
-    const buildMatch = command.match(/(?:build|make|create|banao|bana do|website for|ke liye website)\s+(.+)/i);
+    const buildMatch = command.match(
+      /(?:build|make|create|generate|banao|bana do|website for|app for|app about|project for|project about|quiz about|calculator for|ke liye website)\s+(.+)/i
+    );
     if (buildMatch || isBuildIntent(command)) {
       await buildWebsite(buildMatch ? buildMatch[1] : command, true);
       return;
@@ -3894,6 +4051,13 @@ if (cta) {
     window.auditWebsite = auditWebsite;
     window.outlineWebsite = outlineWebsite;
     window.exportHtml = exportHtml;
+    window.stepNarration = stepNarration;
+    window.explainProjectFile = explainProjectFile;
+    window.learningNotes = learningNotes;
+    window.accessibilityMap = accessibilityMap;
+    window.reviewProject = reviewProject;
+    window.describePreview = describePreview;
+    window.projectSummary = projectSummary;
     window.resetSession = resetSession;
     window.createNamedProject = createNamedProject;
     window.openSelectedProject = openSelectedProject;
@@ -4103,6 +4267,13 @@ if (cta) {
       sonifyHtml,
       readCode,
       codeMap,
+      stepNarration,
+      explainProjectFile,
+      learningNotes,
+      accessibilityMap,
+      reviewProject,
+      describePreview,
+      projectSummary,
       handleStudentText,
       handleTutorialCommand,
       validateTutorialProgress,

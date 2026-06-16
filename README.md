@@ -13,9 +13,10 @@ Every generation produces all three files — `index.html`, `style.css`, and
 editors. Generated sites are responsive, accessible, and visually polished, and
 they never rely on external/broken assets (gradients, CSS shapes, and emoji are
 used instead). You can also save named projects, preview locally, hear a visual
-review, read the code aloud, get a beginner-friendly code map, audit/fix
-accessibility, save/load snippets, and export a ZIP with source files,
-instructions, and the latest accessibility report when one exists.
+review, read the code aloud, get a beginner-friendly code map, step narration,
+file explanations, learning notes, accessibility maps, project reviews, preview
+descriptions, audit/fix accessibility, save/load snippets, and export a ZIP
+with source files and learning artifacts.
 
 ### Accessibility-first workflow
 
@@ -23,18 +24,22 @@ Use the command box or the microphone for the same commands:
 
 - `what can I do here` gives a short spoken/displayed guide.
 - `make a website for my school robotics club` creates an accessible starter website.
+- `make a quiz app about Python basics`, `make a calculator app`, or `make a habit tracker` creates a working app-style project.
 - `add an about section`, `make it more professional`, or `change website name to CodeUp Web` edits the current website instead of replacing it.
+- `code map`, `step narration`, `explain CSS`, `learning notes`, `accessibility map`, `review project`, and `describe preview` explain the project without changing code.
 - `check accessibility` reports issues with severity, why they matter, and suggested fixes.
 - `fix accessibility issues` applies safe deterministic fixes.
 - `preview website` refreshes the hosted local preview.
-- `export website` downloads a ZIP containing `index.html`, `style.css`, `script.js`, `README.txt`, and `accessibility_report.txt` if an audit has run.
+- `export website` downloads a ZIP containing source files plus `CODE_MAP.txt`, `STEP_NARRATION.txt`, `LEARNING_NOTES.txt`, `PROJECT_SUMMARY.txt`, `ACCESSIBILITY_REPORT.txt`, `PROJECT_REVIEW.txt`, and `PREVIEW_DESCRIPTION.txt`.
 
 CodeUp Web works without cloud AI. Set `AI_CLOUD_ENABLED=0` for deterministic
-offline templates covering portfolio, school club, project showcase,
-event/workshop, small business, accessibility project, and simple landing-page
-requests. Voice recognition depends on browser support; Chrome or Edge is
-recommended. If microphone APIs are unavailable, the command box exercises the
-same routes.
+offline templates covering portfolio, resume, school club, project showcase,
+event/workshop, small business, bakery, nonprofit, accessibility project, blog,
+gallery, product page, landing page, quiz app, calculator app, to-do app,
+flashcard app, poll page, contact form, dashboard, timetable, habit tracker,
+and generic website requests. Voice recognition depends on browser support;
+Chrome or Edge is recommended. If microphone APIs are unavailable, the command
+box exercises the same routes.
 
 ### IDE controls
 
@@ -62,6 +67,9 @@ make it more colorful
 add a contact section
 read the HTML
 give me a code map
+step narration
+learning notes
+describe preview
 stop everything
 save snippet as bakery demo
 load snippet bakery demo
@@ -76,9 +84,23 @@ make the design futuristic with dark mode and animated stats
 analyze the code
 fix the accessibility issues
 explain the JavaScript
+accessibility map
+review project
 save snippet as robotics demo
 run preview
 stop everything
+```
+
+App-style project demo:
+
+```text
+make a quiz app about Python basics
+add score tracking
+code map
+step narration
+explain script.js
+learning notes
+export website
 ```
 
 See `DEMO.md` for the full command catalogue.
@@ -163,6 +185,7 @@ In this mode, CodeUp still:
 - gives a blind-first visual review,
 - applies the latest review suggestions,
 - explains the current site,
+- explains the project map, files, steps, preview, and learning concepts,
 - audits accessibility,
 - outlines the page structure,
 - polishes/wraps HTML,
@@ -172,18 +195,24 @@ In this mode, CodeUp still:
 
 - Conversational guide for questions like `what can I do here?`
 - Natural-language website generation from `Build a website for ...`
+- App-style generation for quizzes, calculators, to-dos, flashcards, polls,
+  contact forms, dashboards, timetables, and habit trackers
 - Named project save/load, duplication, autosave, and server-side versions
 - Local preview at `/student-site/<session-id>/`
 - Sighted-guide review loop for `what is missing?` and `add that`
 - Guided audit fixes with before/after version snapshots
 - Audio explanation of what the site looks like
+- Project/code map, step narration, file explanations, learning notes,
+  accessibility map, project review, and preview description
 - Hindi/Hinglish and English voice workflows
 - `pause voice`, `resume voice`, and `stop speaking`
 - Speech cancellation when a new command starts
 - HTML sonification with different tones for page structure
 - Accessibility audit with a score and fix list
 - Page outline from headings
-- One-click single-page HTML export and multi-page ZIP export
+- Project ZIP export with source files, README, code map, step narration,
+  learning notes, project summary, accessibility report, review, and preview
+  description
 - Demo Mode for larger, calmer classroom presentation
 - Audio Accessibility Walkthrough: hear how the page is structured
 - Keyboard Journey: step through focusable elements in order

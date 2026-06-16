@@ -381,6 +381,28 @@ def _deterministic_plan(files: dict[str, str], instruction: str) -> EditPlan:
         css += "\nbutton, .button, a.button { min-height: 44px; padding: 0.75rem 1rem; border-radius: 8px; }\n"
         changes.append("Made buttons larger and clearer.")
 
+    if "score tracking" in lower or "track score" in lower:
+        if "quiz-score" in html or "quizScore" in js or "score" in js.lower():
+            changes.append("Score tracking is already present in the quiz app.")
+        else:
+            html = _insert_before_footer_or_body(
+                html,
+                """
+<section id="score-tracking" aria-labelledby="score-tracking-heading">
+  <h2 id="score-tracking-heading">Score Tracking</h2>
+  <p class="status" id="quiz-score" aria-live="polite">Score: 0</p>
+</section>
+""",
+            )
+            js += """
+
+var quizScoreStatus = document.getElementById("quiz-score");
+if (quizScoreStatus) {
+  quizScoreStatus.textContent = "Score tracking is ready.";
+}
+"""
+            changes.append("Added a score tracking status area.")
+
     if not changes:
         return EditPlan(
             action="ask_clarification",
