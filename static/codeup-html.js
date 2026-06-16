@@ -156,6 +156,9 @@ if (cta) {
       current: '',
       lastValidation: null,
     },
+    track: { active: false, id: '', index: 0, steps: [], title: '' },
+    tracks: null,
+    teacherSuggestions: [],
     walkthrough: {
       active: false,
       mode: null,
@@ -453,9 +456,12 @@ if (cta) {
     const version = {
       id: '',
       html,
+      css: getCss(),
+      js: getJs(),
       note: note || 'Edited website',
       label: note || 'Edited website',
       source: 'frontend',
+      command: state.lastCommand || '',
       page: state.currentPage,
       timestamp: new Date().toISOString(),
       summary: summary || [],
@@ -1085,9 +1091,19 @@ if (cta) {
           trainer_notes: state.lastTrainerNotes,
           student_recap: state.lastStudentRecap,
           screen_reader_summary: state.lastScreenReaderSummary,
+          run_summary: state.lastRunSummary,
+          debug_report: state.lastDebugReport,
+          screen_reader_tour: state.lastScreenReaderTour,
+          keyboard_test: state.lastKeyboardTest,
+          visual_description: state.lastVisualDescription,
+          readiness_score: state.lastReadinessScore,
+          teacher_review: state.lastTeacherReview,
           commands: (state.commandHistory || []).slice(-20),
           change_replay: exportChangeReplay(),
           bookmarks: loadJsonStore('codeup_bookmarks', {}),
+          versions: (state.versions || []).slice(-10).map((v) => ({
+            label: v.note || v.label, command: v.command || '', summary: v.summary || [], timestamp: v.timestamp || '',
+          })),
         }),
       });
       if (!response.ok) {
@@ -2360,9 +2376,11 @@ if (cta) {
   }
 
   async function startTutorial(topic) {
+    const requested = (topic || '').toLowerCase();
+    const trackMatch = requested.match(/start\s+(?:the\s+)?(html|css|javascript|js|accessibility|forms?|export)\s+tutorial/);
+    if (trackMatch) { await startTrack(normalizeTrack(trackMatch[1])); return; }
     await loadTutorialModules();
     state.tutorial.active = true;
-    const requested = (topic || '').toLowerCase();
     if (requested.includes('css')) state.tutorial.index = tutorialOrder.indexOf('css_basics');
     else if (requested.includes('javascript') || requested.includes('js')) state.tutorial.index = tutorialOrder.indexOf('javascript_basics');
     else if (requested.includes('accessibility')) state.tutorial.index = tutorialOrder.indexOf('accessibility_repair');
@@ -2488,6 +2506,15 @@ if (cta) {
 
   async function handleTutorialCommand(command) {
     const lower = command.toLowerCase();
+    if (/^start\s+(?:the\s+)?(html|css|javascript|accessibility|forms?|export)\s+tutorial$/.test(lower)) {
+      await startTutorial(lower);
+      return true;
+    }
+    if (state.track && state.track.active) {
+      if (lower === 'next' || lower === 'next step' || lower === 'continue') return trackNext();
+      if (lower === 'repeat' || lower === 'hint' || lower === 'try again') return trackRepeat();
+      if (lower === 'exit tutorial' || lower === 'start coding') return trackExit();
+    }
     if (lower === 'start tutorial' || lower === 'tutorial' || /^practi[cs]e\s+/.test(lower)) { await startTutorial(lower); return true; }
     if (!state.tutorial.active && !isTutorialControlCommand(lower)) return false;
     if (lower === 'continue' || lower === 'next' || lower === 'next step') { await continueTutorial(); return true; }
@@ -2987,6 +3014,167 @@ if (cta) {
     return projectText('/screen-reader-summary', 'lastScreenReaderSummary', 'Preparing screen reader summary');
   }
 
+  // ----- Run / debug / accessibility lab -----
+  async function runWebsite() {
+    const text = await projectText('/run-summary', 'lastRunSummary', 'Running your website');
+    if (text) suggestNext(['screen reader tour', 'test keyboard navigation', 'debug this website']);
+    return text;
+  }
+
+  async function debugWebsite() {
+    const text = await projectText('/debug-report', 'lastDebugReport', 'Debugging your website');
+    if (text) suggestNext(['fix website error', 'run website', 'explain JavaScript']);
+    return text;
+  }
+
+  async function screenReaderTour() {
+    return projectText('/screen-reader-tour', 'lastScreenReaderTour', 'Building the screen reader tour');
+  }
+
+  async function keyboardTest() {
+    return projectText('/keyboard-test', 'lastKeyboardTest', 'Testing keyboard navigation');
+  }
+
+  async function visualDescription() {
+    return projectText('/visual-description', 'lastVisualDescription', 'Describing the design');
+  }
+
+  async function readinessScore() {
+    const text = await projectText('/readiness-score', 'lastReadinessScore', 'Scoring readiness');
+    if (text) suggestNext(['fix accessibility issues', 'improve like a teacher', 'export website']);
+    return text;
+  }
+
+  async function teacherReview() {
+    const token = nextAsyncToken();
+    writeOutput('Reviewing like a teacher...');
+    try {
+      const data = await apiJson('/teacher-review', { method: 'POST', body: JSON.stringify(projectPayload()) });
+      if (!isAsyncFresh(token)) return '';
+      state.lastTeacherReview = data.text || '';
+      state.teacherSuggestions = Array.isArray(data.suggestions) ? data.suggestions : [];
+      writeOutput(state.lastTeacherReview, false);
+      speakChunked(state.lastTeacherReview);
+      suggestNext(['check accessibility', 'screen reader tour', 'test keyboard navigation']);
+      return state.lastTeacherReview;
+    } catch (error) {
+      if (!isAsyncFresh(token)) return '';
+      writeOutput(error.message || 'Teacher review failed.', true);
+      return '';
+    }
+  }
+
+  async function debugFix() {
+    const token = nextAsyncToken();
+    writeOutput('Applying safe website fixes...');
+    beginReplay('Before debug fix');
+    try {
+      const data = await apiJson('/debug-fix', {
+        method: 'POST',
+        body: JSON.stringify({ html: getHtmlSource(), css: getCss(), js: getJs() }),
+      });
+      if (!isAsyncFresh(token)) return;
+      if (data.changed && data.html) {
+        snapshotVersion('Before debug fix');
+        loadGeneratedFiles({ html: data.html, css: data.css, js: data.js });
+        snapshotVersion('Applied debug fix', data.summary || []);
+        finishReplay('After debug fix');
+        try { await publish(getHtml()); } catch (error) {}
+      }
+      writeOutput(data.message || (data.summary || []).join('\n') || 'No safe fix was available.', true);
+      suggestNext(['run website', 'debug this website', 'replay change']);
+    } catch (error) {
+      if (!isAsyncFresh(token)) return;
+      writeOutput(error.message || 'Debug fix failed.', true);
+    }
+  }
+
+  // ----- Version history -----
+  function showHistory() {
+    const versions = state.versions || [];
+    if (!versions.length) {
+      writeOutput('No saved versions yet. Generate or edit a website first.', true);
+      return true;
+    }
+    const recent = versions.slice(-10);
+    const lines = ['VERSION HISTORY', '', `You have ${recent.length} saved version(s) (most recent last):`];
+    recent.forEach((version, index) => {
+      const command = version.command ? ` — command: "${version.command}"` : '';
+      const summary = (version.summary && version.summary.length) ? ` (${version.summary.join('; ')})` : '';
+      lines.push(`${index + 1}. ${version.note || version.label || 'Saved version'}${command}${summary}`);
+    });
+    lines.push('', 'Say "undo last change" to step back, or "compare versions" to hear what changed.');
+    writeOutput(lines.join('\n'), true);
+    suggestNext(['undo last change', 'compare versions', 'replay change']);
+    return true;
+  }
+
+  // ----- Tutorial tracks -----
+  function normalizeTrack(token) {
+    const lowered = (token || '').toLowerCase();
+    if (lowered === 'js') return 'javascript';
+    if (lowered === 'form') return 'forms';
+    return lowered;
+  }
+
+  async function loadTutorialTracks() {
+    if (state.tracks) return state.tracks;
+    try {
+      const data = await apiJson('/tutorial/tracks', { method: 'GET' });
+      state.tracks = data.tracks || {};
+    } catch (error) {
+      state.tracks = {};
+    }
+    return state.tracks;
+  }
+
+  function trackStepMessage() {
+    const track = state.track;
+    const step = track.steps[track.index];
+    if (!step) return `Tutorial complete. You finished the ${track.title}. Say "exit tutorial" or keep building.`;
+    return (
+      `${track.title} — step ${track.index + 1} of ${track.steps.length}: ${step.title}. ${step.say} ` +
+      `Try: "${step.command}". Say "next", "repeat", or "exit tutorial".`
+    );
+  }
+
+  async function startTrack(trackId) {
+    const tracks = await loadTutorialTracks();
+    const track = tracks[trackId];
+    if (!track) { writeOutput('That tutorial track is not available yet. Try "start HTML tutorial."', true); return true; }
+    state.track = { active: true, id: trackId, index: 0, steps: track.steps || [], title: track.title || 'Tutorial' };
+    state.tutorial.active = false;
+    const msg = trackStepMessage();
+    updateTutorialPanel(msg);
+    writeOutput(msg, true);
+    return true;
+  }
+
+  function trackNext() {
+    if (!state.track.active) return false;
+    if (state.track.index < state.track.steps.length) state.track.index += 1;
+    const msg = trackStepMessage();
+    updateTutorialPanel(msg);
+    writeOutput(msg, true);
+    if (state.track.index >= state.track.steps.length) state.track.active = false;
+    return true;
+  }
+
+  function trackRepeat() {
+    if (!state.track.active) return false;
+    const msg = trackStepMessage();
+    updateTutorialPanel(msg);
+    writeOutput(msg, true);
+    return true;
+  }
+
+  function trackExit() {
+    state.track.active = false;
+    updateTutorialPanel('Tutorial paused. Type "start HTML tutorial" or "start tutorial" to resume.');
+    writeOutput('Tutorial paused. You are back in normal building mode.', true);
+    return true;
+  }
+
   function explainJs() {
     const map = buildCodeMap();
     if (!map.fns.length && !map.events.length) {
@@ -3245,10 +3433,20 @@ if (cta) {
     if (lower.includes('what did i learn') || lower.includes('session recap') || lower.includes('learning recap')) { studentRecap(); return true; }
     if (lower === 'landmarks' || lower.includes('list landmarks') || lower.includes('website landmarks') || lower.includes('page landmarks') || lower.includes('show landmarks') || lower === 'sections' || lower === 'show sections' || lower.includes('show me the sections') || lower.includes('list sections') || lower.includes('page sections')) { landmarks(); return true; }
     if (/prepare (this )?for nvda/.test(lower) || /prepare (this )?for (a )?screen reader/.test(lower) || lower.includes('screen reader summary') || lower.includes('nvda summary') || lower === 'nvda') { screenReaderSummary(); return true; }
+    // Run / debug / accessibility lab.
+    if (lower.includes('fix website error') || lower.includes('fix javascript error') || lower.includes('fix js error')) { debugFix(); return true; }
+    if (lower.includes('debug') || lower.includes('why is this website broken') || lower.includes('explain website error') || lower.includes('check console errors')) { debugWebsite(); return true; }
+    if (lower.includes('run website') || lower.includes('test website') || lower.includes('run this website') || lower.includes('test this site') || lower.includes('test this website') || lower.includes('check if this website works')) { runWebsite(); return true; }
+    if (lower.includes('screen reader tour') || lower.includes('reading order tour') || lower.includes('screen reader reading order') || lower.includes('how would a screen reader read this') || lower.includes('nvda tour') || lower.includes('jaws tour')) { screenReaderTour(); return true; }
+    if (lower.includes('test keyboard navigation') || lower.includes('keyboard navigation test') || lower.includes('keyboard test') || lower === 'tab order' || lower.includes('test tab order') || lower.includes('can keyboard users use this') || lower === 'focus order') { keyboardTest(); return true; }
+    if (lower.includes('describe the design') || lower.includes('describe the website visually') || lower.includes('what does the website look like') || lower.includes('visual description') || lower.includes('describe layout') || lower.includes('describe colour') || lower.includes('describe color')) { visualDescription(); return true; }
+    if (lower.includes('is this ready to share') || lower.includes('website readiness') || lower.includes('readiness score') || lower.includes('project score') || lower.includes('is this website good') || lower.includes('should i share this')) { readinessScore(); return true; }
+    if (lower.includes('improve like a teacher') || lower.includes('review like a teacher') || lower.includes('suggest improvements') || lower.includes('teacher review') || lower.includes('improve this project')) { teacherReview(); return true; }
+    if (lower === 'show history' || lower.includes('version history') || lower.includes('show version history')) { showHistory(); return true; }
     if (lower.includes('learning notes') || lower.includes('concepts used') || lower.includes('concepts are in this project')) { learningNotes(); return true; }
     if (lower.includes('accessibility map') || lower.includes('explain accessibility') || lower.includes('accessibility explanation') || lower.includes('accessibility notes')) { accessibilityMap(); return true; }
-    if (lower.includes('review project') || lower.includes('review this project') || lower.includes('review this code') || lower.includes('is this website good') || lower.includes('what should i improve')) { reviewProject(); return true; }
-    if (lower.includes('describe preview') || lower.includes('describe output') || lower.includes('what does the website look like') || lower.includes('what will the user see')) { describePreview(); return true; }
+    if (lower.includes('review project') || lower.includes('review this project') || lower.includes('review this code') || lower.includes('what should i improve')) { reviewProject(); return true; }
+    if (lower.includes('describe preview') || lower.includes('describe output') || lower.includes('what will the user see')) { describePreview(); return true; }
     if (lower.includes('project summary') || lower.includes('what did i build') || lower.includes('what project type')) { projectSummary(); return true; }
     if ((lower.includes('explain') || lower.includes('summarize') || lower.includes('summarise') || lower.includes('what does')) && (lower.includes('index.html') || lower.includes('html file') || lower.includes('css') || lower.includes('style.css') || lower.includes('style file') || lower.includes('javascript') || lower.includes('java script') || /\bjs\b/.test(lower) || lower.includes('script.js') || lower.includes('script file'))) { explainProjectFile(command); return true; }
     if (lower.includes('explain simply') || lower.includes('explain this error') || lower.includes('why is this broken')) { explainErrors(false); return true; }
@@ -3417,6 +3615,15 @@ if (cta) {
     if (action === 'trainer_notes') { await trainerNotes(); return true; }
     if (action === 'student_recap') { await studentRecap(); return true; }
     if (action === 'screen_reader_prep') { await screenReaderSummary(); return true; }
+    if (action === 'run_summary') { await runWebsite(); return true; }
+    if (action === 'debug_website') { await debugWebsite(); return true; }
+    if (action === 'debug_fix') { await debugFix(); return true; }
+    if (action === 'screen_reader_tour') { await screenReaderTour(); return true; }
+    if (action === 'keyboard_test') { await keyboardTest(); return true; }
+    if (action === 'visual_description') { await visualDescription(); return true; }
+    if (action === 'readiness_score') { await readinessScore(); return true; }
+    if (action === 'teacher_review') { await teacherReview(); return true; }
+    if (action === 'version_history') { showHistory(); return true; }
     if (action === 'accessibility_map') { await accessibilityMap(); return true; }
     if (action === 'review_project') { await reviewProject(); return true; }
     if (action === 'describe_preview') { await describePreview(); return true; }
@@ -4526,6 +4733,18 @@ if (cta) {
       openCommandPalette,
       closeCommandPalette,
       suggestNext,
+      runWebsite,
+      debugWebsite,
+      debugFix,
+      screenReaderTour,
+      keyboardTest,
+      visualDescription,
+      readinessScore,
+      teacherReview,
+      showHistory,
+      startTrack,
+      trackNext,
+      trackExit,
     };
   }
 

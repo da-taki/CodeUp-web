@@ -5,7 +5,16 @@ from typing import Any
 
 from codeup.services.html_utils import audit_html
 from codeup.services.project_type_router import display_project_type
+from codeup.services.version_history import build_version_history_report
 from codeup.services.web_learning import analyze_javascript, build_code_map, parse_css_rules, parse_records
+from codeup.services.website_accessibility_lab import (
+    build_keyboard_test,
+    build_readiness_score,
+    build_screen_reader_tour,
+    build_visual_description,
+)
+from codeup.services.website_debugger import build_debug_report
+from codeup.services.website_runner import build_run_summary, build_teacher_review
 
 
 def _clean_text(value: str, fallback: str = "") -> str:
@@ -667,6 +676,7 @@ def build_export_artifacts(
     commands: list[str] | None = None,
     change_replay: dict[str, Any] | None = None,
     bookmarks: Any = None,
+    version_history: Any = None,
 ) -> dict[str, str]:
     provided = provided or {}
     code_map = provided.get("code_map") or build_code_map(html, css, js).get("summary", "")
@@ -719,7 +729,46 @@ def build_export_artifacts(
             or build_screen_reader_summary(html, css, js, name=name, project_type=project_type, audit=audit)
         ).strip()
         + "\n",
+        # Run / debug / accessibility-lab reports, generated at export time.
+        "RUN_SUMMARY.txt": (
+            provided.get("run_summary")
+            or build_run_summary(html, css, js, name=name, project_type=project_type, audit=audit)
+        ).strip()
+        + "\n",
+        "DEBUG_REPORT.txt": (provided.get("debug_report") or build_debug_report(html, css, js)["text"]).strip() + "\n",
+        "SCREEN_READER_TOUR.txt": (
+            provided.get("screen_reader_tour")
+            or build_screen_reader_tour(html, css, js, name=name, project_type=project_type, audit=audit)
+        ).strip()
+        + "\n",
+        "KEYBOARD_TEST.txt": (
+            provided.get("keyboard_test")
+            or build_keyboard_test(html, css, js, name=name, project_type=project_type, audit=audit)
+        ).strip()
+        + "\n",
+        "VISUAL_DESCRIPTION.txt": (
+            provided.get("visual_description")
+            or build_visual_description(html, css, js, name=name, project_type=project_type, audit=audit)
+        ).strip()
+        + "\n",
+        "READINESS_SCORE.txt": (
+            provided.get("readiness_score")
+            or build_readiness_score(html, css, js, name=name, project_type=project_type, audit=audit)
+        ).strip()
+        + "\n",
+        "TEACHER_REVIEW.txt": (
+            provided.get("teacher_review")
+            or build_teacher_review(html, css, js, name=name, project_type=project_type, audit=audit)["text"]
+        ).strip()
+        + "\n",
     }
+
+    # VERSION_HISTORY only when the session recorded versions.
+    history_source = provided.get("version_history") or version_history
+    if isinstance(history_source, str) and history_source.strip():
+        artifacts["VERSION_HISTORY.txt"] = history_source.strip() + "\n"
+    elif isinstance(history_source, list) and history_source:
+        artifacts["VERSION_HISTORY.txt"] = build_version_history_report(history_source).strip() + "\n"
 
     # CHANGE_REPLAY only when an edit actually happened (text provided or before/after given).
     replay_text = ""
