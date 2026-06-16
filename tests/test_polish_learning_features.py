@@ -23,6 +23,7 @@ README = REPO_ROOT / "README.md"
 SECURITY = REPO_ROOT / "SECURITY.md"
 FRONTEND_JS = REPO_ROOT / "static" / "codeup-html.js"
 INDEX_HTML = REPO_ROOT / "templates" / "index.html"
+IDE_CSS = REPO_ROOT / "static" / "style" / "ide.css"
 
 
 @pytest.fixture()
@@ -331,9 +332,37 @@ def test_command_repair_does_not_alter_generated_code():
 # --------------------------------------------------------------------------- #
 # UI / output
 # --------------------------------------------------------------------------- #
-def test_help_panel_contains_grouped_commands(client):
+def test_big_help_panel_removed(client):
     html = client.get("/ide").get_data(as_text=True)
-    for group in ("Create", "Edit", "Understand", "Accessibility", "Export"):
+    # The old always-visible command box is gone from default page load.
+    assert "What CodeUp Web Does" not in html
+    assert 'id="helpPanelTitle"' not in html
+
+
+def test_command_palette_trigger_present(client):
+    html = client.get("/ide").get_data(as_text=True)
+    assert "Open command palette" in html
+    assert 'id="openPaletteBtn"' in html
+    assert 'aria-haspopup="dialog"' in html
+    assert 'aria-controls="commandPalette"' in html
+    assert 'aria-expanded="false"' in html
+
+
+def test_command_palette_is_collapsed_dialog_by_default(client):
+    html = client.get("/ide").get_data(as_text=True)
+    assert 'id="commandPalette"' in html
+    assert 'role="dialog"' in html
+    assert 'aria-modal="true"' in html
+    # The palette overlay ships hidden so it does not dominate page load.
+    assert 'id="paletteOverlay" class="ide-palette-overlay" hidden' in html
+    # Close control is labelled.
+    assert 'id="closePaletteBtn"' in html
+    assert 'aria-label="Close command palette"' in html
+
+
+def test_command_palette_contains_grouped_commands_in_markup(client):
+    html = client.get("/ide").get_data(as_text=True)
+    for group in ("Create", "Edit", "Understand", "Accessibility", "Teach &amp; recap", "Export &amp; control"):
         assert group in html, group
     for command in (
         "make a website for my school robotics club",
@@ -344,6 +373,55 @@ def test_help_panel_contains_grouped_commands(client):
         "export website",
     ):
         assert command in html, command
+    # Chips still carry their command text in data-cmd so they click/fill/run.
+    assert 'data-cmd="code map"' in html
+    assert 'data-cmd="export website"' in html
+
+
+def test_idea_card_present(client):
+    html = client.get("/ide").get_data(as_text=True)
+    assert "Need an idea?" in html
+    assert 'data-cmd="what can I do here"' in html
+
+
+def test_command_input_and_voice_controls_present(client):
+    html = client.get("/ide").get_data(as_text=True)
+    assert 'id="commandInput"' in html
+    assert 'id="voiceButton"' in html
+    assert 'id="stopBtn"' in html
+
+
+def test_live_regions_preserved(client):
+    html = client.get("/ide").get_data(as_text=True)
+    assert 'id="srAnnouncer"' in html
+    assert 'aria-live="assertive"' in html
+    assert 'aria-live="polite"' in html
+
+
+def test_empty_states_present(client):
+    html = client.get("/ide").get_data(as_text=True)
+    assert 'id="outputEmpty"' in html
+    assert "Ask me to" in html
+    # The sketchbook preview placeholder is rendered by the preview frame builder.
+    js = FRONTEND_JS.read_text(encoding="utf-8")
+    assert "Your website preview will appear here" in js
+    assert 'id="previewEmpty"' in js
+
+
+def test_palette_keyboard_and_focus_behavior_present():
+    js = FRONTEND_JS.read_text(encoding="utf-8")
+    assert "openCommandPalette" in js
+    assert "closeCommandPalette" in js
+    assert "paletteTrapFocus" in js
+    assert "Escape" in js
+    # Focus returns to the opener after close.
+    assert "paletteOpener" in js
+
+
+def test_focus_styles_present_in_css():
+    css = IDE_CSS.read_text(encoding="utf-8")
+    assert ":focus-visible" in css
+    assert ".ide-chip:focus" in css
 
 
 def test_export_success_message_lists_key_files():

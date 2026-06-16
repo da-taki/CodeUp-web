@@ -17,15 +17,24 @@
   <div id="srAnnouncer" role="status" aria-live="assertive" aria-atomic="true" class="sr-only"></div>
 
   <header class="ide-header">
+    <div class="ide-swatchbar" aria-hidden="true">
+      <span style="--swatch:var(--art-coral)"></span>
+      <span style="--swatch:var(--art-sun)"></span>
+      <span style="--swatch:var(--art-green)"></span>
+      <span style="--swatch:var(--art-teal)"></span>
+      <span style="--swatch:var(--art-sky)"></span>
+      <span style="--swatch:var(--art-lavender)"></span>
+    </div>
     <div class="ide-header-row">
+      <span class="ide-logo-mark" aria-hidden="true">✎</span>
       <h1 class="cu-title">CODEUP HTML</h1>
       <span class="cu-status-pill" aria-hidden="true">HTML · CSS · JS</span>
       <span id="voiceStatus" class="ide-voice-status" role="status" aria-live="polite">Voice off</span>
     </div>
-    <p class="cu-subtitle">
-      Blind-first website builder. Generate complete <strong>HTML</strong>, <strong>CSS</strong>,
-      and <strong>JavaScript</strong> by voice or typed command. Press
-      <kbd class="cu-hotkey">Ctrl</kbd>+<kbd class="cu-hotkey">Enter</kbd> to preview.
+    <p class="cu-subtitle ide-tagline">
+      <strong>Blind-first website builder.</strong> Your friendly studio for building accessible
+      websites by voice or by typing — describe it, hear it explained, check it, and export it,
+      like sketching on paper.
     </p>
     <div class="ide-settings" role="group" aria-label="Accessibility settings">
       <label class="ide-field">
@@ -65,69 +74,85 @@
     </div>
     <p class="ide-command-hint">No microphone? Type any voice command here and press Enter. Say or type
       <em>stop everything</em> to stop speech instantly.</p>
-  </section>
 
-  <section class="ide-help cu-panel" aria-labelledby="helpPanelTitle">
-    <h2 id="helpPanelTitle" class="ide-section-title">What CodeUp Web Does</h2>
-    <p>Build a website by describing it, ask CodeUp Web to explain it, check accessibility, then export your
-      project with notes you can study later. Pick a command below, or type your own. Say or type
-      <em>what can I do here</em> any time.</p>
-    <div class="ide-help-groups">
-      <div class="ide-help-group" role="group" aria-label="Create commands">
-        <h3 class="ide-help-group-title">Create</h3>
-        <div class="ide-chips">
-          <button type="button" class="ide-chip" data-cmd="make a website for my school robotics club">make a website for my school robotics club</button>
-          <button type="button" class="ide-chip" data-cmd="make a quiz app about Python basics">make a quiz app about Python basics</button>
-          <button type="button" class="ide-chip" data-cmd="make a calculator app">make a calculator app</button>
-        </div>
-      </div>
-      <div class="ide-help-group" role="group" aria-label="Edit commands">
-        <h3 class="ide-help-group-title">Edit</h3>
-        <div class="ide-chips">
-          <button type="button" class="ide-chip" data-cmd="add a section about competitions">add a section about competitions</button>
-          <button type="button" class="ide-chip" data-cmd="make it more professional">make it more professional</button>
-          <button type="button" class="ide-chip" data-cmd="add a contact form">add a contact form</button>
-        </div>
-      </div>
-      <div class="ide-help-group" role="group" aria-label="Understand commands">
-        <h3 class="ide-help-group-title">Understand</h3>
-        <div class="ide-chips">
-          <button type="button" class="ide-chip" data-cmd="code map">code map</button>
-          <button type="button" class="ide-chip" data-cmd="step narration">step narration</button>
-          <button type="button" class="ide-chip" data-cmd="landmarks">landmarks</button>
-          <button type="button" class="ide-chip" data-cmd="explain CSS">explain CSS</button>
-          <button type="button" class="ide-chip" data-cmd="learning notes">learning notes</button>
-          <button type="button" class="ide-chip" data-cmd="describe preview">describe preview</button>
-          <button type="button" class="ide-chip" data-cmd="review project">review project</button>
-        </div>
-      </div>
-      <div class="ide-help-group" role="group" aria-label="Accessibility commands">
-        <h3 class="ide-help-group-title">Accessibility</h3>
-        <div class="ide-chips">
-          <button type="button" class="ide-chip" data-cmd="check accessibility">check accessibility</button>
-          <button type="button" class="ide-chip" data-cmd="fix accessibility issues">fix accessibility issues</button>
-          <button type="button" class="ide-chip" data-cmd="accessibility map">accessibility map</button>
-          <button type="button" class="ide-chip" data-cmd="prepare this for NVDA">prepare this for NVDA</button>
-        </div>
-      </div>
-      <div class="ide-help-group" role="group" aria-label="Teaching and recap commands">
-        <h3 class="ide-help-group-title">Teach &amp; recap</h3>
-        <div class="ide-chips">
-          <button type="button" class="ide-chip" data-cmd="make trainer notes">make trainer notes</button>
-          <button type="button" class="ide-chip" data-cmd="what did I learn today">what did I learn today</button>
-          <button type="button" class="ide-chip" data-cmd="start tutorial">start tutorial</button>
-        </div>
-      </div>
-      <div class="ide-help-group" role="group" aria-label="Export and control commands">
-        <h3 class="ide-help-group-title">Export &amp; control</h3>
-        <div class="ide-chips">
-          <button type="button" class="ide-chip" data-cmd="export website">export website</button>
-          <button type="button" class="ide-chip" data-cmd="start over">start over</button>
-          <button type="button" class="ide-chip" data-cmd="stop everything">stop everything</button>
-        </div>
+    <div class="ide-idea-card" role="note" aria-label="Command ideas">
+      <span class="ide-idea-pin" aria-hidden="true"></span>
+      <p class="ide-idea-text">Need an idea? Try
+        <button type="button" class="ide-chip ide-chip-inline" data-cmd="make a website for my school robotics club">make a website for my school robotics club</button>
+      </p>
+      <div class="ide-idea-actions">
+        <button id="openPaletteBtn" class="cu-button cu-button-secondary" type="button"
+                aria-haspopup="dialog" aria-expanded="false" aria-controls="commandPalette">Open command palette</button>
+        <button type="button" class="cu-button ide-chip" data-cmd="what can I do here">What can I do here?</button>
       </div>
     </div>
   </section>
+
+  <!-- Compact command palette (hidden until opened). Closes with Escape; focus returns to the opener. -->
+  <div id="paletteOverlay" class="ide-palette-overlay" hidden>
+    <div id="commandPalette" class="ide-palette" role="dialog" aria-modal="true" aria-labelledby="paletteTitle" aria-describedby="paletteSub" tabindex="-1">
+      <div class="ide-palette-head">
+        <h2 id="paletteTitle" class="ide-palette-title">Command palette</h2>
+        <button id="closePaletteBtn" class="cu-button" type="button" aria-label="Close command palette">Close ✕</button>
+      </div>
+      <p id="paletteSub" class="ide-palette-sub">Pick an idea to drop it in the command box and run it — or just keep typing. Press Escape to close.</p>
+      <div class="ide-help-groups">
+        <div class="ide-help-group ide-note ide-note-create" role="group" aria-label="Create commands">
+          <h3 class="ide-help-group-title">Create</h3>
+          <div class="ide-chips">
+            <button type="button" class="ide-chip" data-cmd="make a website for my school robotics club">make a website for my school robotics club</button>
+            <button type="button" class="ide-chip" data-cmd="make a quiz app about Python basics">make a quiz app about Python basics</button>
+            <button type="button" class="ide-chip" data-cmd="make a calculator app">make a calculator app</button>
+          </div>
+        </div>
+        <div class="ide-help-group ide-note ide-note-edit" role="group" aria-label="Edit commands">
+          <h3 class="ide-help-group-title">Edit</h3>
+          <div class="ide-chips">
+            <button type="button" class="ide-chip" data-cmd="add a section about competitions">add a section about competitions</button>
+            <button type="button" class="ide-chip" data-cmd="make it more professional">make it more professional</button>
+            <button type="button" class="ide-chip" data-cmd="add a contact form">add a contact form</button>
+          </div>
+        </div>
+        <div class="ide-help-group ide-note ide-note-understand" role="group" aria-label="Understand commands">
+          <h3 class="ide-help-group-title">Understand</h3>
+          <div class="ide-chips">
+            <button type="button" class="ide-chip" data-cmd="code map">code map</button>
+            <button type="button" class="ide-chip" data-cmd="step narration">step narration</button>
+            <button type="button" class="ide-chip" data-cmd="landmarks">landmarks</button>
+            <button type="button" class="ide-chip" data-cmd="explain CSS">explain CSS</button>
+            <button type="button" class="ide-chip" data-cmd="learning notes">learning notes</button>
+            <button type="button" class="ide-chip" data-cmd="describe preview">describe preview</button>
+            <button type="button" class="ide-chip" data-cmd="review project">review project</button>
+          </div>
+        </div>
+        <div class="ide-help-group ide-note ide-note-a11y" role="group" aria-label="Accessibility commands">
+          <h3 class="ide-help-group-title">Accessibility</h3>
+          <div class="ide-chips">
+            <button type="button" class="ide-chip" data-cmd="check accessibility">check accessibility</button>
+            <button type="button" class="ide-chip" data-cmd="fix accessibility issues">fix accessibility issues</button>
+            <button type="button" class="ide-chip" data-cmd="accessibility map">accessibility map</button>
+            <button type="button" class="ide-chip" data-cmd="prepare this for NVDA">prepare this for NVDA</button>
+          </div>
+        </div>
+        <div class="ide-help-group ide-note ide-note-teach" role="group" aria-label="Teaching and recap commands">
+          <h3 class="ide-help-group-title">Teach &amp; recap</h3>
+          <div class="ide-chips">
+            <button type="button" class="ide-chip" data-cmd="make trainer notes">make trainer notes</button>
+            <button type="button" class="ide-chip" data-cmd="what did I learn today">what did I learn today</button>
+            <button type="button" class="ide-chip" data-cmd="start tutorial">start tutorial</button>
+          </div>
+        </div>
+        <div class="ide-help-group ide-note ide-note-export" role="group" aria-label="Export and control commands">
+          <h3 class="ide-help-group-title">Export &amp; control</h3>
+          <div class="ide-chips">
+            <button type="button" class="ide-chip" data-cmd="export website">export website</button>
+            <button type="button" class="ide-chip" data-cmd="start over">start over</button>
+            <button type="button" class="ide-chip" data-cmd="stop everything">stop everything</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <div class="ide-toolbar" role="toolbar" aria-label="Code actions">
     <button id="generateBtn" class="cu-button cu-button-primary" type="button" aria-label="Generate a website from the command box">Generate</button>
@@ -153,6 +178,7 @@
         <button class="ide-tab" id="tabCss" type="button" role="tab" aria-controls="panelCss" aria-selected="false" tabindex="-1">style.css</button>
         <button class="ide-tab" id="tabJs" type="button" role="tab" aria-controls="panelJs" aria-selected="false" tabindex="-1">script.js</button>
       </div>
+      <p class="ide-files-hint">Your <strong>index.html</strong>, <strong>style.css</strong>, and <strong>script.js</strong> live here. Ask CodeUp Web to build a site and they fill in automatically.</p>
       <div class="ide-panel" id="panelHtml" role="tabpanel" aria-labelledby="tabHtml">
         <div id="editor" class="cu-editor" role="region" aria-label="HTML editor"></div>
       </div>
@@ -167,15 +193,14 @@
     <aside class="ide-side">
       <section class="cu-panel ide-preview" aria-label="Live website preview">
         <h2 class="ide-section-title">Live Preview</h2>
-        <div id="sitePreview" class="cu-site-preview">
-          <p class="ide-preview-empty">No preview yet. Try <strong>make a website for my school robotics club</strong>,
-            then <strong>run preview</strong>. Your site will appear here.</p>
-        </div>
+        <div id="sitePreview" class="cu-site-preview"></div>
       </section>
 
       <section class="cu-panel ide-output" aria-label="Output and status">
         <h2 class="ide-section-title">Output</h2>
+        <p id="outputEmpty" class="ide-output-empty">Ask me to <strong>build</strong>, <strong>explain</strong>, <strong>check</strong>, or <strong>export</strong> your website. I will answer here and read it aloud.</p>
         <pre id="output" class="cu-output-box" tabindex="0" aria-live="polite"></pre>
+        <div id="tryNext" class="ide-trynext" role="group" aria-label="Suggested next commands" hidden></div>
         <div class="cu-audit-actions" role="group" aria-label="Audit autofix actions">
           <button id="auditFixOneBtn" class="cu-button" type="button" disabled>Fix First Issue</button>
           <button id="auditFixAllBtn" class="cu-button" type="button" disabled>Apply Safe Fixes</button>
@@ -234,6 +259,6 @@
   </main>
 
   <script src="/static/voice-memory-engine.js?v=1"></script>
-  <script src="/static/codeup-html.js?v=ide-2"></script>
+  <script src="/static/codeup-html.js?v=ide-3"></script>
 </body>
 </html>
