@@ -25,8 +25,14 @@ _KIND_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("robotics", ("robot", "robotics", "stem", "engineering", "maker", "tech club", "coding club", "ai lab")),
     ("food", ("bakery", "cafe", "coffee", "restaurant", "food", "pizza", "kitchen", "bake", "patisserie")),
     ("portfolio", ("portfolio", "resume", "cv", "personal site", "freelance", "designer", "developer", "photographer")),
+    ("accessibility", ("accessibility", "accessible", "inclusive", "assistive", "screen reader", "a11y")),
+    ("event", ("workshop", "event", "bootcamp", "conference", "seminar", "coding workshop")),
+    ("project", ("project showcase", "science fair", "fair project", "capstone", "prototype", "research project")),
     ("school", ("school", "college", "class", "annual day", "science fair", "club", "fest", "event", "charity")),
-    ("business", ("startup", "company", "agency", "business", "product", "saas", "service", "shop", "store")),
+    (
+        "business",
+        ("startup", "company", "agency", "business", "small business", "product", "saas", "service", "shop", "store"),
+    ),
 )
 
 _PALETTES: dict[str, tuple[str, str, str]] = {
@@ -34,6 +40,9 @@ _PALETTES: dict[str, tuple[str, str, str]] = {
     "robotics": ("#6d28d9", "#06b6d4", "#0ea5e9"),
     "food": ("#b91c1c", "#f59e0b", "#ef4444"),
     "portfolio": ("#2563eb", "#10b981", "#6366f1"),
+    "accessibility": ("#1f6f8b", "#2f855a", "#0f766e"),
+    "event": ("#7c2d12", "#2563eb", "#0f766e"),
+    "project": ("#0f766e", "#7c3aed", "#2563eb"),
     "school": ("#0f766e", "#f59e0b", "#0891b2"),
     "business": ("#4338ca", "#f43f5e", "#6366f1"),
     "generic": ("#4f46e5", "#06b6d4", "#7c3aed"),
@@ -414,6 +423,150 @@ def _blueprint(kind: str, title: str, topic: str) -> dict:
                 "join_title": "Let's Work Together",
                 "join_lead": "Tell me about your project and I will get back to you within a day.",
                 "footer_note": "Designed and built with accessibility in mind.",
+            }
+        )
+    elif kind == "accessibility":
+        base.update(
+            {
+                "tagline": f"An inclusive project page for {topic}, designed so every visitor can understand and participate.",
+                "hero_badges": ["Screen reader friendly", "Keyboard ready", "Clear language"],
+                "primary_cta": "Explore the project",
+                "secondary_cta": "Check accessibility",
+                "about_title": "About the Project",
+                "about_lead": f"{title} explains an accessibility-first idea in plain language, with sections that are easy to scan and navigate.",
+                "mission_title": "Accessibility Promise",
+                "mission_body": "We use semantic headings, clear link text, labelled forms, strong contrast, and visible keyboard focus so the page works for more people.",
+                "projects_title": "Accessibility Features",
+                "projects_intro": "Filter the features to review the most important inclusive design choices.",
+                "filters": [
+                    ("all", "All"),
+                    ("screen-reader", "Screen reader"),
+                    ("keyboard", "Keyboard"),
+                    ("content", "Content"),
+                ],
+                "projects": [
+                    (
+                        "Landmark Layout",
+                        "screen-reader",
+                        "A11Y",
+                        "Header, navigation, main content, sections, and footer create a useful page map.",
+                    ),
+                    (
+                        "Focus Path",
+                        "keyboard",
+                        "TAB",
+                        "Buttons and links have visible focus styles and a logical tab order.",
+                    ),
+                    (
+                        "Plain Content",
+                        "content",
+                        "TXT",
+                        "Short paragraphs and clear headings help beginners understand the project.",
+                    ),
+                    ("Form Labels", "screen-reader", "LBL", "Every form field has a label and a helpful purpose."),
+                    ("Contrast Check", "content", "AA", "Text and backgrounds are chosen for readable contrast."),
+                    (
+                        "No Broken Assets",
+                        "keyboard",
+                        "OK",
+                        "The starter page avoids fake external files and tracking scripts.",
+                    ),
+                ],
+                "stats_title": "Inclusive Design Goals",
+                "stats": [
+                    (100, "%", "Keyboard reachable"),
+                    (0, "", "Tracking scripts"),
+                    (6, "", "Core checks"),
+                    (3, "", "Ways to review"),
+                ],
+                "team_title": "Who It Helps",
+                "team_intro": "Accessibility helps many kinds of visitors.",
+                "team": [
+                    ("SR", "Screen Reader Users", "Need structure and names"),
+                    ("KB", "Keyboard Users", "Need focus and order"),
+                    ("LV", "Low-Vision Users", "Need contrast and scale"),
+                    ("BG", "Beginners", "Need simple explanations"),
+                ],
+                "facilities_title": "Review Checklist",
+                "facilities_intro": "Use these checks before sharing the page.",
+                "facilities": [
+                    ("H1", "One clear h1", "The page has one main heading that names the project."),
+                    ("ALT", "Meaningful alt text", "Images describe their purpose or are clearly placeholders."),
+                    ("LBL", "Labelled forms", "Inputs are paired with visible labels."),
+                    ("TAB", "Visible focus", "Keyboard users can see where they are."),
+                ],
+                "events_title": "Next Steps",
+                "events": [
+                    ("Step 1", "Run an audit", "Use CodeUp Web to check accessibility issues."),
+                    ("Step 2", "Fix safe issues", "Apply simple fixes for labels, titles, and alt text."),
+                    ("Step 3", "Ask for review", "Use review website to plan the next improvement."),
+                ],
+                "join_title": "Share Feedback",
+                "join_lead": "Tell us what barrier you found or what improvement would help most.",
+                "footer_note": "Built as an accessibility-first starter website.",
+            }
+        )
+    elif kind == "event":
+        base.update(
+            {
+                "tagline": f"A clear, welcoming event page for {topic}, with schedule details and simple registration.",
+                "hero_badges": ["Beginner friendly", "Accessible venue", "Free resources"],
+                "primary_cta": "Register now",
+                "secondary_cta": "View schedule",
+                "about_title": "About the Event",
+                "about_lead": f"{title} gives visitors the essentials: who it is for, what they will learn, and how to join.",
+                "mission_title": "What You Will Learn",
+                "mission_body": "The event is designed for beginners, with clear steps, practical examples, and time for questions.",
+                "projects_title": "Sessions",
+                "filters": [("all", "All"), ("learn", "Learn"), ("build", "Build"), ("support", "Support")],
+                "projects": [
+                    ("Welcome Session", "learn", "01", "A short overview of the day and how to ask for help."),
+                    ("Hands-on Lab", "build", "02", "Build a small project with guided support."),
+                    ("Accessibility Check", "support", "03", "Learn simple checks for headings, labels, and contrast."),
+                    ("Show and Tell", "build", "04", "Share what you made and hear friendly feedback."),
+                    ("Mentor Corner", "support", "05", "Get one-to-one help from a mentor."),
+                    ("Resource Pack", "learn", "06", "Leave with links, notes, and next steps."),
+                ],
+                "stats_title": "Event Details",
+                "stats": [
+                    (90, "", "Minutes"),
+                    (4, "", "Sessions"),
+                    (12, "+", "Practice tasks"),
+                    (1, "", "Starter project"),
+                ],
+                "team_title": "Event Team",
+                "facilities_title": "What to Expect",
+                "events_title": "Schedule",
+                "join_title": "Register for the Event",
+            }
+        )
+    elif kind == "project":
+        base.update(
+            {
+                "tagline": f"A beginner-friendly showcase for {topic}, with the question, process, results, and next steps.",
+                "hero_badges": ["Clear question", "Evidence based", "Easy to review"],
+                "primary_cta": "See the results",
+                "secondary_cta": "Read the process",
+                "about_title": "Project Overview",
+                "about_lead": f"{title} explains the project idea, why it matters, and what was learned.",
+                "mission_title": "Project Question",
+                "mission_body": "Every strong showcase starts with a clear question, a simple method, and honest results.",
+                "projects_title": "Project Highlights",
+                "filters": [("all", "All"), ("research", "Research"), ("build", "Build"), ("results", "Results")],
+                "projects": [
+                    ("Research Question", "research", "Q", "The main question the project tries to answer."),
+                    ("Materials", "build", "M", "Tools, data, and resources used in the project."),
+                    ("Prototype", "build", "P", "A simple version built to test the idea."),
+                    ("Findings", "results", "F", "The clearest results and what they mean."),
+                    ("Lessons Learned", "results", "L", "What changed after testing and feedback."),
+                    ("Next Steps", "research", "N", "What could be improved in a future version."),
+                ],
+                "stats_title": "Project Snapshot",
+                "stats": [(3, "", "Experiments"), (5, "", "Findings"), (2, "", "Improvements"), (1, "", "Final demo")],
+                "team_title": "Project Roles",
+                "facilities_title": "Resources",
+                "events_title": "Timeline",
+                "join_title": "Ask About the Project",
             }
         )
     elif kind == "school":

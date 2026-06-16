@@ -111,14 +111,94 @@ def test_export_project_zip_contains_three_source_files(client):
 
     assert response.status_code == 200
     with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
-        assert set(archive.namelist()) == {"index.html", "style.css", "script.js", "manifest.json"}
+        assert set(archive.namelist()) == {"index.html", "style.css", "script.js", "README.txt", "manifest.json"}
         index = archive.read("index.html").decode("utf-8")
         assert 'href="style.css"' in index
         assert 'src="script.js"' in index
         assert archive.read("style.css").decode("utf-8") == "body { color: #111827; }"
         assert "dataset.ready" in archive.read("script.js").decode("utf-8")
+        assert "Open index.html in a browser" in archive.read("README.txt").decode("utf-8")
         manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
         assert manifest["files"] == ["index.html", "style.css", "script.js"]
+
+
+def test_fallback_generation_covers_product_categories_and_reports_fallback(client):
+    prompts = {
+        "make a website for my school robotics club": "robotics",
+        "create a personal portfolio website": "portfolio",
+        "make a website for a coding workshop": "sessions",
+        "create a landing page for an accessibility project": "accessibility",
+        "make a simple website for a bakery": "menu",
+        "make a website for my science fair project": "project",
+    }
+
+    for prompt, expected_text in prompts.items():
+        data = client.post("/generate-site", json={"prompt": prompt}).get_json()
+        assert data["success"] is True
+        assert data["fallback"] is True
+        assert "simple accessible starter website" in " ".join(data["summary"])
+        combined = combine_site_files(data["html"], data["css"], data["js"]).lower()
+        assert "<main" in combined
+        assert "<h1" in combined
+        assert expected_text in combined
+
+
+def test_edit_site_updates_existing_project_without_replacing_topic(client):
+    files = generate_site_files("make a website for my school robotics club")
+
+    edited = client.post(
+        "/edit-site",
+        json={
+            "instruction": "add a section about competitions",
+            "html": files["html"],
+            "css": files["css"],
+            "js": files["js"],
+        },
+    ).get_json()
+
+    assert edited["success"] is True
+    combined = combine_site_files(edited["html"], edited["css"], edited["js"]).lower()
+    assert "competitions" in combined
+    assert "robotics" in combined
+    assert "bakery" not in combined
+
+    polished = client.post(
+        "/edit-site",
+        json={
+            "instruction": "make it more professional",
+            "html": edited["html"],
+            "css": edited["css"],
+            "js": edited["js"],
+        },
+    ).get_json()
+    assert polished["success"] is True
+    assert "professional polish" in polished["css"].lower()
+    assert "robotics" in polished["html"].lower()
+
+
+def test_website_validation_rejects_unsafe_scripts_and_raw_transcript_is_escaped():
+    from codeup.services.natural_website_editor import plan_website_edit, validate_website_files
+
+    unsafe = validate_website_files(
+        {
+            "index.html": "<!doctype html><html lang='en'><head><title>X</title></head><body><main><h1>X</h1></main></body></html>",
+            "style.css": "a:focus-visible { outline: 3px solid #f59e0b; }",
+            "script.js": "eval('alert(1)')",
+        }
+    )
+    assert unsafe.valid is False
+    assert any("Dynamic JavaScript" in error for error in unsafe.errors)
+
+    files = generate_site_files("make a website for my robotics club")
+    plan = plan_website_edit(
+        current_html=files["html"],
+        current_css=files["css"],
+        current_js=files["js"],
+        instruction="add a section about <script>alert(1)</script>",
+    )
+    assert plan.action == "update_website"
+    assert "<script>alert(1)</script>" not in plan.files["index.html"]
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in plan.files["index.html"]
 
 
 def test_publish_project_uses_current_editor_html_not_stale_saved_page(client):

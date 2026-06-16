@@ -125,6 +125,11 @@ if (cta) {
     projectName: 'Untitled Project',
     autosaveTimer: null,
     lastAudit: null,
+    originalGenerationRequest: '',
+    currentFiles: { html: '', css: '', js: '' },
+    lastEditRequest: '',
+    lastEditSummary: '',
+    exportStatus: '',
     lastCommand: '',
     lastOutput: '',
     heartbeatTimer: null,
@@ -386,6 +391,7 @@ if (cta) {
     }
     persistDrafts();
     state.pages[state.currentPage] = getHtml();
+    state.currentFiles = { html, css, js };
     scheduleAutosave();
   }
 
@@ -486,11 +492,13 @@ if (cta) {
       if (jsEl) jsEl.value = parts.js;
       persistDrafts();
       state.pages[state.currentPage] = getHtml();
+      state.currentFiles = { html: parts.html, css: parts.css, js: parts.js };
       scheduleAutosave();
     } else if (editor) {
       editor.value = html;
       try { sessionStorage.setItem('codeup_html_draft', html); } catch (error) {}
       state.pages[state.currentPage] = html;
+      state.currentFiles = { html, css: '', js: '' };
       scheduleAutosave();
     }
   }
@@ -933,64 +941,48 @@ if (cta) {
 
   async function exportHtml() {
     const token = startHeartbeat('Exporting project');
-    const html = getHtml();
-    const pages = activePages();
     const fileExport = {
       'index.html': ensureManagedRefs(stripManagedBlocks(normalizeHtmlDocument(getHtmlSource())), !!getCss().trim(), !!getJs().trim()),
       'style.css': getCss(),
       'script.js': getJs(),
     };
-    const hasSeparateFiles = fileExport['style.css'].trim() || fileExport['script.js'].trim();
-    const isSinglePage = Object.keys(pages).length <= 1;
-    if ((isSinglePage && hasSeparateFiles) || Object.keys(pages).length > 1 || state.projectId) {
-      try {
-        const payload = isSinglePage && hasSeparateFiles
-          ? { project_id: state.projectId, files: fileExport, name: state.projectName }
-          : { project_id: state.projectId, pages, html, name: state.projectName };
-        const response = await fetch('/export-site.zip', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        if (!response.ok) {
-          const data = await response.json().catch(() => ({}));
-          throw new Error(data.error || 'ZIP export failed.');
-        }
-        const blob = await response.blob();
-        if (!isAsyncFresh(token)) return;
-        const link = document.createElement('a');
-        const objectUrl = URL.createObjectURL(blob);
-        link.href = objectUrl;
-        link.download = slugify(state.projectName || 'codeup-site') + '.zip';
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        setTimeout(() => URL.revokeObjectURL(objectUrl), 500);
-        writeOutput(t(
-          isSinglePage && hasSeparateFiles ? 'Project ZIP exported with index.html, style.css, and script.js.' : 'Project ZIP exported.',
-          isSinglePage && hasSeparateFiles ? 'Project ZIP index.html, style.css aur script.js ke saath export ho gayi.' : 'Project ZIP export ho gayi.'
-        ), true);
-        stopHeartbeat(token);
-        return;
-      } catch (error) {
-        if (!isAsyncFresh(token)) return;
-        stopHeartbeat(token);
-        writeOutput(error.message, true);
-        return;
+    try {
+      const response = await fetch('/export-site.zip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: state.projectId,
+          files: fileExport,
+          name: state.projectName,
+          audit: state.lastAudit || null,
+        }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'ZIP export failed.');
       }
+      const blob = await response.blob();
+      if (!isAsyncFresh(token)) return;
+      const link = document.createElement('a');
+      const objectUrl = URL.createObjectURL(blob);
+      link.href = objectUrl;
+      link.download = slugify(state.projectName || 'codeup-site') + '.zip';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 500);
+      state.exportStatus = 'exported';
+      writeOutput(t(
+        'Exported your website as a ZIP with HTML, CSS, JavaScript, and instructions.',
+        'Aapki website HTML, CSS, JavaScript aur instructions ke ZIP ke roop mein export ho gayi.'
+      ), true);
+      stopHeartbeat(token);
+    } catch (error) {
+      if (!isAsyncFresh(token)) return;
+      state.exportStatus = 'failed';
+      stopHeartbeat(token);
+      writeOutput(error.message, true);
     }
-    const title = (html.match(/<title>\s*([^<]+)/i) || [])[1] || 'codeup-site';
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-    const link = document.createElement('a');
-    const objectUrl = URL.createObjectURL(blob);
-    link.href = objectUrl;
-    link.download = slugify(title) + '.html';
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 500);
-    stopHeartbeat(token);
-    writeOutput(t('HTML file exported.', 'HTML file export ho gayi.'), true);
   }
 
   function previewDocument() {
@@ -1247,7 +1239,7 @@ if (cta) {
       const audit = data.audit;
       state.lastAudit = audit;
       const checks = audit.checks.map(item => `${item.passed ? 'PASS' : 'FIX'} - ${item.label}`).join('\n');
-      const issues = (audit.issues || []).map(item => `${item.severity.toUpperCase()} - ${item.id}: ${item.description}\n  Fix: ${item.suggested_fix}`).join('\n');
+      const issues = (audit.issues || []).map(item => `${item.severity.toUpperCase()} - ${item.id}: ${item.description}\n  Why it matters: ${item.why_matters || 'This can make the website harder to use.'}\n  Fix: ${item.suggested_fix}`).join('\n');
       const suggestions = audit.suggestions.map(item => `- ${item}`).join('\n');
       const contrast = (audit.contrast_pairs || []).map(item => `${item.passes_aa ? 'PASS' : 'FIX'} - ${item.selector}: ${item.ratio}:1`).join('\n');
       const transcript = (audit.screen_reader_transcript || []).slice(0, 12).map(item => `- ${item.announcement}`).join('\n');
@@ -1518,7 +1510,10 @@ if (cta) {
       ? prompt
       : 'Build a website for ' + prompt;
 
-    writeOutput(t('Generating HTML, CSS, and JavaScript...', 'HTML, CSS aur JavaScript ban rahe hain...'));
+    writeOutput(t(
+      isEdit ? 'Editing the current website...' : 'Generating HTML, CSS, and JavaScript...',
+      isEdit ? 'Current website edit ho rahi hai...' : 'HTML, CSS aur JavaScript ban rahe hain...'
+    ));
     updateStateIndicator('PROCESSING');
     beginReplay(isEdit ? 'Before website edit' : 'Before website generation');
     const token = startHeartbeat(isEdit ? 'Editing website' : 'Generating website');
@@ -1533,6 +1528,15 @@ if (cta) {
           edit: isEdit,
           language: lang(),
           project_id: state.projectId,
+          previous_generation_request: state.originalGenerationRequest,
+          metadata: {
+            project_name: state.projectName,
+            current_page: state.currentPage,
+            last_edit_request: state.lastEditRequest,
+            last_edit_summary: state.lastEditSummary,
+            last_accessibility_audit: state.lastAudit,
+            export_status: state.exportStatus,
+          },
         }),
       });
       if (!data.html) throw new Error(data.error || 'Website generation failed.');
@@ -1540,6 +1544,12 @@ if (cta) {
       snapshotVersion(isEdit ? 'Before editing website' : 'Before generating website');
       if (!isEdit) { state.currentPage = 'home'; state.pages = {}; }
       loadGeneratedFiles({ html: data.html, css: data.css, js: data.js });
+      if (isEdit) {
+        state.lastEditRequest = prompt;
+        state.lastEditSummary = (data.summary || []).join(' ');
+      } else {
+        state.originalGenerationRequest = normalized;
+      }
       finishReplay(isEdit ? 'After website edit' : 'After website generation');
       snapshotVersion(isEdit ? 'Edited website' : 'Generated website');
       activateTab('html');
@@ -1548,8 +1558,12 @@ if (cta) {
       await saveMemory({ prompt: normalized, html: getHtml(), url });
       const summary = (data.summary || []).join(' ');
       const message = t(
-        `Done. I created separate index.html, style.css, and script.js files and updated the live preview. ${summary}`,
-        `Ho gaya. Alag index.html, style.css aur script.js files ban gayi aur preview update ho gaya. ${summary}`
+        isEdit
+          ? `Done. I updated the existing website and refreshed the live preview. ${summary}`
+          : `Done. I created separate index.html, style.css, and script.js files and updated the live preview. ${summary}`,
+        isEdit
+          ? `Ho gaya. Existing website update ho gayi aur preview refresh ho gaya. ${summary}`
+          : `Ho gaya. Alag index.html, style.css aur script.js files ban gayi aur preview update ho gaya. ${summary}`
       );
       writeOutput(message, shouldSpeak);
       updateStateIndicator('IDLE');
@@ -2938,6 +2952,11 @@ if (cta) {
   // Natural-language commands that are specific to the 3-file IDE. Returns true
   // when handled. Shared by both the voice route and the typed command box.
   function handleIdeCommand(command, lower) {
+    if (lower === 'help' || lower === 'what can i do here' || lower === 'what can i do here?'
+        || lower.includes('what can codeup web do') || lower.includes('show examples')) {
+      writeOutput(helpText(), true);
+      return true;
+    }
     if (handleWebInsertCommand(command, lower)) return true;
     if (lower.includes('where am i') || lower.includes('read breadcrumb') || lower.includes('what am i editing')) { breadcrumb(); return true; }
     if (lower.includes('explain simply') || lower.includes('explain this error') || lower.includes('why is this broken')) { explainErrors(false); return true; }
@@ -2970,6 +2989,8 @@ if (cta) {
     if (lower.includes('futuristic')) { applyDesignPreset('futuristic'); return true; }
     if (lower.includes('add animation') || lower.includes('add animations') || lower.includes('more animation')) { applyDesignPreset('animated'); return true; }
     if (lower.includes('more beautiful') || lower.includes('more colorful') || lower.includes('more colourful') || lower.includes('prettier') || lower.includes('improve the design') || lower.includes('make it pop')) { applyDesignPreset('vibrant'); return true; }
+    if (lower.includes('make it more professional') || lower.includes('make it simpler') || lower.includes('make the text easier to read') || lower.includes('make text easier to read') || lower.includes('make the title shorter') || lower.includes('improve navigation') || lower.includes('add footer') || lower.includes('change website name to') || lower.includes('change the website name to') || lower.includes('change the title to') || lower.includes('make the buttons clearer')) { buildWebsite(command, true, { edit: true }); return true; }
+    if (/add\s+(an?\s+)?about\s+section/i.test(lower) || /add\s+(an?\s+)?section\s+(about|for)\s+/i.test(lower)) { buildWebsite(command, true, { edit: true }); return true; }
     if (lower.includes('dark mode')) { applyCssEdit('change the background dark'); return true; }
     if (lower.includes('make it accessible') || lower.includes('improve accessibility') || lower.includes('more accessible')) { applyAllAuditFixes(); return true; }
     if (lower.includes('contact') && (lower.includes('section') || lower.includes('form'))) { addContactSection(); return true; }
@@ -2980,8 +3001,8 @@ if (cta) {
 
   function helpText() {
     return t(
-      'You can say: generate a website for a robotics lab, run preview, analyze the code, fix the code, read the HTML, read the CSS, read the JavaScript, give me a code map, add a contact section, add dark mode, make it more futuristic, save snippet as robotics demo, load snippet, audit website, export website, reset session, and stop everything.',
-      'Aap bol sakte hain: robotics lab ke liye website banao, run preview, code analyze karo, code fix karo, HTML padho, CSS padho, JavaScript padho, code map do, contact section add karo, dark mode add karo, futuristic banao, snippet save karo, snippet load karo, audit karo, export karo, reset karo, aur stop everything.'
+      'You can create a website, improve it, check accessibility, preview it, or export it. Try saying: make a website for my school club. Then ask: add an about section, check accessibility, or export website.',
+      'Aap website bana sakte hain, improve kar sakte hain, accessibility check kar sakte hain, preview dekh sakte hain, ya export kar sakte hain. Bolkar dekhiye: mere school club ke liye website banao.'
     );
   }
 
@@ -3060,6 +3081,7 @@ if (cta) {
     const action = routed.action;
     const slots = routed.slots || {};
     if (action === 'chat') return false;
+    if (action === 'help_guide') { writeOutput(helpText(), true); return true; }
     if (action === 'walkthrough_page') { await walkthroughPageMap(); return true; }
     if (action === 'walkthrough_keyboard_start') { await walkthroughKeyboardStart(); return true; }
     if (action === 'walkthrough_next_element') { await walkthroughKeyboardMove('next'); return true; }
@@ -3130,6 +3152,7 @@ if (cta) {
     if (action === 'explain_site') { await explainWebsite(true); return true; }
     if (action === 'sonify_site') { sonifyHtml(); return true; }
     if (action === 'polish_html') { await polishHtml(); return true; }
+    if (action === 'edit_website') { await buildWebsite(command, true, { edit: true }); return true; }
     if (action === 'build_site') { await buildWebsite(slots.prompt || command, true); return true; }
     return false;
   }
@@ -4117,8 +4140,8 @@ if (cta) {
     try { await previewHtml(false); } catch (e) {}
     setTimeout(startWakeListener, 600);
     speak(t(
-      `CodeUp HTML ready. Say ${state.wakeWord} to start voice commands, or use the Voice button.`,
-      `CodeUp HTML ready hai. Voice commands start karne ke liye ${state.wakeWord} boliye, ya Voice button use karein.`
+      `CodeUp Web ready. Say ${state.wakeWord} to start voice commands, use the Voice button, or type what can I do here.`,
+      `CodeUp Web ready hai. Voice commands start karne ke liye ${state.wakeWord} boliye, Voice button use karein, ya what can I do here type karein.`
     ));
   });
 })();

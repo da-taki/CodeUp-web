@@ -84,6 +84,59 @@ def _source_files_from_body(body: dict) -> dict[str, str] | None:
     return {"index.html": html, "style.css": css, "script.js": js}
 
 
+def _audit_from_body_or_project(body: dict, project_id: str | None = None) -> dict | None:
+    audit = body.get("audit")
+    if isinstance(audit, dict):
+        return audit
+    if project_id:
+        project = load_project(project_id)
+        if project and project.audit_history:
+            latest = project.audit_history[-1]
+            if isinstance(latest, dict) and isinstance(latest.get("audit"), dict):
+                return latest["audit"]
+    return None
+
+
+def _readme_text(name: str, files: list[str]) -> str:
+    title = (name or "CodeUp Web export").strip() or "CodeUp Web export"
+    listed = "\n".join(f"- {filename}" for filename in files)
+    return (
+        f"{title}\n\n"
+        "This ZIP was exported from CodeUp Web, an accessibility-first website builder.\n\n"
+        "Files included:\n"
+        f"{listed}\n\n"
+        "Open index.html in a browser to view the website. Edit style.css for visual design "
+        "and script.js for small interactive behavior. Keep headings, labels, alt text, and "
+        "keyboard focus styles when you make changes.\n"
+    )
+
+
+def _audit_report_text(audit: dict | None) -> str:
+    if not audit:
+        return ""
+    lines = [f"Accessibility score: {audit.get('score', 'unknown')}/100", ""]
+    issues = audit.get("issues") if isinstance(audit.get("issues"), list) else []
+    if not issues:
+        lines.append("No structured issues were reported in the last audit.")
+    for issue in issues:
+        if not isinstance(issue, dict):
+            continue
+        lines.extend(
+            [
+                f"Severity: {issue.get('severity', 'unknown')}",
+                f"Issue: {issue.get('description', issue.get('id', 'Unknown issue'))}",
+                f"Why it matters: {issue.get('why_matters', 'This can make the website harder to use.')}",
+                f"Suggested fix: {issue.get('suggested_fix', 'Review and improve this item.')}",
+                "",
+            ]
+        )
+    suggestions = audit.get("suggestions") if isinstance(audit.get("suggestions"), list) else []
+    if suggestions:
+        lines.append("Suggestions:")
+        lines.extend(f"- {item}" for item in suggestions)
+    return "\n".join(lines).strip() + "\n"
+
+
 @site_bp.route("/publish-site", methods=["POST"])
 def publish_site():
     body = safejson()
@@ -214,22 +267,30 @@ def audit_autofix():
 def export_site_zip():
     body = safejson()
     source_files = _source_files_from_body(body)
+    project_id = str(body.get("project_id") or "").strip() or None
+    audit = _audit_from_body_or_project(body, project_id)
     if source_files:
         total_size = sum(len(value) for value in source_files.values())
         if total_size > MAX_HTML_SIZE * 5:
             return jsonify({"success": False, "error": f"Project too large (max {MAX_HTML_SIZE * 5} bytes)"}), 413
         archive = io.BytesIO()
         manifest = {
-            "project_id": str(body.get("project_id") or ""),
+            "project_id": project_id or "",
             "files": list(source_files),
             "entry": "index.html",
         }
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
             for filename, content in source_files.items():
                 bundle.writestr(filename, content)
+            bundle.writestr(
+                "README.txt", _readme_text(str(body.get("name") or "CodeUp Web export"), list(source_files))
+            )
+            if audit:
+                bundle.writestr("accessibility_report.txt", _audit_report_text(audit))
             bundle.writestr("manifest.json", json.dumps(manifest, indent=2))
         archive.seek(0)
         filename = safe_page_filename(str(body.get("name") or "codeup-site"))[:-5] + ".zip"
+        append_memory(get_session_id(), note="Exported website ZIP")
         return send_file(
             archive,
             mimetype="application/zip",
@@ -239,6 +300,7 @@ def export_site_zip():
         )
 
     pages, project_id = _pages_from_body(body)
+    audit = _audit_from_body_or_project(body, project_id)
     if not pages:
         return jsonify({"success": False, "error": "No pages to export"}), 400
     plan, collisions = publish_page_plan(pages)
@@ -251,14 +313,20 @@ def export_site_zip():
         "pages": {name: filename for name, filename, _ in plan},
     }
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+        exported_files = []
         for _, filename, page_html in plan:
             if len(page_html) > MAX_HTML_SIZE:
                 return jsonify({"success": False, "error": f"Page {filename} too large"}), 413
             sanitized, _warnings = sanitize_hosted_html(wrap_html(page_html))
             bundle.writestr(filename, sanitized)
+            exported_files.append(filename)
+        bundle.writestr("README.txt", _readme_text(str(body.get("name") or "CodeUp Web export"), exported_files))
+        if audit:
+            bundle.writestr("accessibility_report.txt", _audit_report_text(audit))
         bundle.writestr("manifest.json", json.dumps(manifest, indent=2))
     archive.seek(0)
     filename = safe_page_filename(str(body.get("name") or "codeup-site"))[:-5] + ".zip"
+    append_memory(get_session_id(), note="Exported website ZIP")
     return send_file(
         archive,
         mimetype="application/zip",
