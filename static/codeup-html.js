@@ -242,6 +242,8 @@ if (cta) {
   function writeOutput(message, shouldSpeak = false) {
     const output = $('output');
     if (output) output.textContent = message;
+    const empty = $('outputEmpty');
+    if (empty && (message || '').trim()) empty.hidden = true;
     state.lastOutput = message || '';
     if (shouldSpeak) speak(message);
   }
@@ -506,16 +508,34 @@ if (cta) {
     };
   }
 
-  // Append a friendly, accessible "Try this next" line to the output panel.
+  // Render small, clickable "Try this next" chips below the output (no walls of text).
   function suggestNext(suggestions) {
     const list = (suggestions || []).filter(Boolean);
-    if (!list.length) return;
-    const line = 'Try this next: ' + list.map((item) => `"${item}"`).join(', ') + '.';
-    const output = $('output');
-    if (output && (output.textContent || '').trim()) {
-      output.textContent += `\n\n${line}`;
-      state.lastOutput = output.textContent;
+    const region = $('tryNext');
+    if (!region) {
+      // Fallback for environments without the try-next region: append a short line.
+      const output = $('output');
+      if (list.length && output && (output.textContent || '').trim()) {
+        output.textContent += `\n\nTry this next: ${list.map((item) => `"${item}"`).join(', ')}.`;
+        state.lastOutput = output.textContent;
+      }
+      return;
     }
+    region.innerHTML = '';
+    if (!list.length) { region.hidden = true; return; }
+    region.hidden = false;
+    const label = document.createElement('span');
+    label.className = 'ide-trynext-label';
+    label.textContent = 'Try this next:';
+    region.appendChild(label);
+    list.forEach((cmd) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'ide-chip ide-chip-trynext';
+      chip.setAttribute('data-cmd', cmd);
+      chip.textContent = cmd;
+      region.appendChild(chip);
+    });
   }
 
   async function narrateReplay(reason, title) {
@@ -853,6 +873,15 @@ if (cta) {
       '<div class="cu-preview-toolbar">',
       '  <button id="sitePreviewOpenBtn" class="cu-button cu-button-secondary" type="button" disabled>Open local site</button>',
       '</div>',
+      '<div id="previewEmpty" class="ide-preview-empty">',
+      '  <span class="ide-preview-empty-mark" aria-hidden="true">🖼️</span>',
+      '  <p class="ide-preview-empty-title">Your website preview will appear here.</p>',
+      '  <p class="ide-preview-empty-hint">Try',
+      '    <button type="button" class="ide-chip" data-cmd="make a portfolio website">make a portfolio website</button>',
+      '    or',
+      '    <button type="button" class="ide-chip" data-cmd="make a quiz app about Python basics">make a quiz app about Python basics</button>.',
+      '  </p>',
+      '</div>',
       '<iframe id="sitePreviewFrame" title="Student website preview" sandbox="allow-scripts allow-forms allow-modals"></iframe>',
     ].join('');
     if (preview !== wrapper) wrapper.appendChild(preview);
@@ -866,6 +895,12 @@ if (cta) {
       });
     }
     return $('sitePreviewFrame');
+  }
+
+  // Swap the sketchbook empty-state for the live iframe once a preview exists.
+  function markPreviewReady() {
+    const preview = $('sitePreview');
+    if (preview) preview.classList.add('has-preview');
   }
 
   async function saveMemory(payload) {
@@ -911,6 +946,7 @@ if (cta) {
     state.memory.last_url = data.url;
     const frame = ensurePreviewFrame();
     if (frame) frame.src = data.url + '?t=' + Date.now();
+    markPreviewReady();
     const openBtn = $('sitePreviewOpenBtn');
     if (openBtn) {
       openBtn.disabled = false;
@@ -2697,6 +2733,7 @@ if (cta) {
       state.lastUrl = saved.previewUrl;
       const frame = ensurePreviewFrame();
       if (frame && !frame.getAttribute('src')) frame.src = saved.previewUrl;
+      markPreviewReady();
       const openBtn = $('sitePreviewOpenBtn');
       if (openBtn) {
         openBtn.disabled = false;
@@ -4107,6 +4144,52 @@ if (cta) {
     await handleStudentText(value);
   }
 
+  // ----- Command palette (compact, keyboard + screen-reader accessible) -----
+  function isPaletteOpen() {
+    const overlay = $('paletteOverlay');
+    return !!(overlay && !overlay.hidden);
+  }
+
+  function paletteFocusables() {
+    const dialog = $('commandPalette');
+    if (!dialog) return [];
+    return [...dialog.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
+      .filter((el) => !el.disabled);
+  }
+
+  function openCommandPalette() {
+    const overlay = $('paletteOverlay');
+    const dialog = $('commandPalette');
+    const opener = $('openPaletteBtn');
+    if (!overlay) return;
+    state.paletteOpener = (document.activeElement && document.activeElement.focus) ? document.activeElement : opener;
+    overlay.hidden = false;
+    document.body.classList.add('ide-palette-open');
+    if (opener) opener.setAttribute('aria-expanded', 'true');
+    if (dialog && dialog.focus) dialog.focus();
+  }
+
+  function closeCommandPalette(opts) {
+    opts = opts || {};
+    const overlay = $('paletteOverlay');
+    const opener = $('openPaletteBtn');
+    if (!overlay || overlay.hidden) return;
+    overlay.hidden = true;
+    document.body.classList.remove('ide-palette-open');
+    if (opener) opener.setAttribute('aria-expanded', 'false');
+    if (opts.returnFocus !== false && state.paletteOpener && state.paletteOpener.focus) state.paletteOpener.focus();
+  }
+
+  function paletteTrapFocus(event) {
+    if (!isPaletteOpen() || event.key !== 'Tab') return;
+    const items = paletteFocusables();
+    if (!items.length) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  }
+
   function setupUi() {
     document.title = 'CODEUP HTML - Blind-first Web IDE';
     const pageTitle = document.querySelector('.cu-title');
@@ -4148,15 +4231,31 @@ if (cta) {
       });
     }
 
-    // Example command chips in the help panel run the same command pipeline.
-    document.querySelectorAll('.ide-chip[data-cmd]').forEach((chip) => {
-      chip.addEventListener('click', () => {
-        const cmd = chip.getAttribute('data-cmd') || '';
-        const box = $('commandInput');
-        if (box) { box.value = cmd; box.focus(); }
-        cancelSpeech();
-        handleStudentText(cmd);
-      });
+    // Any command chip (palette, idea card, try-next, preview hint) runs the same
+    // pipeline. Delegated so dynamically added try-next chips work too.
+    document.addEventListener('click', (event) => {
+      const chip = event.target && event.target.closest ? event.target.closest('.ide-chip[data-cmd]') : null;
+      if (!chip) return;
+      const cmd = chip.getAttribute('data-cmd') || '';
+      const box = $('commandInput');
+      if (box) { box.value = cmd; box.focus(); }
+      cancelSpeech();
+      if (chip.closest('.ide-palette-overlay')) closeCommandPalette({ returnFocus: false });
+      handleStudentText(cmd);
+    });
+
+    // Command palette open/close wiring.
+    const openPaletteBtn = $('openPaletteBtn');
+    if (openPaletteBtn) openPaletteBtn.addEventListener('click', openCommandPalette);
+    const closePaletteBtn = $('closePaletteBtn');
+    if (closePaletteBtn) closePaletteBtn.addEventListener('click', () => closeCommandPalette());
+    const paletteOverlay = $('paletteOverlay');
+    if (paletteOverlay) paletteOverlay.addEventListener('click', (event) => {
+      if (event.target === paletteOverlay) closeCommandPalette();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && isPaletteOpen()) { event.preventDefault(); closeCommandPalette(); return; }
+      paletteTrapFocus(event);
     });
 
     setupTabs();
@@ -4424,6 +4523,9 @@ if (cta) {
       stopEverything,
       handleIdeCommand,
       activateTab,
+      openCommandPalette,
+      closeCommandPalette,
+      suggestNext,
     };
   }
 
