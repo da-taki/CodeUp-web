@@ -146,11 +146,22 @@ def test_publish_updates_project_version_and_zip_export_contains_pages(client):
     assert "attachment" in response.headers["Content-Disposition"]
 
     with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
-        assert set(archive.namelist()) == {"index.html", "about.html", "README.txt", "manifest.json"}
+        names = set(archive.namelist())
+        assert {"index.html", "about.html", "README.txt", "manifest.json"} <= names
+        assert {
+            "CODE_MAP.txt",
+            "STEP_NARRATION.txt",
+            "LEARNING_NOTES.txt",
+            "PROJECT_SUMMARY.txt",
+            "ACCESSIBILITY_REPORT.txt",
+            "PROJECT_REVIEW.txt",
+            "PREVIEW_DESCRIPTION.txt",
+        } <= names
         assert "href='about.html'" in archive.read("index.html").decode("utf-8")
         assert "accessibility-first website builder" in archive.read("README.txt").decode("utf-8")
         manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
         assert manifest["pages"]["home"] == "index.html"
+        assert "artifacts" in manifest
 
 
 def test_publish_returns_warnings_when_external_resources_stripped(client):
@@ -275,6 +286,7 @@ def test_product_help_and_edit_commands_route(client):
         "change website name to CodeUp Web": "edit_website",
         "make the buttons clearer": "edit_website",
         "add a footer": "edit_website",
+        "add score tracking": "edit_website",
         "start over": "reset_session",
     }
 
@@ -318,9 +330,16 @@ def test_export_zip_includes_readme_and_accessibility_report_when_audit_supplied
             "style.css",
             "script.js",
             "README.txt",
-            "accessibility_report.txt",
+            "CODE_MAP.txt",
+            "STEP_NARRATION.txt",
+            "LEARNING_NOTES.txt",
+            "PROJECT_SUMMARY.txt",
+            "ACCESSIBILITY_REPORT.txt",
+            "PROJECT_REVIEW.txt",
+            "PREVIEW_DESCRIPTION.txt",
             "manifest.json",
         } <= names
-        report = archive.read("accessibility_report.txt").decode("utf-8")
+        report = archive.read("ACCESSIBILITY_REPORT.txt").decode("utf-8")
         assert "Accessibility score: 70/100" in report
         assert "Why it matters: Screen reader users need image purpose." in report
+        assert "PROJECT SUMMARY" in archive.read("PROJECT_SUMMARY.txt").decode("utf-8")

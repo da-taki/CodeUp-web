@@ -17,6 +17,12 @@ from __future__ import annotations
 import re
 from html import escape
 
+from codeup.services.project_type_router import (
+    INTERACTIVE_PROJECT_TYPES,
+    classify_project_type,
+    project_type_to_legacy_kind,
+)
+
 # --------------------------------------------------------------------------- #
 # Topic detection and naming helpers
 # --------------------------------------------------------------------------- #
@@ -1136,6 +1142,674 @@ def _palette_override(kind: str) -> str:
     return f"\n:root {{ --brand: {brand}; --accent: {accent}; --hero-end: {hero_end}; }}\n"
 
 
+_APP_PROJECT_CSS = """
+/* CodeUp Web app template - accessible, responsive, no external assets */
+:root {
+  color-scheme: light;
+  --brand: #1f6f8b;
+  --accent: #f59e0b;
+  --ink: #17202a;
+  --muted: #526070;
+  --surface: #ffffff;
+  --line: #d8e2ea;
+  --soft: #eef6f8;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.6;
+  color: var(--ink);
+  background: #f6f8fb;
+}
+a { color: #0f5f76; font-weight: 700; }
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+.hero {
+  padding: 54px 20px 34px;
+  color: #ffffff;
+  background: linear-gradient(135deg, var(--brand), #2563eb);
+}
+.hero-inner,
+main,
+.site-footer {
+  width: min(1040px, calc(100% - 32px));
+  margin: 0 auto;
+}
+.hero h1 { margin: 0 0 10px; font-size: clamp(2rem, 5vw, 3.6rem); line-height: 1.05; }
+.hero p { max-width: 760px; margin: 0; font-size: 1.08rem; }
+.top-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 24px;
+}
+.top-nav a {
+  color: #ffffff;
+  text-decoration: none;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+main { padding: 28px 0 48px; }
+section { margin: 0 0 22px; }
+.intro-grid,
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+.card,
+.app-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px;
+  box-shadow: 0 10px 26px rgba(23, 32, 42, 0.08);
+}
+.app-panel { display: grid; gap: 16px; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+button,
+.app-button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font: inherit;
+  font-weight: 800;
+  color: #ffffff;
+  background: var(--brand);
+  cursor: pointer;
+}
+button.secondary { color: var(--ink); background: var(--soft); border: 1px solid var(--line); }
+button[aria-pressed="true"] { background: #0f766e; }
+input,
+select,
+textarea {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #9fb2c3;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font: inherit;
+  background: #ffffff;
+  color: var(--ink);
+}
+label { display: grid; gap: 6px; font-weight: 700; }
+.status {
+  min-height: 28px;
+  margin: 0;
+  font-weight: 800;
+  color: #0f5f76;
+}
+.list { display: grid; gap: 10px; padding: 0; margin: 0; list-style: none; }
+.list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: #ffffff;
+}
+.done { text-decoration: line-through; color: var(--muted); }
+.meter {
+  height: 14px;
+  border-radius: 999px;
+  background: #dce7ef;
+  overflow: hidden;
+}
+.meter span {
+  display: block;
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, var(--brand), var(--accent));
+}
+table { width: 100%; border-collapse: collapse; background: #ffffff; }
+th, td { border: 1px solid var(--line); padding: 10px; text-align: left; }
+th { background: var(--soft); }
+.site-footer {
+  padding: 28px 0 42px;
+  color: var(--muted);
+}
+@media (max-width: 700px) {
+  .hero { padding-top: 38px; }
+  .list li { align-items: flex-start; flex-direction: column; }
+}
+"""
+
+
+def _app_shell(title: str, topic: str, app_markup: str) -> str:
+    safe_title = escape(title)
+    safe_topic = escape(topic)
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{safe_title}</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-inner">
+      <h1>{safe_title}</h1>
+      <p>A beginner-friendly CodeUp Web project for {safe_topic}. It works with keyboard, screen readers, and plain JavaScript.</p>
+      <nav class="top-nav" aria-label="Project sections">
+        <a href="#try">Try it</a>
+        <a href="#learn">Learning notes</a>
+        <a href="#accessibility">Accessibility</a>
+      </nav>
+    </div>
+  </header>
+  <main>
+    <section class="intro-grid" aria-label="Project overview">
+      <article class="card">
+        <h2>What this project does</h2>
+        <p>This starter project turns your idea into a working app-style web page with readable structure and safe browser behavior.</p>
+      </article>
+      <article class="card">
+        <h2>How to edit it</h2>
+        <p>Edit index.html for content, style.css for design, and script.js for the interactive behavior.</p>
+      </article>
+    </section>
+    <section id="try" aria-labelledby="try-heading">
+      <h2 id="try-heading">Try It</h2>
+      {app_markup}
+    </section>
+    <section id="learn" aria-labelledby="learn-heading" class="card">
+      <h2 id="learn-heading">Learning Notes</h2>
+      <p>This page demonstrates semantic HTML, responsive CSS, labeled controls, aria-live status messages, and JavaScript event listeners.</p>
+    </section>
+    <section id="accessibility" aria-labelledby="accessibility-heading" class="card">
+      <h2 id="accessibility-heading">Accessibility Choices</h2>
+      <ul>
+        <li>Controls have readable labels and keyboard focus styles.</li>
+        <li>Status messages use aria-live so screen readers hear updates.</li>
+        <li>The page avoids external scripts, tracking, and network calls.</li>
+      </ul>
+    </section>
+  </main>
+  <footer class="site-footer">
+    <p>Made with CodeUp Web. Preview, audit, explain, and export this project when you are ready.</p>
+  </footer>
+  <script src="script.js" defer></script>
+</body>
+</html>"""
+
+
+def _quiz_app() -> tuple[str, str]:
+    markup = """
+<div class="app-panel" data-quiz>
+  <p id="quiz-progress">Question 1 of 3</p>
+  <h3 id="quiz-question">Loading question</h3>
+  <div class="controls" id="quiz-answers" role="group" aria-labelledby="quiz-question"></div>
+  <p class="status" id="quiz-status" aria-live="polite">Choose an answer.</p>
+  <p><strong>Score:</strong> <span id="quiz-score">0</span></p>
+  <button type="button" id="quiz-next" class="secondary">Next question</button>
+</div>
+"""
+    js = """
+var questions = [
+  { text: "Which file holds the page structure?", answers: ["index.html", "style.css", "script.js"], correct: "index.html" },
+  { text: "Which language styles colors and spacing?", answers: ["HTML", "CSS", "JSON"], correct: "CSS" },
+  { text: "Which method listens for a button click?", answers: ["addEventListener", "setTitle", "makeCard"], correct: "addEventListener" }
+];
+var quizIndex = 0;
+var quizScore = 0;
+var answered = false;
+var questionEl = document.getElementById("quiz-question");
+var answersEl = document.getElementById("quiz-answers");
+var statusEl = document.getElementById("quiz-status");
+var scoreEl = document.getElementById("quiz-score");
+var progressEl = document.getElementById("quiz-progress");
+var nextButton = document.getElementById("quiz-next");
+
+function renderQuestion() {
+  var current = questions[quizIndex];
+  answered = false;
+  questionEl.textContent = current.text;
+  progressEl.textContent = "Question " + (quizIndex + 1) + " of " + questions.length;
+  answersEl.innerHTML = "";
+  current.answers.forEach(function (answer) {
+    var button = document.createElement("button");
+    button.type = "button";
+    button.textContent = answer;
+    button.setAttribute("data-answer", answer);
+    button.addEventListener("click", chooseAnswer);
+    answersEl.appendChild(button);
+  });
+  statusEl.textContent = "Choose an answer.";
+}
+
+function chooseAnswer(event) {
+  if (answered) return;
+  answered = true;
+  var picked = event.currentTarget.getAttribute("data-answer");
+  var current = questions[quizIndex];
+  if (picked === current.correct) {
+    quizScore += 1;
+    statusEl.textContent = "Correct. " + picked + " is right.";
+  } else {
+    statusEl.textContent = "Not quite. The answer is " + current.correct + ".";
+  }
+  scoreEl.textContent = String(quizScore);
+}
+
+nextButton.addEventListener("click", function () {
+  quizIndex += 1;
+  if (quizIndex >= questions.length) {
+    statusEl.textContent = "Quiz complete. Final score: " + quizScore + " out of " + questions.length + ".";
+    nextButton.disabled = true;
+    return;
+  }
+  renderQuestion();
+});
+
+renderQuestion();
+"""
+    return markup, js
+
+
+def _calculator_app() -> tuple[str, str]:
+    markup = """
+<form class="app-panel" data-calculator>
+  <label>First number <input id="first-number" type="number" value="10"></label>
+  <label>Operation
+    <select id="operation">
+      <option value="add">Add</option>
+      <option value="subtract">Subtract</option>
+      <option value="multiply">Multiply</option>
+      <option value="divide">Divide</option>
+    </select>
+  </label>
+  <label>Second number <input id="second-number" type="number" value="5"></label>
+  <button type="submit">Calculate</button>
+  <p class="status" id="calc-result" aria-live="polite">Result will appear here.</p>
+</form>
+"""
+    js = """
+var calculator = document.querySelector("[data-calculator]");
+var result = document.getElementById("calc-result");
+
+calculator.addEventListener("submit", function (event) {
+  event.preventDefault();
+  var first = Number(document.getElementById("first-number").value);
+  var second = Number(document.getElementById("second-number").value);
+  var operation = document.getElementById("operation").value;
+  var answer = 0;
+  if (operation === "add") answer = first + second;
+  if (operation === "subtract") answer = first - second;
+  if (operation === "multiply") answer = first * second;
+  if (operation === "divide") {
+    if (second === 0) {
+      result.textContent = "Cannot divide by zero.";
+      return;
+    }
+    answer = first / second;
+  }
+  result.textContent = "Result: " + answer;
+});
+"""
+    return markup, js
+
+
+def _todo_app() -> tuple[str, str]:
+    markup = """
+<div class="app-panel" data-todo>
+  <label>New task <input id="task-input" type="text" placeholder="Add a project task"></label>
+  <div class="controls">
+    <button type="button" id="add-task">Add task</button>
+    <button type="button" id="clear-done" class="secondary">Clear completed</button>
+  </div>
+  <p class="status" id="task-status" aria-live="polite">No tasks yet.</p>
+  <ul class="list" id="task-list" aria-label="Task list"></ul>
+</div>
+"""
+    js = """
+var taskInput = document.getElementById("task-input");
+var addTaskButton = document.getElementById("add-task");
+var clearDoneButton = document.getElementById("clear-done");
+var taskList = document.getElementById("task-list");
+var taskStatus = document.getElementById("task-status");
+
+function updateTaskStatus() {
+  var total = taskList.querySelectorAll("li").length;
+  var done = taskList.querySelectorAll(".done").length;
+  taskStatus.textContent = total ? done + " of " + total + " tasks complete." : "No tasks yet.";
+}
+
+function addTask() {
+  var text = taskInput.value.trim();
+  if (!text) {
+    taskStatus.textContent = "Type a task first.";
+    return;
+  }
+  var item = document.createElement("li");
+  var label = document.createElement("span");
+  label.textContent = text;
+  var doneButton = document.createElement("button");
+  doneButton.type = "button";
+  doneButton.textContent = "Done";
+  doneButton.addEventListener("click", function () {
+    label.classList.toggle("done");
+    updateTaskStatus();
+  });
+  var removeButton = document.createElement("button");
+  removeButton.type = "button";
+  removeButton.className = "secondary";
+  removeButton.textContent = "Remove";
+  removeButton.addEventListener("click", function () {
+    item.remove();
+    updateTaskStatus();
+  });
+  item.append(label, doneButton, removeButton);
+  taskList.appendChild(item);
+  taskInput.value = "";
+  updateTaskStatus();
+}
+
+addTaskButton.addEventListener("click", addTask);
+taskInput.addEventListener("keydown", function (event) {
+  if (event.key === "Enter") addTask();
+});
+clearDoneButton.addEventListener("click", function () {
+  taskList.querySelectorAll(".done").forEach(function (doneItem) {
+    doneItem.closest("li").remove();
+  });
+  updateTaskStatus();
+});
+"""
+    return markup, js
+
+
+def _flashcard_app() -> tuple[str, str]:
+    markup = """
+<div class="app-panel" data-flashcards>
+  <p id="card-progress">Card 1 of 3</p>
+  <article class="card" aria-labelledby="card-question">
+    <h3 id="card-question">Loading card</h3>
+    <p id="card-answer" hidden></p>
+  </article>
+  <div class="controls">
+    <button type="button" id="show-answer">Show answer</button>
+    <button type="button" id="next-card" class="secondary">Next card</button>
+  </div>
+  <p class="status" id="card-status" aria-live="polite">Read the question, then show the answer.</p>
+</div>
+"""
+    js = """
+var cards = [
+  { question: "What does HTML do?", answer: "HTML gives a web page structure and meaning." },
+  { question: "What does CSS do?", answer: "CSS controls layout, colors, spacing, and responsive design." },
+  { question: "What does JavaScript do?", answer: "JavaScript makes the page respond to user actions." }
+];
+var cardIndex = 0;
+var cardQuestion = document.getElementById("card-question");
+var cardAnswer = document.getElementById("card-answer");
+var cardProgress = document.getElementById("card-progress");
+var cardStatus = document.getElementById("card-status");
+
+function renderCard() {
+  var card = cards[cardIndex];
+  cardQuestion.textContent = card.question;
+  cardAnswer.textContent = card.answer;
+  cardAnswer.hidden = true;
+  cardProgress.textContent = "Card " + (cardIndex + 1) + " of " + cards.length;
+  cardStatus.textContent = "Read the question, then show the answer.";
+}
+
+document.getElementById("show-answer").addEventListener("click", function () {
+  cardAnswer.hidden = false;
+  cardStatus.textContent = cardAnswer.textContent;
+});
+
+document.getElementById("next-card").addEventListener("click", function () {
+  cardIndex = (cardIndex + 1) % cards.length;
+  renderCard();
+});
+
+renderCard();
+"""
+    return markup, js
+
+
+def _poll_app() -> tuple[str, str]:
+    markup = """
+<div class="app-panel" data-poll>
+  <h3>Which feature should we build next?</h3>
+  <div class="controls" role="group" aria-label="Poll choices">
+    <button type="button" data-choice="Voice commands">Voice commands</button>
+    <button type="button" data-choice="Project export">Project export</button>
+    <button type="button" data-choice="Accessibility audit">Accessibility audit</button>
+  </div>
+  <p class="status" id="poll-status" aria-live="polite">Vote for one choice.</p>
+  <ul class="list" id="poll-results" aria-label="Poll results"></ul>
+</div>
+"""
+    js = """
+var votes = { "Voice commands": 0, "Project export": 0, "Accessibility audit": 0 };
+var pollStatus = document.getElementById("poll-status");
+var pollResults = document.getElementById("poll-results");
+
+function renderPoll() {
+  pollResults.innerHTML = "";
+  Object.keys(votes).forEach(function (choice) {
+    var item = document.createElement("li");
+    item.textContent = choice + ": " + votes[choice] + " vote" + (votes[choice] === 1 ? "" : "s");
+    pollResults.appendChild(item);
+  });
+}
+
+document.querySelectorAll("[data-choice]").forEach(function (button) {
+  button.addEventListener("click", function () {
+    var choice = button.getAttribute("data-choice");
+    votes[choice] += 1;
+    pollStatus.textContent = "Vote added for " + choice + ".";
+    renderPoll();
+  });
+});
+
+renderPoll();
+"""
+    return markup, js
+
+
+def _contact_form_app() -> tuple[str, str]:
+    markup = """
+<form class="app-panel" data-contact-form novalidate>
+  <label for="contact-name">Name</label>
+  <input id="contact-name" name="name" type="text" autocomplete="name" required>
+  <label for="contact-email">Email</label>
+  <input id="contact-email" name="email" type="email" autocomplete="email" required>
+  <label for="contact-message">Message</label>
+  <textarea id="contact-message" name="message" rows="4" required></textarea>
+  <button type="submit">Check message</button>
+  <p class="status" id="contact-status" aria-live="polite">Fill out the form, then check it.</p>
+</form>
+"""
+    js = """
+var contactForm = document.querySelector("[data-contact-form]");
+var contactStatus = document.getElementById("contact-status");
+
+contactForm.addEventListener("submit", function (event) {
+  event.preventDefault();
+  var name = document.getElementById("contact-name").value.trim();
+  var email = document.getElementById("contact-email").value.trim();
+  var message = document.getElementById("contact-message").value.trim();
+  var emailLooksValid = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email);
+  if (!name || !emailLooksValid || !message) {
+    contactStatus.textContent = "Please add a name, a valid email, and a message.";
+    return;
+  }
+  contactStatus.textContent = "Ready to send later. This demo form does not transmit data.";
+  contactForm.reset();
+});
+"""
+    return markup, js
+
+
+def _dashboard_app() -> tuple[str, str]:
+    markup = """
+<div class="app-panel" data-dashboard>
+  <div class="card-grid" id="metric-grid" aria-label="Project metrics"></div>
+  <div class="controls">
+    <button type="button" data-filter="all">All</button>
+    <button type="button" data-filter="learning">Learning</button>
+    <button type="button" data-filter="accessibility">Accessibility</button>
+  </div>
+  <p class="status" id="dashboard-status" aria-live="polite">Showing all metrics.</p>
+</div>
+"""
+    js = """
+var metrics = [
+  { label: "Lessons finished", value: 8, group: "learning" },
+  { label: "Practice minutes", value: 45, group: "learning" },
+  { label: "Accessibility score", value: 96, group: "accessibility" },
+  { label: "Keyboard checks", value: 12, group: "accessibility" }
+];
+var metricGrid = document.getElementById("metric-grid");
+var dashboardStatus = document.getElementById("dashboard-status");
+
+function renderMetrics(group) {
+  var shown = metrics.filter(function (metric) {
+    return group === "all" || metric.group === group;
+  });
+  metricGrid.innerHTML = "";
+  shown.forEach(function (metric) {
+    var card = document.createElement("article");
+    card.className = "card";
+    card.innerHTML = "<h3>" + metric.value + "</h3><p>" + metric.label + "</p>";
+    metricGrid.appendChild(card);
+  });
+  dashboardStatus.textContent = "Showing " + shown.length + " metric cards.";
+}
+
+document.querySelectorAll("[data-filter]").forEach(function (button) {
+  button.addEventListener("click", function () {
+    renderMetrics(button.getAttribute("data-filter"));
+  });
+});
+
+renderMetrics("all");
+"""
+    return markup, js
+
+
+def _timetable_app() -> tuple[str, str]:
+    markup = """
+<div class="app-panel" data-timetable>
+  <div class="controls" aria-label="Timetable filters">
+    <button type="button" data-day="all">All days</button>
+    <button type="button" data-day="monday">Monday</button>
+    <button type="button" data-day="tuesday">Tuesday</button>
+  </div>
+  <p class="status" id="timetable-status" aria-live="polite">Showing all classes.</p>
+  <table>
+    <caption>Weekly timetable</caption>
+    <thead><tr><th>Day</th><th>Time</th><th>Activity</th></tr></thead>
+    <tbody id="timetable-body"></tbody>
+  </table>
+</div>
+"""
+    js = """
+var sessions = [
+  { day: "monday", time: "09:00", activity: "HTML basics" },
+  { day: "monday", time: "11:00", activity: "CSS practice" },
+  { day: "tuesday", time: "10:00", activity: "JavaScript lab" },
+  { day: "tuesday", time: "13:00", activity: "Accessibility review" }
+];
+var timetableBody = document.getElementById("timetable-body");
+var timetableStatus = document.getElementById("timetable-status");
+
+function renderTimetable(day) {
+  var shown = sessions.filter(function (session) {
+    return day === "all" || session.day === day;
+  });
+  timetableBody.innerHTML = "";
+  shown.forEach(function (session) {
+    var row = document.createElement("tr");
+    row.innerHTML = "<td>" + session.day + "</td><td>" + session.time + "</td><td>" + session.activity + "</td>";
+    timetableBody.appendChild(row);
+  });
+  timetableStatus.textContent = "Showing " + shown.length + " timetable rows.";
+}
+
+document.querySelectorAll("[data-day]").forEach(function (button) {
+  button.addEventListener("click", function () {
+    renderTimetable(button.getAttribute("data-day"));
+  });
+});
+
+renderTimetable("all");
+"""
+    return markup, js
+
+
+def _habit_tracker_app() -> tuple[str, str]:
+    markup = """
+<div class="app-panel" data-habits>
+  <ul class="list" id="habit-list" aria-label="Daily habits">
+    <li><label><input type="checkbox" value="Read HTML"> Read HTML</label></li>
+    <li><label><input type="checkbox" value="Practice CSS"> Practice CSS</label></li>
+    <li><label><input type="checkbox" value="Test keyboard access"> Test keyboard access</label></li>
+  </ul>
+  <div class="meter" aria-hidden="true"><span id="habit-meter"></span></div>
+  <p class="status" id="habit-status" aria-live="polite">0 of 3 habits complete.</p>
+</div>
+"""
+    js = """
+var habitInputs = document.querySelectorAll("#habit-list input");
+var habitMeter = document.getElementById("habit-meter");
+var habitStatus = document.getElementById("habit-status");
+
+function updateHabits() {
+  var complete = 0;
+  habitInputs.forEach(function (input) {
+    if (input.checked) complete += 1;
+  });
+  var total = habitInputs.length;
+  habitMeter.style.width = Math.round((complete / total) * 100) + "%";
+  habitStatus.textContent = complete + " of " + total + " habits complete.";
+}
+
+habitInputs.forEach(function (input) {
+  input.addEventListener("change", updateHabits);
+});
+
+updateHabits();
+"""
+    return markup, js
+
+
+def _app_markup_and_js(project_type: str) -> tuple[str, str]:
+    builders = {
+        "quiz_app": _quiz_app,
+        "calculator_app": _calculator_app,
+        "todo_app": _todo_app,
+        "flashcard_app": _flashcard_app,
+        "poll_page": _poll_app,
+        "contact_form": _contact_form_app,
+        "dashboard": _dashboard_app,
+        "timetable": _timetable_app,
+        "habit_tracker": _habit_tracker_app,
+    }
+    return builders.get(project_type, _todo_app)()
+
+
+def _render_interactive_project(project_type: str, title: str, topic: str) -> tuple[str, str, str]:
+    markup, js = _app_markup_and_js(project_type)
+    html = _app_shell(title, topic, markup)
+    return html, _APP_PROJECT_CSS, js
+
+
 # --------------------------------------------------------------------------- #
 # Public API
 # --------------------------------------------------------------------------- #
@@ -1144,14 +1818,39 @@ def _palette_override(kind: str) -> str:
 def generate_site_files(prompt: str) -> dict[str, str]:
     """Build a complete, polished 3-file website from a natural-language prompt."""
 
-    kind = detect_kind(prompt)
+    project_type_result = classify_project_type(prompt)
+    project_type = project_type_result.project_type
     title = brand_title(prompt)
     topic = topic_phrase(prompt)
+
+    if project_type in INTERACTIVE_PROJECT_TYPES:
+        html, css, js = _render_interactive_project(project_type, title, topic)
+        return {
+            "html": html,
+            "css": css,
+            "js": js,
+            "title": title,
+            "project_type": project_type,
+            "project_type_source": project_type_result.source,
+            "project_type_confidence": f"{project_type_result.confidence:.2f}",
+        }
+
+    kind = project_type_to_legacy_kind(project_type)
+    if project_type == "generic_website":
+        kind = detect_kind(prompt)
     bp = _blueprint(kind, title, topic)
     html = _render_html(prompt, kind, title, topic, bp)
     css = _SITE_CSS + _palette_override(kind)
     js = _SITE_JS
-    return {"html": html, "css": css, "js": js, "title": title}
+    return {
+        "html": html,
+        "css": css,
+        "js": js,
+        "title": title,
+        "project_type": project_type,
+        "project_type_source": project_type_result.source,
+        "project_type_confidence": f"{project_type_result.confidence:.2f}",
+    }
 
 
 _FENCE_RE = re.compile(r"^```[a-zA-Z0-9]*\s*\n?|\n?```\s*$")
