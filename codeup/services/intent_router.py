@@ -124,6 +124,22 @@ def _watchpoint_slots(command: str) -> dict[str, Any]:
     return {"watchpoint": "accessibility"}
 
 
+def _tutorial_slots(command: str) -> dict[str, Any]:
+    lower = command.lower()
+    for keyword, track in (
+        ("html", "html"),
+        ("css", "css"),
+        ("javascript", "javascript"),
+        ("js", "javascript"),
+        ("accessibility", "accessibility"),
+        ("form", "forms"),
+        ("export", "export"),
+    ):
+        if keyword in lower:
+            return {"track": track}
+    return {}
+
+
 def _bookmark_slots(command: str) -> dict[str, Any]:
     # Prefer the name after "as", e.g. "bookmark the contact form as contact area".
     match = re.search(r"\bas\s+(.+)$", command, re.IGNORECASE)
@@ -197,7 +213,13 @@ RULES: tuple[IntentRule, ...] = (
     IntentRule(
         "tutorial_start",
         100,
-        (r"^start\s+tutorial$", r"^tutorial$", r"\bpracti[cs]e\s+(html|css|javascript|accessibility)\b"),
+        (
+            r"^start\s+tutorial$",
+            r"^tutorial$",
+            r"\bstart\s+(?:the\s+)?(?:html|css|javascript|accessibility|forms?|export)\s+tutorial\b",
+            r"\bpracti[cs]e\s+(html|css|javascript|accessibility)\b",
+        ),
+        slotter=_tutorial_slots,
     ),
     IntentRule(
         "tutorial_control",
@@ -382,6 +404,104 @@ RULES: tuple[IntentRule, ...] = (
         ),
     ),
     IntentRule(
+        "run_summary",
+        92,
+        (
+            r"\brun\s+(?:this\s+)?website\b",
+            r"\btest\s+(?:this\s+)?(?:website|site)\b",
+            r"\brun\s+this\s+site\b",
+            r"\bcheck\s+if\s+this\s+website\s+works\b",
+        ),
+    ),
+    IntentRule(
+        "readiness_score",
+        92,
+        (
+            r"\bis\s+this\s+ready\s+to\s+share\b",
+            r"\bwebsite\s+readiness\b",
+            r"\breadiness\s+score\b",
+            r"\bproject\s+score\b",
+            r"\bis\s+this\s+website\s+good\b",
+            r"\bshould\s+i\s+share\s+this(?:\s+website)?\b",
+        ),
+    ),
+    IntentRule(
+        "debug_fix",
+        91,
+        (
+            r"\bfix\s+website\s+error\b",
+            r"\bfix\s+(?:the\s+)?javascript\s+error\b",
+            r"\bfix\s+js\s+error\b",
+        ),
+    ),
+    IntentRule(
+        "debug_website",
+        90,
+        (
+            r"\bdebug\b",
+            r"\bwhy\s+is\s+this\s+website\s+broken\b",
+            r"\bexplain\s+website\s+error\b",
+            r"\bcheck\s+console\s+errors\b",
+        ),
+    ),
+    IntentRule(
+        "screen_reader_tour",
+        90,
+        (
+            r"\bscreen\s+reader\s+tour\b",
+            r"\breading\s+order\s+tour\b",
+            r"\bscreen\s+reader\s+reading\s+order\b",
+            r"\bhow\s+would\s+a\s+screen\s+reader\s+read\s+this\b",
+            r"\bnvda\s+tour\b",
+            r"\bjaws\s+tour\b",
+        ),
+    ),
+    IntentRule(
+        "keyboard_test",
+        90,
+        (
+            r"\btest\s+keyboard\s+navigation\b",
+            r"\bkeyboard\s+navigation\s+test\b",
+            r"\bkeyboard\s+test\b",
+            r"\btab\s+order\b",
+            r"\btest\s+tab\s+order\b",
+            r"\bcan\s+keyboard\s+users\s+use\s+this\b",
+            r"\bfocus\s+order\b",
+        ),
+    ),
+    IntentRule(
+        "visual_description",
+        90,
+        (
+            r"\bdescribe\s+the\s+design\b",
+            r"\bdescribe\s+the\s+website\s+visually\b",
+            r"\bwhat\s+does\s+(?:the\s+)?website\s+look\s+like\b",
+            r"\bvisual\s+description\b",
+            r"\bdescribe\s+layout\b",
+            r"\bdescribe\s+(?:the\s+)?colou?rs?\b",
+        ),
+    ),
+    IntentRule(
+        "version_history",
+        90,
+        (
+            r"\bshow\s+history\b",
+            r"\bversion\s+history\b",
+            r"\bshow\s+version\s+history\b",
+        ),
+    ),
+    IntentRule(
+        "teacher_review",
+        86,
+        (
+            r"\bimprove\s+like\s+a\s+teacher\b",
+            r"\breview\s+like\s+a\s+teacher\b",
+            r"\bsuggest\s+improvements\b",
+            r"\bteacher\s+review\b",
+            r"\bimprove\s+this\s+project\b",
+        ),
+    ),
+    IntentRule(
         "learning_notes",
         89,
         (
@@ -405,7 +525,6 @@ RULES: tuple[IntentRule, ...] = (
         (
             r"\bdescribe\s+preview\b",
             r"\bdescribe\s+output\b",
-            r"\bwhat\s+does\s+(?:the\s+)?website\s+look\s+like\b",
             r"\bwhat\s+will\s+(?:the\s+)?user\s+see\b",
         ),
     ),
@@ -416,7 +535,6 @@ RULES: tuple[IntentRule, ...] = (
             r"\breview\s+project\b",
             r"\breview\s+this\s+project\b",
             r"\breview\s+this\s+code\b",
-            r"\bis\s+this\s+website\s+good\b",
             r"\bwhat\s+should\s+i\s+improve\b",
         ),
     ),
@@ -512,7 +630,17 @@ RULES: tuple[IntentRule, ...] = (
         81,
         (r"\bwhat\s+is\s+a\s+div\b", r"\baria-label\b", r"\bwhat\s+does\b", r"\bexplain\s+concept\b"),
     ),
-    IntentRule("undo_version", 80, (r"\bgo\s+back\b", r"^undo\b")),
+    IntentRule(
+        "undo_version",
+        80,
+        (
+            r"\bgo\s+back\b",
+            r"^undo\b",
+            r"\bundo\s+last\s+change\b",
+            r"\brestore\s+previous\s+version\b",
+            r"\brestore\s+the\s+previous\s+version\b",
+        ),
+    ),
     IntentRule(
         "review_changes",
         79,

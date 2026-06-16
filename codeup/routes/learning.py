@@ -17,6 +17,8 @@ from codeup.services.project_explainer import (
     build_student_recap,
     build_trainer_notes,
 )
+from codeup.services.tutorial_modules import tutorial_tracks
+from codeup.services.version_history import build_version_history_report
 from codeup.services.web_learning import (
     build_code_map,
     explain_beginner_errors,
@@ -25,6 +27,14 @@ from codeup.services.web_learning import (
     validate_tutorial_step,
     watchpoint_pause,
 )
+from codeup.services.website_accessibility_lab import (
+    build_keyboard_test,
+    build_readiness_score,
+    build_screen_reader_tour,
+    build_visual_description,
+)
+from codeup.services.website_debugger import apply_safe_js_fixes, build_debug_report
+from codeup.services.website_runner import build_run_summary, build_teacher_review
 
 learning_bp = Blueprint("learning", __name__)
 
@@ -211,6 +221,98 @@ def screen_reader_summary_route():
     body = safejson()
     text = build_screen_reader_summary(html, css, js, **_project_metadata(body))
     return jsonify({"success": True, "text": text, "screen_reader_summary": text})
+
+
+@learning_bp.route("/run-summary", methods=["POST"])
+def run_summary_route():
+    try:
+        html, css, js = _sources()
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 413
+    text = build_run_summary(html, css, js, **_project_metadata(safejson()))
+    return jsonify({"success": True, "text": text, "run_summary": text})
+
+
+@learning_bp.route("/debug-report", methods=["POST"])
+def debug_report_route():
+    try:
+        html, css, js = _sources()
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 413
+    report = build_debug_report(html, css, js)
+    return jsonify({"success": True, "text": report["text"], "issues": report["issues"]})
+
+
+@learning_bp.route("/debug-fix", methods=["POST"])
+def debug_fix_route():
+    try:
+        html, css, js = _sources()
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 413
+    result = apply_safe_js_fixes(html, css, js)
+    return jsonify({"success": True, **result})
+
+
+@learning_bp.route("/screen-reader-tour", methods=["POST"])
+def screen_reader_tour_route():
+    try:
+        html, css, js = _sources()
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 413
+    text = build_screen_reader_tour(html, css, js, **_project_metadata(safejson()))
+    return jsonify({"success": True, "text": text, "screen_reader_tour": text})
+
+
+@learning_bp.route("/keyboard-test", methods=["POST"])
+def keyboard_test_route():
+    try:
+        html, css, js = _sources()
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 413
+    text = build_keyboard_test(html, css, js, **_project_metadata(safejson()))
+    return jsonify({"success": True, "text": text, "keyboard_test": text})
+
+
+@learning_bp.route("/visual-description", methods=["POST"])
+def visual_description_route():
+    try:
+        html, css, js = _sources()
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 413
+    text = build_visual_description(html, css, js, **_project_metadata(safejson()))
+    return jsonify({"success": True, "text": text, "visual_description": text})
+
+
+@learning_bp.route("/readiness-score", methods=["POST"])
+def readiness_score_route():
+    try:
+        html, css, js = _sources()
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 413
+    text = build_readiness_score(html, css, js, **_project_metadata(safejson()))
+    return jsonify({"success": True, "text": text, "readiness_score": text})
+
+
+@learning_bp.route("/teacher-review", methods=["POST"])
+def teacher_review_route():
+    try:
+        html, css, js = _sources()
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 413
+    result = build_teacher_review(html, css, js, **_project_metadata(safejson()))
+    return jsonify({"success": True, "text": result["text"], "suggestions": result["suggestions"]})
+
+
+@learning_bp.route("/version-history", methods=["POST"])
+def version_history_route():
+    body = safejson()
+    text = build_version_history_report(body.get("versions"))
+    return jsonify({"success": True, "text": text, "version_history": text})
+
+
+@learning_bp.route("/tutorial/tracks", methods=["GET"])
+def tutorial_tracks_route():
+    return jsonify({"success": True, "tracks": tutorial_tracks()})
 
 
 @learning_bp.route("/mistake-replay", methods=["POST"])

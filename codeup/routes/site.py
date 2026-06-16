@@ -156,6 +156,14 @@ def _provided_artifacts_from_body(body: dict) -> dict[str, str]:
         "trainer_notes",
         "student_recap",
         "screen_reader_summary",
+        "run_summary",
+        "debug_report",
+        "screen_reader_tour",
+        "keyboard_test",
+        "visual_description",
+        "readiness_score",
+        "teacher_review",
+        "version_history",
         "instruction",
     )
     provided = {key: str(body.get(key) or "") for key in keys if str(body.get(key) or "").strip()}
@@ -175,6 +183,7 @@ def _collect_export_artifacts(body: dict, source_files: dict[str, str], audit: d
     replay = body.get("change_replay")
     change_replay = replay if isinstance(replay, dict) else None
     bookmarks = body.get("bookmarks")
+    version_history = body.get("versions") if isinstance(body.get("versions"), list) else None
     artifacts = build_export_artifacts(
         html,
         css,
@@ -186,6 +195,7 @@ def _collect_export_artifacts(body: dict, source_files: dict[str, str], audit: d
         commands=commands,
         change_replay=change_replay,
         bookmarks=bookmarks,
+        version_history=version_history,
     )
     if audit:
         artifacts["ACCESSIBILITY_REPORT.txt"] = (
