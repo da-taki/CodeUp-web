@@ -9,12 +9,18 @@ from codeup.services.version_history import build_version_history_report
 from codeup.services.web_learning import analyze_javascript, build_code_map, parse_css_rules, parse_records
 from codeup.services.website_accessibility_lab import (
     build_keyboard_test,
+    build_readiness_report,
     build_readiness_score,
     build_screen_reader_tour,
     build_visual_description,
 )
-from codeup.services.website_debugger import build_debug_report
-from codeup.services.website_runner import build_run_summary, build_teacher_review
+from codeup.services.website_debugger import build_debug_report, build_debug_teacher
+from codeup.services.website_runner import (
+    NO_PROJECT_MESSAGE,
+    build_run_summary,
+    build_teacher_review,
+    is_blank_project,
+)
 
 
 def _clean_text(value: str, fallback: str = "") -> str:
@@ -549,6 +555,112 @@ def build_student_recap(
     return "\n".join(lines).strip() + "\n"
 
 
+def _concepts_learned(ctx: dict[str, Any]) -> list[str]:
+    concepts = ["Semantic HTML landmarks and a heading outline"]
+    if ctx["css_rules"]:
+        concepts.append("CSS selectors that style HTML without changing meaning")
+    if ctx["js_map"]["listeners"]:
+        concepts.append("JavaScript event listeners that connect controls to behavior")
+    if ctx["controls"]:
+        concepts.append("Accessible names and labels for controls")
+    concepts.append("Accessibility checking: alt text, labels, focus, and contrast")
+    return concepts
+
+
+def _suggested_next_lesson(ctx: dict[str, Any], readiness: dict[str, Any]) -> str:
+    if readiness.get("blockers"):
+        return "Accessibility repair: fix the blockers above, then re-run 'is this ready to share'."
+    if not ctx["js_map"]["listeners"]:
+        return "JavaScript behavior: add a button interaction and explain it with step narration."
+    if len(ctx["headings"]) < 2:
+        return "Page structure: add another section with its own heading."
+    return "Forms and multi-page sites: add a labelled contact form, then a second page."
+
+
+def build_pilot_report(
+    html: str,
+    css: str = "",
+    js: str = "",
+    *,
+    name: str = "",
+    project_type: str = "",
+    audit: dict[str, Any] | None = None,
+    commands: list[str] | None = None,
+    version_history: Any = None,
+) -> str:
+    """Exportable trainer / pilot report summarizing a CodeUp Web session.
+
+    Deterministic and grounded in the current project state plus the recorded
+    command history. Includes the audit score, readiness score, mistakes found,
+    fixes made, concepts learned, and a suggested next lesson.
+    """
+    if is_blank_project(html, css, js):
+        return "PILOT SESSION REPORT\n\n" + NO_PROJECT_MESSAGE + "\n"
+
+    ctx = project_context(html, css, js, name=name, project_type=project_type, audit=audit)
+    commands = [str(item).strip() for item in (commands or []) if str(item).strip()]
+    readiness = build_readiness_report(html, css, js, name=name, project_type=project_type, audit=audit)
+    mistakes = build_debug_teacher(html, css, js)["issues"]
+    fixes = [cmd for cmd in commands if re.search(r"\b(fix|repair|apply|autofix|undo|restore)\b", cmd, re.I)]
+    edits = [cmd for cmd in commands if re.search(r"\b(add|insert|change|make|improve|set|edit)\b", cmd, re.I)]
+    line_counts = ctx["line_counts"]
+    files_created = [
+        f"index.html ({line_counts['index.html']} lines)",
+        f"style.css ({line_counts['style.css']} lines)",
+        f"script.js ({line_counts['script.js']} lines)",
+    ]
+
+    lines = [
+        f"PILOT SESSION REPORT: {ctx['name']}",
+        "",
+        f"Project type: {ctx['project_type_label']}.",
+        f"Main page title: {ctx['title']}.",
+        "",
+        "Files created:",
+        *(f"- {item}" for item in files_created),
+        "",
+        f"Accessibility score: {ctx['audit'].get('score', 'unknown')}/100.",
+        f"Readiness score: {readiness['score']}/100 ({readiness['level']}).",
+        "",
+        "Commands used:",
+    ]
+    if commands:
+        lines.extend(f"- {item}" for item in commands[-20:])
+    else:
+        lines.append("- (command history was not recorded this session)")
+
+    lines.extend(["", "Mistakes found:"])
+    if mistakes:
+        lines.extend(
+            f"- [{issue['severity']}] {issue['file']} line {issue['line']}: {issue['problem']}"
+            for issue in mistakes[:8]
+        )
+    else:
+        lines.append("- No broken connections were detected in the final version.")
+
+    lines.extend(["", "Fixes and edits made:"])
+    if fixes or edits:
+        lines.extend(f"- {item}" for item in (fixes + edits)[:10])
+    else:
+        lines.append("- No fix or edit commands were recorded.")
+
+    if readiness["blockers"]:
+        lines.extend(["", "Blockers still open:", *(f"- {item}" for item in readiness["blockers"])])
+
+    lines.extend(["", "Concepts learned:", *(f"- {item}" for item in _concepts_learned(ctx))])
+    lines.extend(["", f"Suggested next lesson:\n- {_suggested_next_lesson(ctx, readiness)}"])
+    lines.extend(
+        [
+            "",
+            "Trainer notes:",
+            "- Encourage testing with the keyboard only and with a screen reader.",
+            "- Revisit any blocker above together before sharing the site publicly.",
+            "- Ask the learner to explain one selector connection in their own words.",
+        ]
+    )
+    return "\n".join(lines).strip() + "\n"
+
+
 def build_screen_reader_summary(
     html: str,
     css: str = "",
@@ -798,5 +910,24 @@ def build_export_artifacts(
     )
     if has_bookmarks:
         artifacts["BOOKMARKS.txt"] = build_bookmarks_report(bookmarks).strip() + "\n"
+
+    # PILOT_REPORT only when session data exists (recorded commands or version history).
+    has_session = bool(commands) or (isinstance(version_history, list) and bool(version_history))
+    if provided.get("pilot_report"):
+        artifacts["PILOT_REPORT.txt"] = provided["pilot_report"].strip() + "\n"
+    elif has_session:
+        artifacts["PILOT_REPORT.txt"] = (
+            build_pilot_report(
+                html,
+                css,
+                js,
+                name=name,
+                project_type=project_type,
+                audit=audit,
+                commands=commands,
+                version_history=version_history,
+            ).strip()
+            + "\n"
+        )
 
     return artifacts

@@ -12,7 +12,7 @@ from typing import Any
 from codeup.services.html_utils import audit_html
 from codeup.services.web_learning import parse_css_rules, parse_records
 from codeup.services.website_debugger import collect_issues
-from codeup.services.website_runner import clean_text, title_from_html
+from codeup.services.website_runner import NO_PROJECT_MESSAGE, clean_text, is_blank_project, title_from_html
 
 VAGUE_LINK_WORDS = {"click here", "here", "learn more", "read more", "more", "link", "this", "go", "click"}
 FOCUSABLE_TAGS = {"a", "button", "input", "select", "textarea"}
@@ -302,15 +302,12 @@ def build_visual_description(
     return "\n".join(lines).strip() + "\n"
 
 
-def build_readiness_score(
-    html: str,
-    css: str = "",
-    js: str = "",
-    *,
-    name: str = "",
-    project_type: str = "",
-    audit: dict[str, Any] | None = None,
-) -> str:
+def _readiness_metrics(html: str, css: str = "", js: str = "", audit: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Compute the readiness subscores, total, and the strong/needs/blocker lists.
+
+    Shared by ``build_readiness_score`` (category breakdown text) and
+    ``build_readiness_report`` (structured score/level/blockers/suggestions).
+    """
     records = parse_records(html)
     headings = [r for r in records if re.fullmatch(r"h[1-6]", r.tag)]
     landmarks = [r for r in records if r.tag in {"header", "nav", "main", "section", "article", "footer", "form"}]
@@ -324,7 +321,12 @@ def build_readiness_score(
     focusable = [r for r in records if r.tag in FOCUSABLE_TAGS and not (r.tag == "a" and not r.attrs.get("href"))]
     audit_data = audit if isinstance(audit, dict) and "score" in audit else audit_html(html).to_dict()
     audit_score = int(audit_data.get("score") or 0)
+    audit_issues = audit_data.get("issues") if isinstance(audit_data.get("issues"), list) else []
     debug_issues = collect_issues(html, css, js)
+    # Richer, teacher-style findings (JS selector mismatches, duplicate ids, ...).
+    from codeup.services.website_debugger import build_debug_teacher
+
+    teacher_issues = build_debug_teacher(html, css, js)["issues"]
     has_files = bool((html or "").strip()) and bool((css or "").strip())
 
     # Subscores (weights sum to 100).
@@ -370,12 +372,70 @@ def build_readiness_score(
     if not needs:
         needs.append("Add a clearer footer and more specific button text")
 
+    # Blockers: must-fix problems (high-severity accessibility + broken JS connections).
+    blockers: list[str] = []
+    for issue in audit_issues:
+        if isinstance(issue, dict) and issue.get("severity") == "high":
+            blockers.append(clean_text(str(issue.get("description") or issue.get("id") or "Accessibility issue")))
+    for issue in teacher_issues:
+        if issue.get("severity") == "high":
+            blockers.append(clean_text(issue.get("spoken_summary") or issue.get("problem") or "Broken connection"))
+    blockers = list(dict.fromkeys(blockers))[:6]
+
     if total >= 85:
         recommendation = "This is ready to share. Do a final read-through and export it."
     elif total >= 70:
         recommendation = "This is ready for a guided demo. I would fix the items above before sharing publicly."
     else:
         recommendation = "Keep improving the items above before sharing this widely."
+
+    if blockers and total >= 85:
+        level = "almost ready"
+    elif total >= 85:
+        level = "ready"
+    elif total >= 70:
+        level = "almost ready"
+    else:
+        level = "needs work"
+
+    return {
+        "structure": structure,
+        "accessibility": accessibility,
+        "visual": visual,
+        "keyboard": keyboard,
+        "content": content,
+        "code_quality": code_quality,
+        "export_ready": export_ready,
+        "total": total,
+        "strong": strong,
+        "needs": needs,
+        "blockers": blockers,
+        "recommendation": recommendation,
+        "level": level,
+    }
+
+
+def build_readiness_score(
+    html: str,
+    css: str = "",
+    js: str = "",
+    *,
+    name: str = "",
+    project_type: str = "",
+    audit: dict[str, Any] | None = None,
+) -> str:
+    m = _readiness_metrics(html, css, js, audit)
+    structure = m["structure"]
+    accessibility = m["accessibility"]
+    visual = m["visual"]
+    keyboard = m["keyboard"]
+    content = m["content"]
+    code_quality = m["code_quality"]
+    export_ready = m["export_ready"]
+    total = m["total"]
+    strong = m["strong"]
+    needs = m["needs"]
+    recommendation = m["recommendation"]
 
     lines = [
         f"WEBSITE READINESS SCORE: {total}/100",
@@ -398,3 +458,75 @@ def build_readiness_score(
         f"Recommendation:\n{recommendation}",
     ]
     return "\n".join(lines).strip() + "\n"
+
+
+def build_readiness_report(
+    html: str,
+    css: str = "",
+    js: str = "",
+    *,
+    name: str = "",
+    project_type: str = "",
+    audit: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Structured "ready to share?" check: score, level, blockers, suggestions.
+
+    Combines the accessibility audit, structure/landmarks, keyboard risks, and
+    JavaScript selector mismatches into one spoken-friendly readiness report.
+    """
+    if is_blank_project(html, css, js):
+        text = "WEBSITE READINESS\n\n" + NO_PROJECT_MESSAGE + "\n"
+        return {
+            "score": 0,
+            "level": "needs work",
+            "text": text,
+            "speech": NO_PROJECT_MESSAGE,
+            "blockers": [],
+            "suggestions": [],
+        }
+
+    m = _readiness_metrics(html, css, js, audit)
+    total = m["total"]
+    level = m["level"]
+    blockers = m["blockers"]
+    suggestions = list(dict.fromkeys(m["needs"]))[:6]
+
+    level_phrase = {
+        "ready": "This is ready to share.",
+        "almost ready": "This is almost ready to share.",
+        "needs work": "This still needs work before sharing.",
+    }[level]
+
+    lines = [
+        "WEBSITE READINESS",
+        "",
+        f"Readiness score: {total} out of 100. {level_phrase}",
+    ]
+    if blockers:
+        lines.append("")
+        lines.append(f"Fix {'this' if len(blockers) == 1 else 'these'} first:")
+        lines.extend(f"- {item}" for item in blockers)
+    else:
+        lines.append("I did not find any blockers.")
+    if suggestions:
+        lines.append("")
+        lines.append("Then consider:")
+        lines.extend(f"- {item}" for item in suggestions)
+    lines.append("")
+    lines.append(m["recommendation"])
+
+    # Short spoken summary: score, level, and the first blocker (if any).
+    if blockers:
+        extra = "" if len(blockers) == 1 else f", and {len(blockers) - 1} more"
+        speech = f"Readiness score {total} out of 100, {level}. Fix first: {blockers[0]}{extra}."
+    else:
+        speech = f"Readiness score {total} out of 100, {level}. I did not find any blockers."
+
+    return {
+        "score": total,
+        "level": level,
+        "text": "\n".join(lines).strip() + "\n",
+        "speech": speech,
+        "blockers": blockers,
+        "suggestions": suggestions,
+    }

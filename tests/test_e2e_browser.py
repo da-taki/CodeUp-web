@@ -263,6 +263,49 @@ class TestKeyboardFlow:
         assert src and "/student-site/" in src
 
 
+class TestProofTeachingLoop:
+    """The new run -> debug -> explain -> readiness loop, driven from the UI."""
+
+    def _command(self, page, text, marker):
+        page.locator("#commandInput").fill(text)
+        page.locator("#sendCommandBtn").click()
+        page.wait_for_function(
+            "marker => document.querySelector('#output').textContent.includes(marker)",
+            arg=marker,
+            timeout=15000,
+        )
+
+    def test_runtime_debug_selector_readiness_commands(self, browser_page):
+        page, _, _ = browser_page
+        self._command(page, "create a multi page website for robotics showcase", "homepage")
+        # run website -> the Website Runtime Teacher (factual, static).
+        self._command(page, "run website", "WEBSITE RUNTIME TEACHER")
+        assert "did not click" in page.locator("#output").text_content().lower()
+        # debug website -> the DOM/JS debug teacher.
+        self._command(page, "debug website", "WEBSITE DEBUG TEACHER")
+        # what CSS affects ... -> the selector explainer.
+        self._command(page, "what CSS affects the navigation", "SELECTOR EXPLAINER")
+        # is this ready to share -> the readiness report.
+        self._command(page, "is this ready to share", "Readiness score")
+
+    def test_run_website_button(self, browser_page):
+        page, _, _ = browser_page
+        self._command(page, "create a multi page website for robotics showcase", "homepage")
+        page.locator("#runWebsiteBtn").click()
+        page.wait_for_function(
+            "() => document.querySelector('#output').textContent.includes('WEBSITE RUNTIME TEACHER')",
+            timeout=15000,
+        )
+
+    def test_guided_build_track_intercepts_only_control_words(self, browser_page):
+        page, _, _ = browser_page
+        self._command(page, "build my first website", "Guided build")
+        # A normal command during the track still routes normally (not swallowed).
+        self._command(page, "create a multi page website for robotics showcase", "homepage")
+        # A control word advances the guided track.
+        self._command(page, "recap", "RECAP")
+
+
 class TestConsoleErrors:
     def test_no_unexpected_js_errors(self, browser_page):
         page, _, console_errors = browser_page

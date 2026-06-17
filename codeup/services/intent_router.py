@@ -140,6 +140,11 @@ def _tutorial_slots(command: str) -> dict[str, Any]:
     return {}
 
 
+def _selector_query_slots(command: str) -> dict[str, Any]:
+    """Pass the whole command through as the query; the explainer cleans it."""
+    return {"query": command.strip()}
+
+
 def _bookmark_slots(command: str) -> dict[str, Any]:
     # Prefer the name after "as", e.g. "bookmark the contact form as contact area".
     match = re.search(r"\bas\s+(.+)$", command, re.IGNORECASE)
@@ -237,6 +242,16 @@ RULES: tuple[IntentRule, ...] = (
             r"^read\s+my\s+code$",
             r"^exit\s+tutorial$",
             r"^start\s+coding$",
+        ),
+    ),
+    IntentRule(
+        "guided_build_start",
+        96,
+        (
+            r"\bstart\s+web\s+tutorial\b",
+            r"\bbuild\s+my\s+first\s+website\b",
+            r"\bbuild\s+(?:a\s+)?website\s+by\s+ear\b",
+            r"\bguided\s+(?:website\s+)?build\b",
         ),
     ),
     IntentRule(
@@ -404,6 +419,16 @@ RULES: tuple[IntentRule, ...] = (
         ),
     ),
     IntentRule(
+        "runtime_teacher",
+        92,
+        (
+            r"\bwhat\s+happens\s+when\s+(?:this|it|the\s+page)\s+runs?\b",
+            r"\bruntime\s+teacher\b",
+            r"\bwebsite\s+runtime\s+teacher\b",
+            r"\bteach\s+me\s+how\s+this\s+website\s+runs?\b",
+        ),
+    ),
+    IntentRule(
         "run_summary",
         92,
         (
@@ -411,6 +436,30 @@ RULES: tuple[IntentRule, ...] = (
             r"\btest\s+(?:this\s+)?(?:website|site)\b",
             r"\brun\s+this\s+site\b",
             r"\bcheck\s+if\s+this\s+website\s+works\b",
+        ),
+    ),
+    IntentRule(
+        "selector_explainer",
+        92,
+        (
+            r"\bwhat\s+css\s+affects?\b",
+            r"\bwhich\s+css\s+affects?\b",
+            r"\bexplain\s+css\s+for\b",
+            r"\b(?:find\s+)?unused\s+css\b",
+            r"\bwhich\s+html\s+uses\b",
+        ),
+        slotter=_selector_query_slots,
+    ),
+    IntentRule(
+        "pilot_report",
+        91,
+        (
+            r"\bmake\s+(?:a\s+)?pilot\s+report\b",
+            r"\bpilot\s+report\b",
+            r"\bmake\s+(?:a\s+)?trainer\s+report\b",
+            r"\btrainer\s+report\b",
+            r"\bsummari[sz]e\s+(?:this\s+)?session\b",
+            r"\bwhat\s+did\s+the\s+student\s+learn\b",
         ),
     ),
     IntentRule(
@@ -423,6 +472,10 @@ RULES: tuple[IntentRule, ...] = (
             r"\bproject\s+score\b",
             r"\bis\s+this\s+website\s+good\b",
             r"\bshould\s+i\s+share\s+this(?:\s+website)?\b",
+            r"\bcan\s+i\s+export\s+this\b",
+            r"\bteacher\s+check\b",
+            r"\bnab\s+readiness\s+check\b",
+            r"\breadiness\s+check\b",
         ),
     ),
     IntentRule(
@@ -442,6 +495,10 @@ RULES: tuple[IntentRule, ...] = (
             r"\bwhy\s+is\s+this\s+website\s+broken\b",
             r"\bexplain\s+website\s+error\b",
             r"\bcheck\s+console\s+errors\b",
+            r"\bdebug\s+this\s+like\s+a\s+teacher\b",
+            r"\bwhy\s+is\s+my\s+button\s+not\s+working\b",
+            r"\bcheck\s+javascript\s+connections\b",
+            r"\bexplain\s+errors\b",
         ),
     ),
     IntentRule(

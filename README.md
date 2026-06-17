@@ -51,6 +51,32 @@ microphone.
 - Screen-reader / NVDA preparation summary
 - A short guided beginner tutorial
 - ZIP export with code and learning artifacts
+
+### 🔬 Proof-based teaching loop
+
+Inspired by CodeUp's Python environment, CodeUp Web does more than describe code —
+it inspects what the page would actually do and explains it by facts. Every report
+is deterministic static analysis (it never executes the page or "clicks"
+anything), works without an AI key, and speaks a short summary while the full
+report stays on screen.
+
+- **Website Runtime Teacher** — a factual "what happens when this page loads":
+  title, landmarks, headings, controls, JavaScript listeners and DOM queries, and
+  whether each selector actually matches the HTML.
+- **DOM / JavaScript debug teacher** — beginner-friendly detection of broken
+  connections: missing or mistyped selectors (e.g. `#joinBtn` vs `#joinButton`),
+  duplicate ids, unwired buttons/forms, dead links, and unused CSS — each as
+  *problem → why it matters → fix*.
+- **Selector explainer** — which CSS rules affect an element (with line numbers and
+  a plain-language effect), plus "find unused CSS".
+- **Accessibility readiness score** — a "ready to share?" check with a 0–100 score,
+  a readiness level, blockers, and suggestions.
+- **Guided "build your first website by ear"** — a 12-step voice-first track with a
+  validator, hint, and success message per step. Only control words
+  (`next`, `repeat`, `hint`, `recap`, `exit tutorial`) are intercepted, so normal
+  build/edit/run commands still work mid-tutorial.
+- **Pilot / trainer session report** — a session summary (files, scores, mistakes,
+  fixes, concepts, suggested next lesson), also exported as `PILOT_REPORT.txt`.
 - Typed command fallback for every voice command
 - Voice-first design with speech output where the browser supports it
 - Deterministic fallback templates when cloud AI is unavailable
@@ -116,6 +142,15 @@ Every command works whether spoken or typed — both go through the same parser.
 - `learning notes`
 - `review project`
 
+**Run, debug, and check (proof-based teaching loop)**
+
+- `run website` (or `what happens when this runs`)
+- `debug website` / `why is my button not working` / `check javascript connections`
+- `what CSS affects the join button` / `find unused CSS`
+- `is this ready to share` / `NAB readiness check` / `can I export this`
+- `build my first website` (then `next`, `hint`, `recap`, `exit tutorial`)
+- `make pilot report`
+
 **Accessibility**
 
 - `check accessibility`
@@ -161,6 +196,23 @@ identical.
 8. `learning notes`
 9. `export website`
 
+**Proof-based teaching demo**
+
+1. `make a website for my school robotics club`
+2. `run website` — hear what the page does on load
+3. `what CSS affects the join button`
+4. `debug website` — find any broken HTML/CSS/JS connections
+5. `check accessibility`
+6. `is this ready to share` — a score with blockers
+7. `fix accessibility issues`
+8. `what changed`
+9. `make pilot report`
+10. `export website` — the ZIP includes `PILOT_REPORT.txt`
+
+On an empty editor, `run website`, `debug website`, `readiness score`, and
+`make pilot report` calmly say to build or load a website first — they never
+report a false success.
+
 **Optional app demo**
 
 1. `start over`
@@ -192,7 +244,16 @@ generated from the current project:
 - `TRAINER_NOTES.txt`
 - `STUDENT_RECAP.txt`
 - `SCREEN_READER_SUMMARY.txt`
+- `RUN_SUMMARY.txt`
+- `DEBUG_REPORT.txt`
+- `SCREEN_READER_TOUR.txt`
+- `KEYBOARD_TEST.txt`
+- `VISUAL_DESCRIPTION.txt`
+- `READINESS_SCORE.txt`
+- `TEACHER_REVIEW.txt`
 - `ACCESSIBILITY_REPORT.txt` (when an audit has run)
+- `PILOT_REPORT.txt` (when session data exists — recorded commands or versions)
+- `VERSION_HISTORY.txt` (when the session recorded versions)
 - `CHANGE_REPLAY.txt` (when you edited the project)
 - `BOOKMARKS.txt` (when you saved bookmarks)
 
