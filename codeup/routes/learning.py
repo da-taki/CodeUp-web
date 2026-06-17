@@ -4,11 +4,13 @@ from flask import Blueprint, jsonify
 
 from codeup.config import MAX_HTML_SIZE
 from codeup.routes.helpers import safejson
+from codeup.services.guided_build import guided_recap, guided_steps, validate_guided_step
 from codeup.services.project_explainer import (
     build_accessibility_map,
     build_file_explanation,
     build_landmarks_summary,
     build_learning_notes,
+    build_pilot_report,
     build_preview_description,
     build_project_review,
     build_project_summary,
@@ -17,6 +19,7 @@ from codeup.services.project_explainer import (
     build_student_recap,
     build_trainer_notes,
 )
+from codeup.services.selector_explainer import build_selector_explainer
 from codeup.services.tutorial_modules import tutorial_tracks
 from codeup.services.version_history import build_version_history_report
 from codeup.services.web_learning import (
@@ -29,12 +32,14 @@ from codeup.services.web_learning import (
 )
 from codeup.services.website_accessibility_lab import (
     build_keyboard_test,
+    build_readiness_report,
     build_readiness_score,
     build_screen_reader_tour,
     build_visual_description,
 )
-from codeup.services.website_debugger import apply_safe_js_fixes, build_debug_report
-from codeup.services.website_runner import build_run_summary, build_teacher_review
+from codeup.services.website_debugger import apply_safe_js_fixes, build_debug_report, build_debug_teacher
+from codeup.services.website_runner import NO_PROJECT_MESSAGE, build_run_summary, build_teacher_review
+from codeup.services.website_runtime_teacher import build_runtime_teacher
 
 learning_bp = Blueprint("learning", __name__)
 
@@ -357,3 +362,90 @@ def explain_errors_route():
     except ValueError as exc:
         return jsonify({"success": False, "error": str(exc)}), 413
     return jsonify({"success": True, **explain_beginner_errors(html, css, js)})
+
+
+@learning_bp.route("/website-runtime-teacher", methods=["POST"])
+def website_runtime_teacher_route():
+    try:
+        html, css, js = _sources()
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 413
+    result = build_runtime_teacher(html, css, js, **_project_metadata(safejson()))
+    return jsonify(
+        {"success": True, "text": result["text"], "speech": result.get("speech", ""), "facts": result["facts"]}
+    )
+
+
+@learning_bp.route("/website-debug-teacher", methods=["POST"])
+def website_debug_teacher_route():
+    try:
+        html, css, js = _sources()
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 413
+    result = build_debug_teacher(html, css, js)
+    return jsonify(
+        {"success": True, "text": result["text"], "speech": result.get("speech", ""), "issues": result["issues"]}
+    )
+
+
+@learning_bp.route("/selector-explainer", methods=["POST"])
+def selector_explainer_route():
+    try:
+        html, css, js = _sources()
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 413
+    body = safejson()
+    query = str(body.get("query") or "")
+    result = build_selector_explainer(html, css, js, query)
+    return jsonify({"success": True, **result})
+
+
+@learning_bp.route("/accessibility-readiness-score", methods=["POST"])
+def accessibility_readiness_score_route():
+    try:
+        html, css, js = _sources()
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 413
+    result = build_readiness_report(html, css, js, **_project_metadata(safejson()))
+    return jsonify({"success": True, **result})
+
+
+@learning_bp.route("/pilot-report", methods=["POST"])
+def pilot_report_route():
+    try:
+        html, css, js = _sources()
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 413
+    body = safejson()
+    raw_commands = body.get("commands")
+    commands = [str(item) for item in raw_commands] if isinstance(raw_commands, list) else None
+    versions = body.get("versions") if isinstance(body.get("versions"), list) else None
+    text = build_pilot_report(html, css, js, commands=commands, version_history=versions, **_project_metadata(body))
+    speech = "Pilot report ready. The full report is on screen and will be included in your export."
+    if text.strip().endswith(NO_PROJECT_MESSAGE):
+        speech = NO_PROJECT_MESSAGE
+    return jsonify({"success": True, "text": text, "speech": speech, "pilot_report": text})
+
+
+@learning_bp.route("/guided-build/steps", methods=["GET"])
+def guided_build_steps_route():
+    return jsonify({"success": True, "steps": guided_steps()})
+
+
+@learning_bp.route("/guided-build/validate", methods=["POST"])
+def guided_build_validate_route():
+    try:
+        html, css, js = _sources()
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 413
+    step_id = str(safejson().get("step") or "")
+    return jsonify({"success": True, **validate_guided_step(step_id, html, css, js)})
+
+
+@learning_bp.route("/guided-build/recap", methods=["POST"])
+def guided_build_recap_route():
+    try:
+        html, css, js = _sources()
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 413
+    return jsonify({"success": True, **guided_recap(html, css, js)})

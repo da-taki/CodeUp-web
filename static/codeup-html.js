@@ -1098,6 +1098,7 @@ if (cta) {
           visual_description: state.lastVisualDescription,
           readiness_score: state.lastReadinessScore,
           teacher_review: state.lastTeacherReview,
+          pilot_report: state.lastPilotReport,
           commands: (state.commandHistory || []).slice(-20),
           change_replay: exportChangeReplay(),
           bookmarks: loadJsonStore('codeup_bookmarks', {}),
@@ -2506,13 +2507,19 @@ if (cta) {
 
   async function handleTutorialCommand(command) {
     const lower = command.toLowerCase();
+    if (/\bstart\s+web\s+tutorial\b/.test(lower) || /\bbuild\s+my\s+first\s+website\b/.test(lower) || /\bbuild\s+(?:a\s+)?website\s+by\s+ear\b/.test(lower)) {
+      await startGuidedBuild();
+      return true;
+    }
     if (/^start\s+(?:the\s+)?(html|css|javascript|accessibility|forms?|export)\s+tutorial$/.test(lower)) {
       await startTutorial(lower);
       return true;
     }
     if (state.track && state.track.active) {
       if (lower === 'next' || lower === 'next step' || lower === 'continue') return trackNext();
-      if (lower === 'repeat' || lower === 'hint' || lower === 'try again') return trackRepeat();
+      if (lower === 'hint') return trackHint();
+      if (lower === 'recap') return trackRecap();
+      if (lower === 'repeat' || lower === 'try again') return trackRepeat();
       if (lower === 'exit tutorial' || lower === 'start coding') return trackExit();
     }
     if (lower === 'start tutorial' || lower === 'tutorial' || /^practi[cs]e\s+/.test(lower)) { await startTutorial(lower); return true; }
@@ -2950,7 +2957,9 @@ if (cta) {
       if (!text) throw new Error(`${label} returned no text.`);
       state[stateKey] = text;
       writeOutput(text, false);
-      speakChunked(text);
+      // Speak the short summary when the endpoint provides one (keeps spoken
+      // output concise by ear); the full report stays in the output panel.
+      speakChunked(data.speech || text);
       return text;
     } catch (error) {
       if (!isAsyncFresh(token)) return '';
@@ -3016,14 +3025,32 @@ if (cta) {
 
   // ----- Run / debug / accessibility lab -----
   async function runWebsite() {
-    const text = await projectText('/run-summary', 'lastRunSummary', 'Running your website');
-    if (text) suggestNext(['screen reader tour', 'test keyboard navigation', 'debug this website']);
+    // Website Runtime Teacher: a factual, spoken "what happens when this loads".
+    const text = await projectText('/website-runtime-teacher', 'lastRunSummary', 'Reading your website');
+    if (text) suggestNext(['what CSS affects the main button', 'debug website', 'is this ready to share']);
     return text;
   }
 
   async function debugWebsite() {
-    const text = await projectText('/debug-report', 'lastDebugReport', 'Debugging your website');
-    if (text) suggestNext(['fix website error', 'run website', 'explain JavaScript']);
+    const text = await projectText('/website-debug-teacher', 'lastDebugReport', 'Debugging your website');
+    if (text) suggestNext(['fix website error', 'run website', 'check javascript connections']);
+    return text;
+  }
+
+  async function selectorExplainer(command) {
+    const text = await projectText('/selector-explainer', 'lastSelectorExplainer', 'Tracing the CSS', { query: command || '' });
+    if (text) suggestNext(['find unused CSS', 'describe the design', 'run website']);
+    return text;
+  }
+
+  async function pilotReport() {
+    const text = await projectText('/pilot-report', 'lastPilotReport', 'Writing the pilot report', {
+      commands: (state.commandHistory || []).slice(-20),
+      versions: (state.versions || []).slice(-10).map((v) => ({
+        label: v.note || v.label, command: v.command || '', summary: v.summary || [],
+      })),
+    });
+    if (text) suggestNext(['export website', 'is this ready to share', 'trainer notes']);
     return text;
   }
 
@@ -3040,8 +3067,8 @@ if (cta) {
   }
 
   async function readinessScore() {
-    const text = await projectText('/readiness-score', 'lastReadinessScore', 'Scoring readiness');
-    if (text) suggestNext(['fix accessibility issues', 'improve like a teacher', 'export website']);
+    const text = await projectText('/accessibility-readiness-score', 'lastReadinessScore', 'Scoring readiness');
+    if (text) suggestNext(['fix accessibility issues', 'make pilot report', 'export website']);
     return text;
   }
 
@@ -3173,6 +3200,72 @@ if (cta) {
     updateTutorialPanel('Tutorial paused. Type "start HTML tutorial" or "start tutorial" to resume.');
     writeOutput('Tutorial paused. You are back in normal building mode.', true);
     return true;
+  }
+
+  function trackHint() {
+    if (!state.track.active) return false;
+    const step = state.track.steps[state.track.index];
+    const msg = step ? `Hint: ${step.hint || step.say || ('Try: ' + step.command)}` : 'No hint available.';
+    updateTutorialPanel(msg);
+    writeOutput(msg, true);
+    return true;
+  }
+
+  async function trackRecap() {
+    if (!state.track.active) return false;
+    if (state.track.guided) {
+      const text = await projectText('/guided-build/recap', 'lastGuidedRecap', 'Recapping your progress');
+      return !!text || true;
+    }
+    const done = state.track.index;
+    const msg = `Recap: you are on step ${state.track.index + 1} of ${state.track.steps.length} in the ${state.track.title}. ${done} step(s) behind you.`;
+    updateTutorialPanel(msg);
+    writeOutput(msg, true);
+    return true;
+  }
+
+  // ----- Guided "build your first website by ear" track -----
+  async function loadGuidedSteps() {
+    if (state.guidedSteps) return state.guidedSteps;
+    try {
+      const data = await apiJson('/guided-build/steps', { method: 'GET' });
+      state.guidedSteps = data.steps || [];
+    } catch (error) {
+      state.guidedSteps = [];
+    }
+    return state.guidedSteps;
+  }
+
+  async function startGuidedBuild() {
+    const steps = await loadGuidedSteps();
+    if (!steps.length) { writeOutput('The guided build track is not available right now.', true); return true; }
+    state.track = { active: true, guided: true, id: 'first_website', index: 0, steps, title: 'Build your first website by ear' };
+    state.tutorial.active = false;
+    const intro = 'Guided build. We will make a website step by step, by ear. Say "next" to move on, "repeat" to hear the step, "hint" for help, "recap" for progress, or "exit tutorial" to stop.';
+    const msg = `${intro}\n\n${trackStepMessage()}`;
+    updateTutorialPanel(msg);
+    writeOutput(msg, true);
+    return true;
+  }
+
+  // Validate the current guided step against the live project. The step feedback
+  // goes ONLY to the tutorial panel (an aria-live region), never to the main
+  // output. This way a normal command's own answer is never swallowed or
+  // clobbered: the command speaks/writes its result, the panel shows step status.
+  // Deliberately does NOT take an async token, so the in-flight command keeps its
+  // own token and still writes its output when it resolves.
+  async function validateGuidedProgress() {
+    const track = state.track;
+    if (!track || !track.active || !track.guided) return;
+    const step = track.steps[track.index];
+    if (!step) return;
+    try {
+      const data = await apiJson('/guided-build/validate', {
+        method: 'POST',
+        body: JSON.stringify(projectPayload({ step: step.id })),
+      });
+      updateTutorialPanel(data.message);
+    } catch (error) { /* keep silent so the normal command response stands */ }
   }
 
   function explainJs() {
@@ -3426,6 +3519,7 @@ if (cta) {
       return true;
     }
     if (lower === 'say more' || lower === 'continue explanation' || lower === 'more explanation') { return speakMore(); }
+    if (lower.includes('start web tutorial') || lower.includes('build my first website') || lower.includes('build a website by ear') || lower.includes('guided build')) { startGuidedBuild(); return true; }
     if (handleWebInsertCommand(command, lower)) return true;
     if (lower.includes('where am i') || lower.includes('read breadcrumb') || lower.includes('what am i editing')) { breadcrumb(); return true; }
     if (lower.includes('step narration') || lower.includes('narrate steps') || lower.includes('walk me through') || lower.includes('how this runs') || lower.includes('how does this code work') || lower.includes('teach me this website')) { stepNarration(); return true; }
@@ -3435,12 +3529,14 @@ if (cta) {
     if (/prepare (this )?for nvda/.test(lower) || /prepare (this )?for (a )?screen reader/.test(lower) || lower.includes('screen reader summary') || lower.includes('nvda summary') || lower === 'nvda') { screenReaderSummary(); return true; }
     // Run / debug / accessibility lab.
     if (lower.includes('fix website error') || lower.includes('fix javascript error') || lower.includes('fix js error')) { debugFix(); return true; }
-    if (lower.includes('debug') || lower.includes('why is this website broken') || lower.includes('explain website error') || lower.includes('check console errors')) { debugWebsite(); return true; }
-    if (lower.includes('run website') || lower.includes('test website') || lower.includes('run this website') || lower.includes('test this site') || lower.includes('test this website') || lower.includes('check if this website works')) { runWebsite(); return true; }
+    if (lower.includes('debug') || lower.includes('why is this website broken') || lower.includes('why is my button not working') || lower.includes('explain website error') || lower.includes('explain errors') || lower.includes('check console errors') || lower.includes('check javascript connections') || lower.includes('debug this like a teacher')) { debugWebsite(); return true; }
+    if (lower.includes('run website') || lower.includes('test website') || lower.includes('run this website') || lower.includes('test this site') || lower.includes('test this website') || lower.includes('check if this website works') || lower.includes('what happens when this runs') || lower.includes('runtime teacher') || lower.includes('teach me how this website runs')) { runWebsite(); return true; }
     if (lower.includes('screen reader tour') || lower.includes('reading order tour') || lower.includes('screen reader reading order') || lower.includes('how would a screen reader read this') || lower.includes('nvda tour') || lower.includes('jaws tour')) { screenReaderTour(); return true; }
     if (lower.includes('test keyboard navigation') || lower.includes('keyboard navigation test') || lower.includes('keyboard test') || lower === 'tab order' || lower.includes('test tab order') || lower.includes('can keyboard users use this') || lower === 'focus order') { keyboardTest(); return true; }
     if (lower.includes('describe the design') || lower.includes('describe the website visually') || lower.includes('what does the website look like') || lower.includes('visual description') || lower.includes('describe layout') || lower.includes('describe colour') || lower.includes('describe color')) { visualDescription(); return true; }
-    if (lower.includes('is this ready to share') || lower.includes('website readiness') || lower.includes('readiness score') || lower.includes('project score') || lower.includes('is this website good') || lower.includes('should i share this')) { readinessScore(); return true; }
+    if (lower.includes('is this ready to share') || lower.includes('website readiness') || lower.includes('readiness score') || lower.includes('readiness check') || lower.includes('nab readiness') || lower.includes('project score') || lower.includes('is this website good') || lower.includes('should i share this') || lower.includes('can i export this') || lower.includes('teacher check')) { readinessScore(); return true; }
+    if (lower.includes('what css affects') || lower.includes('which css affects') || lower.includes('explain css for') || lower.includes('unused css') || lower.includes('which html uses')) { selectorExplainer(command); return true; }
+    if (lower.includes('pilot report') || lower.includes('trainer report') || lower.includes('summarize this session') || lower.includes('summarise this session') || lower.includes('what did the student learn')) { pilotReport(); return true; }
     if (lower.includes('improve like a teacher') || lower.includes('review like a teacher') || lower.includes('suggest improvements') || lower.includes('teacher review') || lower.includes('improve this project')) { teacherReview(); return true; }
     if (lower === 'show history' || lower.includes('version history') || lower.includes('show version history')) { showHistory(); return true; }
     if (lower.includes('learning notes') || lower.includes('concepts used') || lower.includes('concepts are in this project')) { learningNotes(); return true; }
@@ -3615,9 +3711,12 @@ if (cta) {
     if (action === 'trainer_notes') { await trainerNotes(); return true; }
     if (action === 'student_recap') { await studentRecap(); return true; }
     if (action === 'screen_reader_prep') { await screenReaderSummary(); return true; }
-    if (action === 'run_summary') { await runWebsite(); return true; }
+    if (action === 'run_summary' || action === 'runtime_teacher') { await runWebsite(); return true; }
     if (action === 'debug_website') { await debugWebsite(); return true; }
     if (action === 'debug_fix') { await debugFix(); return true; }
+    if (action === 'selector_explainer') { await selectorExplainer(slots.query || command); return true; }
+    if (action === 'pilot_report') { await pilotReport(); return true; }
+    if (action === 'guided_build_start') { await startGuidedBuild(); return true; }
     if (action === 'screen_reader_tour') { await screenReaderTour(); return true; }
     if (action === 'keyboard_test') { await keyboardTest(); return true; }
     if (action === 'visual_description') { await visualDescription(); return true; }
@@ -4234,6 +4333,7 @@ if (cta) {
       state.lastCommand = text;
     }
     if (shouldValidateTutorialCommand(lower)) await validateTutorialProgress(text);
+    if (state.track && state.track.active && state.track.guided && !isTutorialControlCommand(lower)) await validateGuidedProgress();
   }
 
   function startWakeListener() {
@@ -4410,6 +4510,9 @@ if (cta) {
     replaceButton('readBtn', 'Read Code', 'Read the current editor aloud', () => readCode(state.activeTab || 'html'));
     replaceButton('codeMapBtn', 'Code Map', 'Hear a beginner-friendly map of the code', codeMap);
     replaceButton('auditBtn', 'Audit', 'Audit accessibility and page quality', () => auditWebsite(true));
+    replaceButton('runWebsiteBtn', 'Run Website', 'Explain what happens when this website runs', runWebsite);
+    replaceButton('debugBtn', 'Debug', 'Debug broken HTML, CSS, and JavaScript connections like a teacher', () => debugWebsite());
+    replaceButton('readinessBtn', 'Readiness', 'Check if this website is ready to share', readinessScore);
     replaceButton('outlineBtn', 'Outline', 'Summarize the website outline', () => outlineWebsite(true));
     replaceButton('saveSnippetBtn', 'Save Snippet', 'Save HTML, CSS, and JavaScript as a named snippet', saveSnippetFromUi);
     replaceButton('loadSnippetBtn', 'Load Snippet', 'Load a saved snippet', loadSnippetFromUi);
@@ -4666,6 +4769,7 @@ if (cta) {
       state.lastCommand = command;
     }
     if (shouldValidateTutorialCommand(lower)) await validateTutorialProgress(command);
+    if (state.track && state.track.active && state.track.guided && !isTutorialControlCommand(lower)) await validateGuidedProgress();
   }
 
   if (window.__codeupEnableTestHooks) {
@@ -4745,6 +4849,12 @@ if (cta) {
       startTrack,
       trackNext,
       trackExit,
+      selectorExplainer,
+      pilotReport,
+      startGuidedBuild,
+      validateGuidedProgress,
+      trackHint,
+      trackRecap,
     };
   }
 

@@ -163,6 +163,7 @@ def _provided_artifacts_from_body(body: dict) -> dict[str, str]:
         "visual_description",
         "readiness_score",
         "teacher_review",
+        "pilot_report",
         "version_history",
         "instruction",
     )

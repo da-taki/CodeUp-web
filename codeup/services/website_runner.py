@@ -41,7 +41,21 @@ def has_real_website(html: str) -> bool:
     return bool(has_landmark or has_heading) and len(clean_text(text)) > 20
 
 
+def is_blank_project(html: str = "", css: str = "", js: str = "") -> bool:
+    """True when there is no project at all (empty/whitespace HTML, CSS, and JS).
+
+    Used by the teaching tools to give a clear "build or load a website first"
+    message instead of a confusing empty report. Distinct from
+    ``has_real_website`` (which also rejects fragments without landmarks): a bare
+    ``<button>`` plus a script is *not* blank, so the debugger can still inspect it.
+    """
+    return not ((html or "").strip() or (css or "").strip() or (js or "").strip())
+
+
 NO_WEBSITE_MESSAGE = 'I can test a website after you create one. Try "make a website for my school robotics club."'
+NO_PROJECT_MESSAGE = (
+    'There is no website yet. Build or load one first, for example "make a website for my school robotics club."'
+)
 
 
 def _likely_actions(records: list, js_map: dict[str, Any]) -> list[str]:
