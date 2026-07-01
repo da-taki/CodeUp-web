@@ -230,6 +230,61 @@ def _footer_block() -> str:
 """
 
 
+def _button_block(label: str = "New button") -> str:
+    safe = _escape_text(label) or "New button"
+    slug = re.sub(r"[^a-z0-9]+", "-", safe.lower()).strip("-") or "new-button"
+    return f"""
+<section id="{slug}-action" aria-labelledby="{slug}-action-heading">
+  <h2 id="{slug}-action-heading">Try This</h2>
+  <p>Use this button as a starting point for a simple interaction.</p>
+  <button type="button">{safe}</button>
+</section>
+"""
+
+
+def _commented_html(html: str) -> str:
+    if "CodeUp Web note: HTML" in html:
+        return html
+    comment = "\n  <!-- CodeUp Web note: HTML gives the page its structure and meaning. -->"
+    document = wrap_html(html)
+    if re.search(r"<body\b[^>]*>", document, re.I):
+        return re.sub(r"<body\b[^>]*>", lambda match: match.group(0) + comment, document, count=1, flags=re.I)
+    return comment + "\n" + document
+
+
+def _commented_css(css: str) -> str:
+    if "CodeUp Web note: CSS" in css:
+        return css
+    return "/* CodeUp Web note: CSS controls colors, spacing, layout, and focus styles. */\n" + css
+
+
+def _commented_js(js: str) -> str:
+    if "CodeUp Web note: JavaScript" in js:
+        return js
+    return "// CodeUp Web note: JavaScript makes the page respond to clicks, typing, and other actions.\n" + js
+
+
+def _function_based_js(js: str) -> tuple[str, str]:
+    if re.search(r"\bfunction\s+[A-Za-z_$][\w$]*\s*\(", js):
+        return js, "JavaScript already uses named functions."
+    body = (js or "").strip()
+    if body:
+        indented = "\n".join(f"  {line}" if line.strip() else "" for line in body.splitlines())
+        return (
+            f"function startProject() {{\n{indented}\n}}\n\nstartProject();\n",
+            "Organized the JavaScript inside a named startProject function.",
+        )
+    return (
+        "function handleButtonClick() {\n"
+        '  var button = document.querySelector("button");\n'
+        '  if (button) button.textContent = "Button clicked";\n'
+        "}\n\n"
+        'var firstButton = document.querySelector("button");\n'
+        'if (firstButton) firstButton.addEventListener("click", handleButtonClick);\n',
+        "Added a named JavaScript function for a button click.",
+    )
+
+
 def _shorten_title(html: str) -> str:
     match = re.search(r"<h1\b[^>]*>(.*?)</h1\s*>", html, re.I | re.S)
     if not match:
@@ -339,7 +394,14 @@ def _deterministic_plan(files: dict[str, str], instruction: str) -> EditPlan:
     section_match = re.search(
         r"\badd\s+(?:an?\s+)?(?:section\s+)?(?:about\s+)?(.+?)(?:\s+section)?$", instruction, re.I
     )
-    if section_match and "contact" not in lower and "footer" not in lower and "navigation" not in lower:
+    if (
+        section_match
+        and "contact" not in lower
+        and "footer" not in lower
+        and "navigation" not in lower
+        and "button" not in lower
+        and "comment" not in lower
+    ):
         topic = section_match.group(1).strip(" .") or "about"
         if topic in {"an", "a", "section"}:
             topic = "about"
@@ -353,6 +415,16 @@ def _deterministic_plan(files: dict[str, str], instruction: str) -> EditPlan:
         if "data-contact-form" not in html and 'id="contact"' not in html:
             html = _insert_before_footer_or_body(html, _contact_block())
             changes.append("Added an accessible contact form.")
+
+    button_match = re.search(
+        r"\badd\s+(?:a\s+)?button(?:\s+(?:called|named|that says|labelled|labeled)?\s*(.+))?$",
+        instruction,
+        re.I,
+    )
+    if button_match:
+        label = (button_match.group(1) or "New button").strip(" .:-") or "New button"
+        html = _insert_before_footer_or_body(html, _button_block(label))
+        changes.append(f"Added a {label} button.")
 
     if "add footer" in lower or "footer" in lower and "clearer" in lower:
         if not re.search(r"<footer\b", html, re.I):
@@ -370,6 +442,12 @@ def _deterministic_plan(files: dict[str, str], instruction: str) -> EditPlan:
     elif "more colorful" in lower or "more colourful" in lower:
         css += _color_css("blue")
         changes.append("Made the theme more colorful with accessible contrast.")
+
+    if ("background color" in lower or "background colour" in lower) and not any(
+        name in lower for name in ("blue", "green", "purple", "red", "orange")
+    ):
+        css += "\nbody { background: #eef6ff; }\n"
+        changes.append("Changed the background color to a soft light blue.")
 
     if "professional" in lower:
         css += _professional_css()
@@ -402,6 +480,16 @@ if (quizScoreStatus) {
 }
 """
             changes.append("Added a score tracking status area.")
+
+    if "add comments" in lower or "add comment" in lower or "comment the code" in lower:
+        html = _commented_html(html)
+        css = _commented_css(css)
+        js = _commented_js(js)
+        changes.append("Added beginner-friendly comments to the files.")
+
+    if "use a function" in lower or "use function" in lower or "use functions" in lower:
+        js, message = _function_based_js(js)
+        changes.append(message)
 
     if not changes:
         return EditPlan(

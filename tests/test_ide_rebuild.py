@@ -187,6 +187,61 @@ def test_edit_site_updates_existing_project_without_replacing_topic(client):
     assert "robotics" in polished["html"].lower()
 
 
+def test_beginner_followup_edits_are_deterministic(client):
+    files = generate_site_files("make a todo list website")
+
+    edited = client.post(
+        "/edit-site",
+        json={
+            "instruction": "add a button",
+            "html": files["html"],
+            "css": files["css"],
+            "js": "",
+        },
+    ).get_json()
+    assert edited["success"] is True
+    assert "New button" in edited["html"]
+
+    styled = client.post(
+        "/edit-site",
+        json={
+            "instruction": "change the background color",
+            "html": edited["html"],
+            "css": edited["css"],
+            "js": edited["js"],
+        },
+    ).get_json()
+    assert styled["success"] is True
+    assert "background: #eef6ff" in styled["css"]
+
+    commented = client.post(
+        "/edit-site",
+        json={
+            "instruction": "add comments",
+            "html": styled["html"],
+            "css": styled["css"],
+            "js": styled["js"],
+        },
+    ).get_json()
+    assert commented["success"] is True
+    assert "CodeUp Web note: HTML" in commented["html"]
+    assert "CodeUp Web note: CSS" in commented["css"]
+    assert "CodeUp Web note: JavaScript" in commented["js"]
+    assert 'id="comments"' not in commented["html"]
+
+    functional = client.post(
+        "/edit-site",
+        json={
+            "instruction": "make it use a function",
+            "html": commented["html"],
+            "css": commented["css"],
+            "js": commented["js"],
+        },
+    ).get_json()
+    assert functional["success"] is True
+    assert "function " in functional["js"]
+
+
 def test_website_validation_rejects_unsafe_scripts_and_raw_transcript_is_escaped():
     from codeup.services.natural_website_editor import plan_website_edit, validate_website_files
 
@@ -247,6 +302,10 @@ def test_voice_command_catalogue_routes_new_ide_commands(client):
         "make it more futuristic": "design_preset",
         "add dark mode": "darken_theme",
         "add a contact section": "add_contact_section",
+        "add a button": "edit_website",
+        "change the background color": "edit_css",
+        "add comments": "edit_website",
+        "make it use a function": "edit_website",
         "add animations": "design_preset",
         "improve the design": "design_preset",
         "make it accessible": "apply_audit_fixes",
