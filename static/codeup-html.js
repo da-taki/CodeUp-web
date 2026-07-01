@@ -1230,7 +1230,8 @@ if (cta) {
       : lower.includes('heading') || lower.includes('title') ? 'h1, h2, h3'
       : 'body';
     const rules = [];
-    const color = findColor();
+    let color = findColor();
+    if (!color && lower.includes('background') && lower.includes('color')) color = '#eef6ff';
     if (color && lower.includes('background')) rules.push(`${selector === 'body' ? 'body' : selector} { background: ${color}; }`);
     if (color && (lower.includes('text') || lower.includes('font color') || lower.includes('words'))) rules.push(`${selector} { color: ${color}; }`);
     if (color && lower.includes('button')) rules.push(`button, .button, a.button { background: ${color}; }`);
@@ -1993,27 +1994,58 @@ if (cta) {
     scheduleAutosave();
   }
 
+  function escapeHtmlText(value) {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .trim();
+  }
+
+  function insertHtmlNearEnd(text) {
+    const editor = getEditor();
+    if (!editor) return;
+    let html = normalizeHtmlDocument(getHtmlSource());
+    if (/<\/main\s*>/i.test(html)) {
+      html = html.replace(/<\/main\s*>/i, () => `${text}\n</main>`);
+    } else if (/<\/body\s*>/i.test(html)) {
+      html = html.replace(/<\/body\s*>/i, () => `${text}\n</body>`);
+    } else {
+      html += `\n${text}`;
+    }
+    editor.value = ensureManagedRefs(html, !!getCss().trim(), !!getJs().trim());
+    persistDrafts();
+    state.pages[state.currentPage] = getHtml();
+    scheduleAutosave();
+    editor.focus();
+  }
+
   function addHtmlFromSpeech(command) {
     const lower = command.toLowerCase();
     const heading = command.match(/(?:add|insert|write|heading|title|sheershak|heading)\s+(?:heading\s+|title\s+)?(.+)/i);
     const paragraph = command.match(/(?:add paragraph|insert paragraph|write paragraph|paragraph|para|anuched)\s+(.+)/i);
-    const button = command.match(/(?:add button|insert button|button|button jodo)\s+(.+)/i);
+    const button = command.match(/(?:add|insert)\s+(?:a\s+)?button(?:\s+(?:called|named|that says|labelled|labeled)?\s*(.+))?$/i)
+      || command.match(/(?:button|button jodo)\s+(.+)/i);
     if (button) {
+      const label = escapeHtmlText(button[1] || 'New button') || 'New button';
       snapshotVersion('Before adding button');
-      insertAtCursor(`\n<button type="button">${button[1].trim()}</button>\n`);
-      speak(t('Button added.', 'Button add ho gaya.'));
+      beginReplay('Before adding button');
+      insertHtmlNearEnd(`\n<button type="button">${label}</button>`);
+      finishReplay('After adding button');
+      writeOutput(t('Button added.', 'Button add ho gaya.'), true);
       return true;
     }
     if (paragraph) {
       snapshotVersion('Before adding paragraph');
       insertAtCursor(`\n<p>${paragraph[1].trim()}</p>\n`);
-      speak(t('Paragraph added.', 'Paragraph add ho gaya.'));
+      writeOutput(t('Paragraph added.', 'Paragraph add ho gaya.'), true);
       return true;
     }
     if (heading && !lower.includes('website')) {
       snapshotVersion('Before adding heading');
       insertAtCursor(`\n<h2>${heading[1].trim()}</h2>\n`);
-      speak(t('Heading added.', 'Heading add ho gayi.'));
+      writeOutput(t('Heading added.', 'Heading add ho gayi.'), true);
       return true;
     }
     return false;
@@ -3521,6 +3553,7 @@ if (cta) {
     if (lower === 'say more' || lower === 'continue explanation' || lower === 'more explanation') { return speakMore(); }
     if (lower.includes('start web tutorial') || lower.includes('build my first website') || lower.includes('build a website by ear') || lower.includes('guided build')) { startGuidedBuild(); return true; }
     if (handleWebInsertCommand(command, lower)) return true;
+    if (/^(add|insert)\s+(a\s+)?button(\s+.+)?$/i.test(command)) { return addHtmlFromSpeech(command); }
     if (lower.includes('where am i') || lower.includes('read breadcrumb') || lower.includes('what am i editing')) { breadcrumb(); return true; }
     if (lower.includes('step narration') || lower.includes('narrate steps') || lower.includes('walk me through') || lower.includes('how this runs') || lower.includes('how does this code work') || lower.includes('teach me this website')) { stepNarration(); return true; }
     if (lower.includes('trainer notes') || lower.includes('teacher notes') || lower.includes('trainer handoff') || lower.includes('lesson notes') || /notes? for (the )?teacher/.test(lower)) { trainerNotes(); return true; }

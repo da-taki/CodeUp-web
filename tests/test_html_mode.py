@@ -661,7 +661,7 @@ def test_frontend_voice_css_edits_are_single_block_and_wrap_fragments():
 
         const storage = new Map();
         const elements = {
-          htmlEditor: { value: '<h1>Hello</h1>', addEventListener() {}, setAttribute() {} },
+          htmlEditor: { value: '<h1>Hello</h1>', addEventListener() {}, setAttribute() {}, focus() {} },
           output: { textContent: '' },
           srAnnouncer: { textContent: '' },
           languageSelector: { value: 'en', addEventListener() {} },
@@ -698,6 +698,7 @@ def test_frontend_voice_css_edits_are_single_block_and_wrap_fragments():
         const api = context.window.__codeupVoiceTest;
 
         assert(api.applyCssEdit('change the background blue'), 'background command should apply');
+        assert(api.applyCssEdit('change the background color'), 'generic background color command should apply');
         assert(api.applyCssEdit('center the heading'), 'heading command should apply');
         assert(api.applyCssEdit('center the heading'), 'repeated command should still apply');
         const html = api.getHtml();
@@ -709,6 +710,12 @@ def test_frontend_voice_css_edits_are_single_block_and_wrap_fragments():
         assert(/<!doctype html>/i.test(html), 'fragment edits should be wrapped with a doctype');
         assert(/<html\b/i.test(html) && /<head\b/i.test(html) && /<body\b/i.test(html), 'fragment edits should produce a full document');
         assert(html.includes('body { background: #2563eb; }'), 'previous voice CSS rules should be retained in the managed block');
+        assert(html.includes('body { background: #eef6ff; }'), 'generic background color should use a deterministic default');
+
+        assert(api.handleIdeCommand('add a button', 'add a button'), 'generic add button command should apply');
+        const htmlWithButton = api.getHtml();
+        assert(htmlWithButton.includes('<button type="button">New button</button>'), 'generic add button should insert a visible button');
+        assert(elements.output.textContent.includes('Button added.'), 'generic add button should update visible output');
         """
     )
 
