@@ -526,6 +526,11 @@ def test_voice_command_is_html_or_chat_focused(client):
     assert client.post("/voice-command", json={"text": "go back two steps"}).get_json()["action"] == "undo_version"
     assert client.post("/voice-command", json={"text": "what changed"}).get_json()["action"] == "review_changes"
     assert (
+        client.post("/voice-command", json={"text": "read before and after"}).get_json()["action"] == "review_changes"
+    )
+    assert client.post("/voice-command", json={"text": "explain this change"}).get_json()["action"] == "review_changes"
+    assert client.post("/voice-command", json={"text": "is this risky"}).get_json()["action"] == "review_changes"
+    assert (
         client.post("/voice-command", json={"text": "use the science project template"}).get_json()["action"]
         == "use_template"
     )
@@ -639,6 +644,151 @@ def test_frontend_undo_persists_trimmed_versions():
         api.restoreVersions();
         assert(api.state.versions.length === 1, 'simulated reload should restore the trimmed stack');
         assert(api.state.versions[0].html === '<h1>First</h1>', 'reload should not resurrect undone versions');
+        """
+    )
+
+    subprocess.run([node, "-e", harness], check=True, cwd=".")
+
+
+def test_review_changes_uses_latest_version_pair():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is required for the JS change-review check")
+
+    harness = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function assert(condition, message) {
+          if (!condition) throw new Error(message);
+        }
+
+        let captured = null;
+        const elements = {
+          output: { textContent: '' },
+          srAnnouncer: { textContent: '' },
+          languageSelector: { value: 'en', addEventListener() {} },
+        };
+        const context = {
+          console,
+          Date,
+          setTimeout(callback) { callback(); },
+          localStorage: { getItem() { return null; }, setItem() {} },
+          sessionStorage: { getItem() { return null; }, setItem() {}, removeItem() {} },
+          SpeechSynthesisUtterance: function SpeechSynthesisUtterance(text) { this.text = text; },
+          fetch: async function fetch(url, options) {
+            captured = { url, body: JSON.parse(options.body) };
+            return { json: async () => ({ success: true, message: 'Mistake replay:\nWEB CHANGE REVIEW\nRisk: low' }) };
+          },
+          document: {
+            getElementById(id) { return elements[id] || null; },
+            addEventListener() {},
+            body: { dataset: {}, classList: { toggle() {}, contains() { return false; } } },
+          },
+          window: {
+            __codeupEnableTestHooks: true,
+            speechSynthesis: { cancel() {}, speak() {} },
+            addEventListener() {},
+          },
+        };
+        context.window.window = context.window;
+        context.window.document = context.document;
+        context.window.localStorage = context.localStorage;
+        context.window.sessionStorage = context.sessionStorage;
+
+        vm.runInNewContext(fs.readFileSync('static/codeup-html.js', 'utf8'), context);
+        const api = context.window.__codeupVoiceTest;
+        api.state.replay.before = null;
+        api.state.replay.after = null;
+        api.state.versions = [
+          { html: '<main><h1>Old</h1></main>', css: 'body { color: black; }', js: '' },
+          { html: '<main><h1>New</h1></main>', css: 'body { color: blue; }', js: 'function init() {}' },
+        ];
+
+        (async () => {
+          await api.narrateReplay('what changed');
+          assert(captured.url === '/mistake-replay', 'change review should call replay endpoint');
+          assert(captured.body.html_before.includes('Old'), 'before HTML should come from previous version');
+          assert(captured.body.html_after.includes('New'), 'after HTML should come from latest version');
+          assert(captured.body.css_before.includes('black'), 'before CSS should come from previous version');
+          assert(captured.body.js_after.includes('init'), 'after JS should come from latest version');
+          assert(captured.body.mode === 'summary', 'what changed should use summary mode');
+          assert(elements.output.textContent.includes('WEB CHANGE REVIEW'), 'review output should be shown');
+        })().catch((error) => {
+          console.error(error);
+          process.exit(1);
+        });
+        """
+    )
+
+    subprocess.run([node, "-e", harness], check=True, cwd=".")
+
+
+def test_review_changes_handles_no_previous_version():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is required for the JS change-review check")
+
+    harness = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function assert(condition, message) {
+          if (!condition) throw new Error(message);
+        }
+
+        let fetchCalled = false;
+        const elements = {
+          output: { textContent: '' },
+          srAnnouncer: { textContent: '' },
+          languageSelector: { value: 'en', addEventListener() {} },
+        };
+        const context = {
+          console,
+          Date,
+          setTimeout(callback) { callback(); },
+          localStorage: { getItem() { return null; }, setItem() {} },
+          sessionStorage: { getItem() { return null; }, setItem() {}, removeItem() {} },
+          SpeechSynthesisUtterance: function SpeechSynthesisUtterance(text) { this.text = text; },
+          fetch: async function fetch() {
+            fetchCalled = true;
+            return { json: async () => ({ success: true }) };
+          },
+          document: {
+            getElementById(id) { return elements[id] || null; },
+            addEventListener() {},
+            body: { dataset: {}, classList: { toggle() {}, contains() { return false; } } },
+          },
+          window: {
+            __codeupEnableTestHooks: true,
+            speechSynthesis: { cancel() {}, speak() {} },
+            addEventListener() {},
+          },
+        };
+        context.window.window = context.window;
+        context.window.document = context.document;
+        context.window.localStorage = context.localStorage;
+        context.window.sessionStorage = context.sessionStorage;
+
+        vm.runInNewContext(fs.readFileSync('static/codeup-html.js', 'utf8'), context);
+        const api = context.window.__codeupVoiceTest;
+        api.state.replay.before = null;
+        api.state.replay.after = null;
+        api.state.versions = [{ html: '<main><h1>Only</h1></main>', css: '', js: '' }];
+
+        (async () => {
+          await api.narrateReplay('what changed');
+          assert(!fetchCalled, 'no previous version should not call the server');
+          assert(
+            elements.output.textContent === 'Nothing to compare yet. Make an edit first, then ask what changed.',
+            'no previous version should show the graceful message'
+          );
+        })().catch((error) => {
+          console.error(error);
+          process.exit(1);
+        });
         """
     )
 

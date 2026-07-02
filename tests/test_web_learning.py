@@ -1,5 +1,6 @@
 import pytest
 
+from codeup.services.web_change_review import review_web_changes
 from codeup.services.web_learning import build_code_map, mistake_replay, validate_tutorial_step
 
 
@@ -90,14 +91,88 @@ def test_mistake_replay_structural_diff(client):
     data = client.post("/mistake-replay", json={"html_before": before, "html_after": after}).get_json()
 
     assert data["success"] is True
-    assert any("Added 1 <section>" in change for change in data["changes"])
-    assert any("Accessibility issue fixed" in change for change in data["changes"])
+    assert data["changed_files"] == ["index.html"]
+    assert data["risk"] == "medium"
+    assert any("index.html changed" in change and "<section>" in change for change in data["changes"])
 
     service = mistake_replay(
         before, after, ".hero { color: red; }", ".hero { color: red; background: blue; }", "", "function init() {}"
     )
-    assert any("Changed CSS selector .hero" in change for change in service["changes"])
-    assert any("Added JavaScript function init()" in change for change in service["changes"])
+    assert service["changed_files"] == ["index.html", "style.css", "script.js"]
+    assert any("style.css changed" in change for change in service["changes"])
+    assert any("script.js changed" in change and "init()" in change for change in service["changes"])
+
+
+def test_web_diff_summarizes_html_css_js_with_risk(client):
+    before = {
+        "html_before": "<main><h1>Demo</h1><p>Old copy</p></main>",
+        "css_before": "body { color: #111827; }",
+        "js_before": "",
+    }
+    after = {
+        "html_after": "<main><h1>Demo</h1><section><h2>News</h2><p>New copy</p></section></main>",
+        "css_after": "body { color: #111827; } .card { display: grid; }",
+        "js_after": "function showNews() {}\ndocument.addEventListener('click', showNews);",
+    }
+    data = client.post("/mistake-replay", json={**before, **after}).get_json()
+
+    assert data["success"] is True
+    assert data["changed_files"] == ["index.html", "style.css", "script.js"]
+    assert data["risk"] == "medium"
+    assert "WEB CHANGE REVIEW" in data["message"]
+    assert "Risk: medium" in data["message"]
+
+
+def test_web_diff_flags_simple_style_text_as_low_risk():
+    review = review_web_changes(
+        html_before="<main><h1>Demo</h1><p>Old text</p></main>",
+        html_after="<main><h1>Demo</h1><p>New text</p></main>",
+        css_before="body { color: #111827; }",
+        css_after="body { color: #2563eb; }",
+    )
+
+    assert review["changed_files"] == ["index.html", "style.css"]
+    assert review["risk"] == "low"
+
+
+def test_web_diff_flags_js_behavior_as_medium_risk():
+    review = review_web_changes(
+        js_before="",
+        js_after="function saveDemo() {}\ndocument.addEventListener('click', saveDemo);",
+    )
+
+    assert review["changed_files"] == ["script.js"]
+    assert review["risk"] == "medium"
+    assert "JavaScript behavior" in review["risk_reason"]
+
+
+def test_web_diff_flags_external_script_as_high_risk():
+    review = review_web_changes(
+        html_before="<html><head></head><body><h1>Demo</h1></body></html>",
+        html_after=(
+            '<html><head><script src="https://cdn.example.test/demo.js"></script></head>'
+            "<body><h1>Demo</h1></body></html>"
+        ),
+    )
+
+    assert review["changed_files"] == ["index.html"]
+    assert review["risk"] == "high"
+    assert "external script" in review["risk_reason"].lower()
+
+
+def test_deterministic_change_review_does_not_call_ai(monkeypatch):
+    from codeup.services import ai_service
+
+    def fail_call_ai(*args, **kwargs):
+        raise AssertionError("change review must not call AI")
+
+    monkeypatch.setattr(ai_service, "call_ai", fail_call_ai)
+    review = review_web_changes(
+        html_before="<main><h1>Old</h1></main>",
+        html_after="<main><h1>New</h1></main>",
+    )
+
+    assert review["risk"] == "low"
 
 
 def test_beginner_error_explanations(client):
@@ -157,6 +232,9 @@ def test_new_voice_command_routes(client):
         "map this website": "code_map",
         "list all buttons": "code_map",
         "compare before and after": "review_changes",
+        "read before and after": "review_changes",
+        "explain this change": "review_changes",
+        "is this risky": "review_changes",
         "compare accessibility before and after": "walkthrough_compare",
         "replay my mistake": "review_changes",
         "pause when image has no alt text": "walkthrough_pause_issues",
