@@ -548,47 +548,31 @@ def mistake_replay(
     css_after: str = "",
     js_before: str = "",
     js_after: str = "",
+    mode: str = "summary",
 ) -> dict[str, Any]:
-    changes = []
-    changes.extend(_line_diff(html_before, html_after, "HTML"))
-    before_tags = [record.tag for record in parse_records(html_before)]
-    after_tags = [record.tag for record in parse_records(html_after)]
-    for tag in sorted(set(before_tags + after_tags)):
-        delta = after_tags.count(tag) - before_tags.count(tag)
-        if delta > 0 and tag in {"header", "nav", "main", "section", "footer", "form", "button", "img"}:
-            changes.append(f"Added {delta} <{tag}> element{'s' if delta != 1 else ''}.")
-        elif delta < 0 and tag in {"header", "nav", "main", "section", "footer", "form", "button", "img"}:
-            changes.append(f"Removed {-delta} <{tag}> element{'s' if delta != -1 else ''}.")
+    from codeup.services.web_change_review import format_web_change_review, review_web_changes
 
-    before_rules = {rule["selector"]: set(rule["properties"]) for rule in parse_css_rules(css_before)}
-    after_rules = {rule["selector"]: set(rule["properties"]) for rule in parse_css_rules(css_after)}
-    for selector in sorted(set(after_rules) - set(before_rules))[:6]:
-        changes.append(f"Added CSS selector {selector}.")
-    for selector in sorted(set(before_rules) & set(after_rules)):
-        added = after_rules[selector] - before_rules[selector]
-        if added:
-            changes.append(f"Changed CSS selector {selector}: added {', '.join(sorted(added))}.")
-
-    before_js = analyze_javascript(js_before)
-    after_js = analyze_javascript(js_after)
-    before_fns = {fn["name"] for fn in before_js["functions"]}
-    after_fns = {fn["name"] for fn in after_js["functions"]}
-    for fn in sorted(after_fns - before_fns)[:6]:
-        changes.append(f"Added JavaScript function {fn}().")
-    before_events = {(item["target"], item["event"]) for item in before_js["listeners"]}
-    after_events = {(item["target"], item["event"]) for item in after_js["listeners"]}
-    for target, event in sorted(after_events - before_events)[:6]:
-        changes.append(f"Added a {event} event listener for {target}.")
-
-    before_issues = {issue["id"]: issue for issue in audit_html(html_before).issues}
-    after_issues = {issue["id"]: issue for issue in audit_html(html_after).issues}
-    for issue_id in sorted(set(before_issues) - set(after_issues)):
-        changes.append(f"Accessibility issue fixed: {before_issues[issue_id]['description']}")
-
+    review = review_web_changes(
+        html_before=html_before,
+        html_after=html_after,
+        css_before=css_before,
+        css_after=css_after,
+        js_before=js_before,
+        js_after=js_after,
+    )
+    changes = [item["summary"] for item in review["files"]]
     if not changes:
-        changes.append("No meaningful structural change detected.")
-    message = "Mistake replay:\n" + "\n".join(f"- {change}" for change in changes[:16])
-    return {"message": message, "changes": changes[:16]}
+        changes = ["No meaningful changes detected."]
+    changes.append(f"Risk: {review['risk']}. {review['risk_reason']}")
+    message = "Mistake replay:\n" + format_web_change_review(review, mode=mode)
+    return {
+        "message": message,
+        "changes": changes[:16],
+        "review": review,
+        "changed_files": review["changed_files"],
+        "risk": review["risk"],
+        "risk_reason": review["risk_reason"],
+    }
 
 
 def explain_beginner_errors(html: str = "", css: str = "", js: str = "") -> dict[str, Any]:

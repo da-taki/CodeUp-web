@@ -6,6 +6,11 @@ from typing import Any
 from codeup.services.html_utils import audit_html
 from codeup.services.project_type_router import display_project_type
 from codeup.services.version_history import build_version_history_report
+from codeup.services.web_change_review import (
+    format_web_change_review,
+    latest_review_from_versions,
+    review_web_changes,
+)
 from codeup.services.web_learning import analyze_javascript, build_code_map, parse_css_rules, parse_records
 from codeup.services.website_accessibility_lab import (
     build_keyboard_test,
@@ -604,6 +609,7 @@ def build_pilot_report(
     fixes = [cmd for cmd in commands if re.search(r"\b(fix|repair|apply|autofix|undo|restore)\b", cmd, re.I)]
     edits = [cmd for cmd in commands if re.search(r"\b(add|insert|change|make|improve|set|edit)\b", cmd, re.I)]
     line_counts = ctx["line_counts"]
+    latest_change = latest_review_from_versions(version_history)
     files_created = [
         f"index.html ({line_counts['index.html']} lines)",
         f"style.css ({line_counts['style.css']} lines)",
@@ -643,6 +649,16 @@ def build_pilot_report(
         lines.extend(f"- {item}" for item in (fixes + edits)[:10])
     else:
         lines.append("- No fix or edit commands were recorded.")
+
+    if latest_change and latest_change["changed_files"]:
+        lines.extend(
+            [
+                "",
+                "Recent change risk:",
+                f"- Changed files: {', '.join(latest_change['changed_files'])}.",
+                f"- Risk: {latest_change['risk']}. {latest_change['risk_reason']}",
+            ]
+        )
 
     if readiness["blockers"]:
         lines.extend(["", "Blockers still open:", *(f"- {item}" for item in readiness["blockers"])])
@@ -735,9 +751,7 @@ def build_change_replay(
     if provided.strip():
         body = provided.strip()
     else:
-        from codeup.services.web_learning import mistake_replay
-
-        replay = mistake_replay(
+        review = review_web_changes(
             html_before=html_before,
             html_after=html_after,
             css_before=css_before,
@@ -745,7 +759,7 @@ def build_change_replay(
             js_before=js_before,
             js_after=js_after,
         )
-        body = "\n".join(f"- {change}" for change in replay["changes"])
+        body = format_web_change_review(review)
     header = "CHANGE REPLAY"
     asked = (
         f"You asked: {instruction.strip()}." if instruction.strip() else "Your most recent edit changed the project."

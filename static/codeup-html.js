@@ -514,6 +514,44 @@ if (cta) {
     };
   }
 
+  function versionSourceSnapshot(version, label) {
+    return {
+      label: label || version.label || version.note || 'Saved version',
+      html: version.html || '',
+      css: version.css || '',
+      js: version.js || '',
+      combined: version.combined || version.html || '',
+      time: version.timestamp || '',
+    };
+  }
+
+  function latestVersionPair() {
+    const versions = (state.versions || []).filter(item => item && (item.html || item.css || item.js));
+    if (versions.length < 2) return null;
+    return {
+      before: versionSourceSnapshot(versions[versions.length - 2], 'Before change'),
+      after: versionSourceSnapshot(versions[versions.length - 1], 'After change'),
+    };
+  }
+
+  function latestReplayPair() {
+    if (state.replay && state.replay.before) {
+      return {
+        before: state.replay.before,
+        after: state.replay.after || sourceSnapshot('Current code'),
+      };
+    }
+    return latestVersionPair();
+  }
+
+  function changeReviewMode(reason) {
+    const lower = (reason || '').toLowerCase();
+    if (lower.includes('read before and after') || lower.includes('compare before and after')) return 'before_after';
+    if (lower.includes('risky') || lower.includes('risk')) return 'risk';
+    if (lower.includes('explain this change') || lower.includes('why does the fixed version work')) return 'explain';
+    return 'summary';
+  }
+
   // Render small, clickable "Try this next" chips below the output (no walls of text).
   function suggestNext(suggestions) {
     const list = (suggestions || []).filter(Boolean);
@@ -545,12 +583,13 @@ if (cta) {
   }
 
   async function narrateReplay(reason, title) {
-    const before = state.replay.before;
-    const after = state.replay.after || sourceSnapshot('Current code');
-    if (!before) {
-      writeOutput(t('No before version is available yet. Make a change, then ask what changed.', 'Pehle change kariye, phir poochiye kya badla.'), true);
+    const pair = latestReplayPair();
+    if (!pair || !pair.before) {
+      writeOutput(t('Nothing to compare yet. Make an edit first, then ask what changed.', 'Abhi compare karne ke liye kuch nahi hai. Pehle edit kariye, phir poochiye kya badla.'), true);
       return;
     }
+    const before = pair.before;
+    const after = pair.after || sourceSnapshot('Current code');
     const token = nextAsyncToken();
     try {
       const data = await apiJson('/mistake-replay', {
@@ -563,6 +602,7 @@ if (cta) {
           js_before: before.js,
           js_after: after.js,
           reason: reason || '',
+          mode: changeReviewMode(reason),
         }),
       });
       if (!isAsyncFresh(token)) return;
@@ -1315,17 +1355,8 @@ if (cta) {
     return true;
   }
 
-  function reviewChanges() {
-    if (state.versions.length < 2) {
-      speak('There is only one saved version so far.');
-      return true;
-    }
-    const previous = _htmlWords(state.versions[state.versions.length - 2].html);
-    const current = _htmlWords(state.versions[state.versions.length - 1].html);
-    const added = [...current].filter(word => !previous.has(word)).slice(0, 8);
-    const removed = [...previous].filter(word => !current.has(word)).slice(0, 8);
-    const message = `Changed since the last version. Added: ${added.join(', ') || 'nothing major'}. Removed: ${removed.join(', ') || 'nothing major'}.`;
-    writeOutput(message, true);
+  async function reviewChanges() {
+    await narrateReplay('what changed');
     return true;
   }
 
@@ -2494,7 +2525,7 @@ if (cta) {
   }
 
   function isLocalMetaCommand(lower) {
-    return /^(remember this as|save this command as|use macro|run macro|list macros|delete macro|bookmark this|read from bookmark|list bookmarks|delete bookmark|where am i|read breadcrumb|what am i editing|restore my last work|what did i last work on|compare before and after|replay my mistake|what changed|show changed lines|read only what changed|compare preview changes|compare code changes|give me a code map|map this website|website map|project map|list all buttons|list all forms|read the html|read the css|read the javascript|explain simply|explain this error|why is this broken|step narration|learning notes|accessibility map|review project|describe preview|say more)/.test(lower);
+    return /^(remember this as|save this command as|use macro|run macro|list macros|delete macro|bookmark this|read from bookmark|list bookmarks|delete bookmark|where am i|read breadcrumb|what am i editing|restore my last work|what did i last work on|compare before and after|read before and after|replay my mistake|what changed|explain this change|is this risky|show changed lines|read only what changed|compare preview changes|compare code changes|give me a code map|map this website|website map|project map|list all buttons|list all forms|read the html|read the css|read the javascript|explain simply|explain this error|why is this broken|step narration|learning notes|accessibility map|review project|describe preview|say more)/.test(lower);
   }
 
   function isCodeMapQuestion(lower) {
@@ -3580,7 +3611,7 @@ if (cta) {
     if ((lower.includes('explain') || lower.includes('summarize') || lower.includes('summarise') || lower.includes('what does')) && (lower.includes('index.html') || lower.includes('html file') || lower.includes('css') || lower.includes('style.css') || lower.includes('style file') || lower.includes('javascript') || lower.includes('java script') || /\bjs\b/.test(lower) || lower.includes('script.js') || lower.includes('script file'))) { explainProjectFile(command); return true; }
     if (lower.includes('explain simply') || lower.includes('explain this error') || lower.includes('why is this broken')) { explainErrors(false); return true; }
     if (lower.includes('fix and explain')) { explainErrors(true); return true; }
-    if (lower.includes('compare before and after') || lower.includes('replay my mistake') || lower.includes('replay change') || lower.includes('replay the change') || lower === 'what changed' || lower.includes('show changed lines') || lower.includes('read only what changed') || lower.includes('compare preview changes') || lower.includes('compare code changes')) { narrateReplay(command); return true; }
+    if (lower.includes('compare before and after') || lower.includes('read before and after') || lower.includes('replay my mistake') || lower.includes('replay change') || lower.includes('replay the change') || lower === 'what changed' || lower.includes('explain this change') || lower.includes('is this risky') || lower.includes('show changed lines') || lower.includes('read only what changed') || lower.includes('compare preview changes') || lower.includes('compare code changes')) { narrateReplay(command); return true; }
     if (lower.startsWith('remember this as') || lower.startsWith('save this command as')) { saveMacro(command); return true; }
     if (lower.startsWith('use macro') || lower.startsWith('run macro')) { runMacro(command); return true; }
     if (lower === 'list macros') { listMacros(); return true; }
@@ -4012,9 +4043,9 @@ if (cta) {
       await undoByVoice(command);
       return;
     }
-    if (lower.includes('what changed') || lower.includes('compare versions') || lower.includes('review changes')) {
+    if (lower.includes('what changed') || lower.includes('read before and after') || lower.includes('explain this change') || lower.includes('is this risky') || lower.includes('compare versions') || lower.includes('review changes')) {
       snapshotVersion('Current version for comparison');
-      reviewChanges();
+      await reviewChanges();
       return;
     }
     if (lower.includes('multi page') || lower.includes('multiple page') || lower.includes('homepage plus')) {
@@ -4176,6 +4207,9 @@ if (cta) {
       lower.includes('multi page') ||
       lower.includes('go back') ||
       lower.includes('what changed') ||
+      lower.includes('read before and after') ||
+      lower.includes('explain this change') ||
+      lower.includes('is this risky') ||
       lower.includes('voice language') ||
       lower.includes('speech language') ||
       lower.includes('bhasha') ||

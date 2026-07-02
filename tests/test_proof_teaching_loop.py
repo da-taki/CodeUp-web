@@ -382,6 +382,34 @@ def test_pilot_report_without_commands_still_renders():
     assert "command history was not recorded" in text
 
 
+def test_pilot_report_mentions_change_risk_when_available():
+    before = {
+        "label": "Before edit",
+        "html": "<main><h1>Robotics</h1><p>Old intro</p></main>",
+        "css": "body { color: #111827; }",
+        "js": "",
+    }
+    after = {
+        "label": "After edit",
+        "html": "<main><h1>Robotics</h1><p>New intro</p></main>",
+        "css": "body { color: #2563eb; }",
+        "js": "",
+    }
+
+    text = build_pilot_report(
+        after["html"],
+        after["css"],
+        after["js"],
+        name="Robotics",
+        project_type=ROBOTICS["project_type"],
+        version_history=[before, after],
+    )
+
+    assert "Recent change risk:" in text
+    assert "Changed files: index.html, style.css." in text
+    assert "Risk: low." in text
+
+
 def test_pilot_report_route(client):
     data = client.post("/pilot-report", json=_payload(ROBOTICS, commands=["run website", "debug website"])).get_json()
     assert data["success"] is True

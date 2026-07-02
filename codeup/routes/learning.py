@@ -339,6 +339,7 @@ def mistake_replay_route():
                 css_after=str(body.get("css_after") or ""),
                 js_before=str(body.get("js_before") or ""),
                 js_after=str(body.get("js_after") or ""),
+                mode=str(body.get("mode") or "summary"),
             ),
         }
     )
