@@ -12,14 +12,13 @@
     body {
       margin: 0;
       font-family: Arial, sans-serif;
-      color: #17202a;
-      background: #f5f7fb;
+      color: #111827;
+      background: #ffffff;
     }
     header {
-      padding: 56px 24px;
-      color: white;
-      background: linear-gradient(135deg, #0f766e, #2563eb);
-      text-align: center;
+      padding: 24px;
+      border-bottom: 1px solid #cbd5e1;
+      background: #f8fafc;
     }
     main {
       max-width: 960px;
@@ -28,15 +27,13 @@
     }
     section {
       margin: 18px 0;
-      padding: 22px;
-      border: 1px solid #d9e2ec;
-      border-radius: 8px;
+      padding: 16px;
+      border: 1px solid #cbd5e1;
       background: white;
     }
     button {
       padding: 10px 14px;
-      border: 0;
-      border-radius: 6px;
+      border: 1px solid #0f766e;
       color: white;
       background: #0f766e;
       cursor: pointer;
@@ -68,7 +65,7 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="hero">
+  <header class="site-header">
     <h1>My CodeUp Website</h1>
     <p>Edit index.html, style.css, and script.js, or say "generate a website for my robotics lab".</p>
     <button id="cta" type="button">Say hello</button>
@@ -83,22 +80,68 @@
 </body>
 </html>`;
 
-  const starterCss = `:root { color-scheme: light dark; --brand: #4f46e5; --accent: #06b6d4; }
+  const starterCss = `:root { color-scheme: light; --accent: #2563eb; }
 * { box-sizing: border-box; }
-body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.6; color: #14181f; background: #f7f8fc; }
-.hero { padding: 64px 24px; text-align: center; color: #fff; background: linear-gradient(135deg, var(--brand), var(--accent)); }
-.hero h1 { font-size: clamp(2rem, 6vw, 3.5rem); margin: 0 0 .5rem; }
-main { max-width: 820px; margin: 0 auto; padding: 32px 20px; }
-section { background: #fff; border: 1px solid #e3e8f3; border-radius: 14px; padding: 22px; }
-button { font: inherit; font-weight: 700; cursor: pointer; margin-top: 14px; padding: 12px 22px; border: 0; border-radius: 999px; color: #fff; background: linear-gradient(135deg, var(--brand), var(--accent)); }
+body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.6; color: #111827; background: #ffffff; }
+.site-header { padding: 24px; border-bottom: 1px solid #cbd5e1; background: #f8fafc; }
+.site-header h1 { font-size: 2rem; margin: 0 0 .5rem; }
+main { max-width: 820px; margin: 0 auto; padding: 24px 20px; }
+section { background: #fff; border: 1px solid #cbd5e1; padding: 16px; }
+button { font: inherit; font-weight: 600; cursor: pointer; margin-top: 14px; padding: 9px 14px; border: 1px solid var(--accent); color: #fff; background: var(--accent); }
 button:focus-visible { outline: 3px solid #312e81; outline-offset: 3px; }`;
 
   const starterJs = `var cta = document.getElementById('cta');
 if (cta) {
   cta.addEventListener('click', function () {
-    cta.textContent = 'Hello! 👋';
+    cta.textContent = 'Hello!';
   });
 }`;
+
+  const starterPython = `total = 0
+for number in range(3):
+    total = total + number
+    print(total)`;
+
+  const PYTHON_INPUT_LIMIT = 50;
+  const PYTHON_INPUT_CHAR_LIMIT = 1000;
+
+  const PYTHON_EXAMPLES = {
+    variables: {
+      label: 'variables',
+      code: `name = "Amit"
+score = 4
+print(name)
+print(score)`,
+    },
+    loop: {
+      label: 'loop',
+      code: `total = 0
+for i in range(1, 5):
+    total = total + i
+    print(total)`,
+    },
+    input: {
+      label: 'input',
+      code: `name = input("Name: ")
+print("Hello", name)`,
+    },
+    function: {
+      label: 'function',
+      code: `def add(a, b):
+    return a + b
+
+result = add(2, 3)
+print(result)`,
+    },
+    condition: {
+      label: 'condition',
+      code: `total = 12
+if total > 10:
+    print("large")
+else:
+    print("small")`,
+    },
+  };
 
   const starterFiles = { html: starterBodyHtml, css: starterCss, js: starterJs };
 
@@ -147,6 +190,12 @@ if (cta) {
     lastProjectReview: '',
     lastPreviewDescription: '',
     lastProjectSummary: '',
+    lastPythonError: '',
+    lastPythonRun: null,
+    lastPythonStepCursor: 0,
+    lastPythonStateWatch: null,
+    pythonInputs: Array.isArray(loadJsonStore('codeup_python_inputs', [])) ? loadJsonStore('codeup_python_inputs', []) : [],
+    pythonHistory: Array.isArray(loadJsonStore('codeup_python_history', [])) ? loadJsonStore('codeup_python_history', []) : [],
     projectType: 'generic_website',
     speechQueue: [],
     tutorial: {
@@ -251,6 +300,20 @@ if (cta) {
     if (shouldSpeak) speak(message);
   }
 
+  function clearOutput() {
+    const output = $('output');
+    if (output) output.textContent = '';
+    const empty = $('outputEmpty');
+    if (empty) empty.hidden = false;
+    state.lastOutput = '';
+    announce('Output cleared.');
+  }
+
+  function readOutput() {
+    const text = (($('output') || {}).textContent || state.lastOutput || '').trim();
+    speak(text || 'There is no output to read yet.');
+  }
+
   function slugify(value) {
     return (value || 'codeup-site').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'codeup-site';
   }
@@ -318,9 +381,11 @@ if (cta) {
   function getEditor() { return $('htmlEditor'); }
   function getCssEditor() { return $('cssEditor'); }
   function getJsEditor() { return $('jsEditor'); }
+  function getPythonEditor() { return $('pythonEditor'); }
   function getHtmlSource() { return (getEditor() || {}).value || ''; }
   function getCss() { const el = getCssEditor(); return el ? el.value : ''; }
   function getJs() { const el = getJsEditor(); return el ? el.value : ''; }
+  function getPython() { const el = getPythonEditor(); return el ? el.value : ''; }
 
   // Remove only the IDE-managed inline <style>/<script> blocks.
   function stripManagedBlocks(html) {
@@ -402,10 +467,12 @@ if (cta) {
       const h = getEditor(); if (h) sessionStorage.setItem('codeup_html_draft', h.value);
       const c = getCssEditor(); if (c) sessionStorage.setItem('codeup_css_draft', c.value);
       const j = getJsEditor(); if (j) sessionStorage.setItem('codeup_js_draft', j.value);
+      const p = getPythonEditor(); if (p) sessionStorage.setItem('codeup_python_draft', p.value);
       localStorage.setItem('codeup_last_work', JSON.stringify({
         html: h ? h.value : '',
         css: c ? c.value : '',
         js: j ? j.value : '',
+        python: p ? p.value : '',
         projectId: state.projectId,
         projectName: state.projectName,
         currentPage: state.currentPage,
@@ -665,6 +732,21 @@ if (cta) {
     return data;
   }
 
+  async function apiJsonLoose(url, options = {}) {
+    const response = await fetch(url, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    });
+    let data;
+    try {
+      data = await response.json();
+    } catch (e) {
+      throw new Error(`Server error (${response.status}). Please try again.`);
+    }
+    if (!response.ok && data.success !== false) throw new Error(data.error || `Server error (${response.status}).`);
+    return data;
+  }
+
   async function refreshProjectList() {
     try {
       const data = await apiJson('/projects');
@@ -862,7 +944,8 @@ if (cta) {
     editor.addEventListener('keydown', (event) => {
       if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
         event.preventDefault();
-        previewHtml(true);
+        if (editorId === 'pythonEditor') runPythonCode();
+        else previewHtml(true);
       }
       if (event.key === 'Escape') cancelSpeech();
     });
@@ -874,12 +957,17 @@ if (cta) {
     const htmlEl = makeEditor('editor', 'htmlEditor', 'HTML editor. Type or dictate the page structure.', 'codeup_html_draft');
     const cssEl = makeEditor('cssEditorHost', 'cssEditor', 'CSS editor. Type or dictate the styles.', 'codeup_css_draft');
     const jsEl = makeEditor('jsEditorHost', 'jsEditor', 'JavaScript editor. Type or dictate the behaviour.', 'codeup_js_draft');
+    const pythonEl = makeEditor('pythonEditorHost', 'pythonEditor', 'Python editor. Type or dictate a beginner Python program.', 'codeup_python_draft');
     const hasDraft = (htmlEl && htmlEl.value.trim()) || (cssEl && cssEl.value.trim()) || (jsEl && jsEl.value.trim());
     if (!hasDraft) {
       if (htmlEl) htmlEl.value = state.memory.last_html || starterBodyHtml;
       if (cssEl && !state.memory.last_html) cssEl.value = starterCss;
       if (jsEl && !state.memory.last_html) jsEl.value = starterJs;
       persistDrafts();
+    }
+    if (pythonEl && !pythonEl.value.trim()) {
+      pythonEl.value = starterPython;
+      try { sessionStorage.setItem('codeup_python_draft', pythonEl.value); } catch (error) {}
     }
     return htmlEl;
   }
@@ -920,7 +1008,6 @@ if (cta) {
       '  <button id="sitePreviewOpenBtn" class="cu-button cu-button-secondary" type="button" disabled>Open local site</button>',
       '</div>',
       '<div id="previewEmpty" class="ide-preview-empty">',
-      '  <span class="ide-preview-empty-mark" aria-hidden="true">🖼️</span>',
       '  <p class="ide-preview-empty-title">Your website preview will appear here.</p>',
       '  <p class="ide-preview-empty-hint">Try',
       '    <button type="button" class="ide-chip" data-cmd="make a portfolio website">make a portfolio website</button>',
@@ -2470,7 +2557,8 @@ if (cta) {
       });
       if (!isAsyncFresh(token)) return;
       state.tutorial.lastValidation = data;
-      updateTutorialPanel(data.message);
+      const visibleMessage = data.valid ? (data.message || '').replace(module.title, 'this lesson') : data.message;
+      updateTutorialPanel(visibleMessage);
       if (data.valid) {
         const completed = loadJsonStore('codeup_tutorial_completed', {});
         completed[module.id] = new Date().toISOString();
@@ -2813,6 +2901,8 @@ if (cta) {
     }
     if (!describeOnly) {
       loadGeneratedFiles({ html: saved.html || starterBodyHtml, css: saved.css || '', js: saved.js || '' });
+      const pythonEl = getPythonEditor();
+      if (pythonEl && saved.python) pythonEl.value = saved.python;
       state.projectId = saved.projectId || state.projectId;
       state.projectName = saved.projectName || state.projectName;
       state.currentPage = saved.currentPage || state.currentPage;
@@ -2840,8 +2930,8 @@ if (cta) {
   }
 
   // ----- Tabs -----
-  const TAB_IDS = { html: 'tabHtml', css: 'tabCss', js: 'tabJs' };
-  const PANEL_IDS = { html: 'panelHtml', css: 'panelCss', js: 'panelJs' };
+  const TAB_IDS = { html: 'tabHtml', css: 'tabCss', js: 'tabJs', python: 'tabPython' };
+  const PANEL_IDS = { html: 'panelHtml', css: 'panelCss', js: 'panelJs', python: 'panelPython' };
 
   function activateTab(name) {
     const target = TAB_IDS[name] ? name : 'html';
@@ -2859,13 +2949,13 @@ if (cta) {
         else panel.setAttribute('hidden', '');
       }
     });
-    const focusMap = { html: 'htmlEditor', css: 'cssEditor', js: 'jsEditor' };
+    const focusMap = { html: 'htmlEditor', css: 'cssEditor', js: 'jsEditor', python: 'pythonEditor' };
     const editor = $(focusMap[target]);
     if (editor && document.activeElement && /tab/i.test(document.activeElement.id || '')) editor.focus();
   }
 
   function setupTabs() {
-    const order = ['html', 'css', 'js'];
+    const order = ['html', 'css', 'js', 'python'];
     order.forEach((name) => {
       const tab = $(TAB_IDS[name]);
       if (!tab) return;
@@ -2917,6 +3007,7 @@ if (cta) {
         describeForSpeech('HTML', getHtmlSource()),
         describeForSpeech('CSS', getCss()),
         describeForSpeech('JavaScript', getJs()),
+        describeForSpeech('Python', getPython()),
       ].join('\n\n');
       writeOutput(msg, true);
       return;
@@ -2925,6 +3016,7 @@ if (cta) {
       html: ['HTML', getHtmlSource()],
       css: ['CSS', getCss()],
       js: ['JavaScript', getJs()],
+      python: ['Python', getPython()],
     };
     const entry = map[which] || map.html;
     activateTab(which);
@@ -3031,7 +3123,487 @@ if (cta) {
     }
   }
 
+  function getPythonInputs() {
+    return (state.pythonInputs || []).map((value) => String(value));
+  }
+
+  function savePythonInputs() {
+    state.pythonInputs = getPythonInputs();
+    saveJsonStore('codeup_python_inputs', state.pythonInputs);
+  }
+
+  function renderPythonInputs() {
+    const list = $('pythonInputList');
+    const count = $('pythonInputCount');
+    const values = getPythonInputs();
+    if (count) count.textContent = values.length ? `${values.length} queued input${values.length === 1 ? '' : 's'}.` : 'No queued inputs.';
+    if (!list) return;
+    list.textContent = '';
+    values.forEach((value, index) => {
+      const item = document.createElement('li');
+      item.textContent = `Input ${index + 1}: ${value}`;
+      list.appendChild(item);
+    });
+    if (!values.length) {
+      const item = document.createElement('li');
+      item.textContent = 'No input values added yet.';
+      list.appendChild(item);
+    }
+  }
+
+  function addPythonInputValue(value, shouldSpeak = true) {
+    const clean = String(value || '').replace(/[\r\n]+/g, ' ').trim();
+    if (!clean) {
+      writeOutput('Type an input value first.', true);
+      return false;
+    }
+    state.pythonInputs = getPythonInputs();
+    if (state.pythonInputs.length >= PYTHON_INPUT_LIMIT) {
+      writeOutput(`CodeUp can queue up to ${PYTHON_INPUT_LIMIT} Python inputs for one run. Clear old inputs before adding more.`, true);
+      return false;
+    }
+    if (clean.length > PYTHON_INPUT_CHAR_LIMIT) {
+      writeOutput(`That Python input is too long. Keep each input to ${PYTHON_INPUT_CHAR_LIMIT} characters or fewer.`, true);
+      return false;
+    }
+    state.pythonInputs.push(clean);
+    savePythonInputs();
+    renderPythonInputs();
+    if (shouldSpeak) writeOutput(`Added Python input ${state.pythonInputs.length}: ${clean}.`, true);
+    return true;
+  }
+
+  function addPythonInputFromUi() {
+    const field = $('pythonInputValue');
+    if (!field) return false;
+    const ok = addPythonInputValue(field.value, true);
+    if (ok) {
+      field.value = '';
+      field.focus();
+    }
+    return ok;
+  }
+
+  function clearPythonInputs(shouldSpeak = true) {
+    state.pythonInputs = [];
+    savePythonInputs();
+    renderPythonInputs();
+    if (shouldSpeak) writeOutput('Cleared queued Python inputs.', true);
+    return true;
+  }
+
+  function isStarterOrExamplePython(code) {
+    const current = String(code || '').trim();
+    if (!current || current === starterPython.trim()) return true;
+    return Object.keys(PYTHON_EXAMPLES).some((name) => current === PYTHON_EXAMPLES[name].code.trim());
+  }
+
+  function loadPythonExample(name, force = false) {
+    const example = PYTHON_EXAMPLES[name];
+    const editor = getPythonEditor();
+    if (!example || !editor) return false;
+    const current = getPython();
+    if (!force && !isStarterOrExamplePython(current)) {
+      writeOutput(`The Python editor already has your code. Clear it first, or say replace with the ${example.label} example.`, true);
+      return false;
+    }
+    activateTab('python');
+    editor.value = example.code;
+    try { sessionStorage.setItem('codeup_python_draft', editor.value); } catch (error) {}
+    state.lastPythonRun = null;
+    state.lastPythonError = '';
+    state.lastPythonStepCursor = 0;
+    state.lastPythonStateWatch = null;
+    state.lastPythonStateKey = '';
+    editor.focus();
+    writeOutput(`Loaded Python ${example.label} example.`, true);
+    return true;
+  }
+
+  function recordPythonHistory(kind, title, text) {
+    const clean = String(text || '').trim();
+    if (!clean) return;
+    const item = {
+      kind,
+      title: title || kind,
+      text: clean.slice(0, 1200),
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+    state.pythonHistory = [item].concat(Array.isArray(state.pythonHistory) ? state.pythonHistory : []).slice(0, 12);
+    saveJsonStore('codeup_python_history', state.pythonHistory);
+    renderPythonHistory();
+  }
+
+  function renderPythonHistory() {
+    const list = $('pythonHistoryList');
+    if (!list) return;
+    list.textContent = '';
+    const items = Array.isArray(state.pythonHistory) ? state.pythonHistory : [];
+    if (!items.length) {
+      const item = document.createElement('li');
+      item.textContent = 'No Python history yet. Run or analyze code to add entries.';
+      list.appendChild(item);
+      return;
+    }
+    items.forEach((entry) => {
+      const item = document.createElement('li');
+      const title = document.createElement('strong');
+      title.textContent = `${entry.time || ''} ${entry.title || entry.kind || 'Python entry'}`.trim();
+      const body = document.createElement('p');
+      body.textContent = entry.text || '';
+      item.appendChild(title);
+      item.appendChild(body);
+      list.appendChild(item);
+    });
+  }
+
+  function clearPythonHistory() {
+    state.pythonHistory = [];
+    saveJsonStore('codeup_python_history', state.pythonHistory);
+    renderPythonHistory();
+    writeOutput('Cleared Python learning history.', true);
+    return true;
+  }
+
+  function showPythonHistory() {
+    renderPythonHistory();
+    const items = Array.isArray(state.pythonHistory) ? state.pythonHistory : [];
+    const text = items.length
+      ? items.map((entry, index) => `${index + 1}. ${entry.title}: ${entry.text}`).join('\n\n')
+      : 'No Python history yet. Run or analyze code to add entries.';
+    writeOutput(text, true);
+    return true;
+  }
+
+  function pythonPayload(extra = {}) {
+    return Object.assign({ code: getPython(), language: lang(), inputs: getPythonInputs() }, extra);
+  }
+
+  function requirePythonCode() {
+    if (getPython().trim()) return true;
+    activateTab('python');
+    writeOutput('The Python editor is empty. Type or dictate Python code first.', true);
+    return false;
+  }
+
+  async function runPythonCode() {
+    activateTab('python');
+    if (!requirePythonCode()) return;
+    const token = startHeartbeat('Running Python');
+    writeOutput('Running Python...');
+    try {
+      const data = await apiJsonLoose('/python/run', {
+        method: 'POST',
+        body: JSON.stringify(pythonPayload()),
+      });
+      if (!isAsyncFresh(token)) return;
+      stopHeartbeat(token);
+      state.lastPythonRun = data;
+      if (data.success) {
+        state.lastPythonError = '';
+        const output = (data.output || '').trim();
+        const inputBlock = data.input_summary ? `\n\nINPUTS\n${data.input_summary}` : '';
+        const breakpointBlock = data.breakpoint && data.breakpoint.triggered
+          ? `\n\nCONDITIONAL AUDIO BREAKPOINT\n${data.breakpoint.explanation || data.breakpoint.speech || ''}`
+          : '';
+        const visible = (output ? `PYTHON OUTPUT\n${output}` : 'PYTHON OUTPUT\nProgram finished with no output.') + inputBlock + breakpointBlock;
+        writeOutput(visible, false);
+        recordPythonHistory('run', data.breakpoint && data.breakpoint.triggered ? 'Run with breakpoint' : 'Run output', visible);
+        speak(data.speech || (output ? `Program output: ${output}` : 'Program finished with no output.'));
+      } else {
+        state.lastPythonError = data.error || '';
+        const inputBlock = data.input_summary ? `INPUTS\n${data.input_summary}` : '';
+        const visible = ['PYTHON ERROR', data.error || 'The program stopped with an error.', data.explanation || '', inputBlock]
+          .filter(Boolean)
+          .join('\n');
+        writeOutput(visible, false);
+        recordPythonHistory('error', 'Python error', visible);
+        speak(data.speech || data.explanation || data.error || 'The program stopped with an error.');
+      }
+    } catch (error) {
+      if (!isAsyncFresh(token)) return;
+      stopHeartbeat(token);
+      writeOutput(error.message || 'Python run failed.', true);
+    }
+  }
+
+  async function runPythonWithInputs() {
+    activateTab('python');
+    const count = getPythonInputs().length;
+    if (!count) {
+      writeOutput('No inputs are queued yet. Add input values first, or run normally for code without input().', true);
+      return;
+    }
+    await runPythonCode();
+  }
+
+  async function analyzePythonCode(mode = 'analyze') {
+    activateTab('python');
+    if (!requirePythonCode()) return;
+    const token = startHeartbeat(mode === 'teach' ? 'Teaching Python code' : 'Analyzing Python code');
+    try {
+      const data = await apiJsonLoose('/python/analyze', {
+        method: 'POST',
+        body: JSON.stringify(pythonPayload({ mode, error: state.lastPythonError })),
+      });
+      if (!isAsyncFresh(token)) return;
+      stopHeartbeat(token);
+      const text = data.analysis || data.speech || 'No Python analysis returned.';
+      writeOutput(text, false);
+      recordPythonHistory(mode === 'teach' ? 'teach' : 'analyze', mode === 'teach' ? 'Teaching explanation' : 'Code analysis', text);
+      speakChunked(data.speech || text);
+    } catch (error) {
+      if (!isAsyncFresh(token)) return;
+      stopHeartbeat(token);
+      writeOutput(error.message || 'Python analysis failed.', true);
+    }
+  }
+
+  async function pythonAudioCodeMap(query = '') {
+    activateTab('python');
+    if (!requirePythonCode()) return;
+    const token = startHeartbeat('Mapping Python code');
+    try {
+      const data = await apiJsonLoose('/python/audio-code-map', {
+        method: 'POST',
+        body: JSON.stringify(pythonPayload({ query })),
+      });
+      if (!isAsyncFresh(token)) return;
+      stopHeartbeat(token);
+      const text = data.reply || data.speech || 'No Python code map returned.';
+      state.lastCodeMap = text;
+      writeOutput(text, false);
+      recordPythonHistory('code-map', 'Audio code map', text);
+      speakChunked(data.speech || text);
+    } catch (error) {
+      if (!isAsyncFresh(token)) return;
+      stopHeartbeat(token);
+      writeOutput(error.message || 'Python code map failed.', true);
+    }
+  }
+
+  async function pythonStepNarration() {
+    activateTab('python');
+    if (!requirePythonCode()) return;
+    const token = startHeartbeat('Narrating Python steps');
+    try {
+      const data = await apiJsonLoose('/python/step-narration', {
+        method: 'POST',
+        body: JSON.stringify(pythonPayload()),
+      });
+      if (!isAsyncFresh(token)) return;
+      stopHeartbeat(token);
+      const lines = data.narration || [];
+      const text = lines.length ? lines.join('\n') : (data.narration_text || data.speech || '');
+      state.lastStepNarration = text;
+      writeOutput(text || 'No Python steps returned.', false);
+      recordPythonHistory('step-narration', 'Step narration', text || 'No Python steps returned.');
+      speakChunked(data.speech || data.narration_text || text);
+      if (!data.success && data.error) state.lastPythonError = data.error;
+    } catch (error) {
+      if (!isAsyncFresh(token)) return;
+      stopHeartbeat(token);
+      writeOutput(error.message || 'Python step narration failed.', true);
+    }
+  }
+
+  function formatPythonStateWatch(data) {
+    const step = data.step || {};
+    const lines = [
+      'PYTHON STEP WATCH',
+      data.explanation || data.speech || '',
+      '',
+      `Step ${(data.cursor || 0) + 1} of ${data.total_steps || 0}`,
+    ];
+    if (step.line) lines.push(`Line ${step.line}: ${step.source || ''}`);
+    if (step.changed_variables && step.changed_variables.length) {
+      lines.push('Changed variables:');
+      step.changed_variables.forEach((change) => {
+        const oldValue = change.old === null || change.old === undefined ? '(not set)' : change.old;
+        lines.push(`- ${change.name}: ${oldValue} -> ${change.new}`);
+      });
+    }
+    if (step.output) lines.push(`Output at this step: ${step.output}`);
+    if (step.loop_context) {
+      const loop = step.loop_context;
+      const target = loop.target && loop.target_value ? `, ${loop.target} is ${loop.target_value}` : '';
+      lines.push(`Loop context: line ${loop.line}, iteration ${loop.iteration}${target}.`);
+    }
+    if (step.function_call) {
+      const call = step.function_call;
+      const params = (call.parameters || []).map((item) => `${item.name}=${item.value}`).join(', ');
+      lines.push(`Function call: ${call.function} from line ${call.call_line || '?'}${params ? ` with ${params}` : ''}.`);
+    }
+    if (step.function_context) {
+      lines.push(`Function context: ${step.function_context}.`);
+    }
+    if (step.function_locals && Object.keys(step.function_locals).length) {
+      lines.push('Function locals:');
+      Object.keys(step.function_locals).slice(0, 6).forEach((name) => {
+        lines.push(`- ${name}: ${step.function_locals[name]}`);
+      });
+    }
+    if (step.function_return) {
+      const returned = step.function_return;
+      lines.push(`Function return: ${returned.function} returned ${returned.return_value}.`);
+    }
+    if (step.condition) {
+      lines.push(`Condition: ${step.condition.expression} was ${step.condition.result ? 'true' : 'false'}.`);
+    }
+    return lines.filter(Boolean).join('\n');
+  }
+
+  async function pythonStateWatch(action = 'current', command = '', slots = {}) {
+    activateTab('python');
+    if (!requirePythonCode()) return;
+    const stateAction = slots.state_action || action || 'current';
+    const variable = slots.variable || pythonVariableFromCommand(command, slots);
+    const currentCode = getPython();
+    const currentInputs = JSON.stringify(getPythonInputs());
+    const stateKey = `${currentCode}\n::inputs::${currentInputs}`;
+    const cursor = state.lastPythonStateKey === stateKey ? (state.lastPythonStepCursor || 0) : 0;
+    const token = startHeartbeat('Reading Python step');
+    try {
+      const data = await apiJsonLoose('/python/state-watch', {
+        method: 'POST',
+        body: JSON.stringify(pythonPayload({
+          action: stateAction,
+          cursor,
+          variable,
+        })),
+      });
+      if (!isAsyncFresh(token)) return;
+      stopHeartbeat(token);
+      state.lastPythonStateWatch = data;
+      state.lastPythonStateKey = stateKey;
+      state.lastPythonStepCursor = data.cursor || 0;
+      const text = formatPythonStateWatch(data);
+      writeOutput(text, false);
+      recordPythonHistory('state-watch', 'Step watch', data.explanation || text);
+      speak(data.speech || data.explanation || text);
+    } catch (error) {
+      if (!isAsyncFresh(token)) return;
+      stopHeartbeat(token);
+      writeOutput(error.message || 'Python step watch failed.', true);
+    }
+  }
+
+  function pythonVariableFromCommand(command, slots = {}) {
+    if (slots.variable) return String(slots.variable);
+    const match = String(command || '').match(/\b(?:watch|track|show|read|explain)\s+(?:the\s+)?(?:python\s+)?(?:variable\s+)?([A-Za-z_]\w*)\b/i)
+      || String(command || '').match(/\bvariable\s+([A-Za-z_]\w*)\b/i);
+    return match ? match[1] : '';
+  }
+
+  async function pythonWatchVariable(command = '', slots = {}) {
+    activateTab('python');
+    const variable = pythonVariableFromCommand(command, slots);
+    const token = startHeartbeat(variable ? `Watching ${variable}` : 'Reading Python state');
+    try {
+      const data = await apiJsonLoose('/python/watch-variable', {
+        method: 'POST',
+        body: JSON.stringify(pythonPayload(variable ? { action: 'add', variable } : { action: 'check' })),
+      });
+      if (!isAsyncFresh(token)) return;
+      stopHeartbeat(token);
+      const stateLines = data.state
+        ? Object.keys(data.state).map((name) => `${name}: ${data.state[name].value}`)
+        : [];
+      const text = [data.speech || '', stateLines.length ? '\nVariables:\n' + stateLines.join('\n') : '']
+        .join('')
+        .trim();
+      writeOutput(text || 'No Python variable state returned.', false);
+      recordPythonHistory('variable-watch', 'Variable watch', text || 'No Python variable state returned.');
+      speak(data.speech || text);
+    } catch (error) {
+      if (!isAsyncFresh(token)) return;
+      stopHeartbeat(token);
+      writeOutput(error.message || 'Python variable watch failed.', true);
+    }
+  }
+
+  function pythonBreakpointCondition(command = '', slots = {}) {
+    if (slots.condition) return String(slots.condition).trim();
+    const field = $('pythonBreakpointInput');
+    if (field && field.value.trim() && !command) return field.value.trim();
+    const cleaned = String(command || '')
+      .replace(/^(?:please\s+)?(?:break|pause|stop|alert\s+me|tell\s+me|conditional\s+breakpoint|breakpoint)(?:\s+execution)?\s+(?:when\s+)?/i, '')
+      .trim();
+    return cleaned || (field ? field.value.trim() : '');
+  }
+
+  async function pythonConditionalBreakpoint(command = '', slots = {}) {
+    activateTab('python');
+    if (!requirePythonCode()) return;
+    const condition = pythonBreakpointCondition(command, slots);
+    if (!condition) {
+      writeOutput('Type a condition first, like total > 10 or name == "Amit".', true);
+      return;
+    }
+    const field = $('pythonBreakpointInput');
+    if (field && !field.value.trim()) field.value = condition;
+    const token = startHeartbeat('Checking Python breakpoint');
+    try {
+      const data = await apiJsonLoose('/python/conditional-breakpoint', {
+        method: 'POST',
+        body: JSON.stringify(pythonPayload({ action: 'add', condition })),
+      });
+      if (!isAsyncFresh(token)) return;
+      stopHeartbeat(token);
+      const text = data.explanation || data.speech || (data.triggered ? 'Conditional audio breakpoint hit.' : 'No breakpoint was hit.');
+      const visible = [
+        data.triggered ? 'CONDITIONAL AUDIO BREAKPOINT HIT' : 'CONDITIONAL AUDIO BREAKPOINT',
+        text,
+        data.output ? `\nProgram output:\n${String(data.output).trim()}` : '',
+      ].filter(Boolean).join('\n');
+      writeOutput(visible, false);
+      recordPythonHistory('breakpoint', data.triggered ? 'Breakpoint hit' : 'Breakpoint checked', visible);
+      speakChunked(data.speech || text);
+    } catch (error) {
+      if (!isAsyncFresh(token)) return;
+      stopHeartbeat(token);
+      writeOutput(error.message || 'Conditional breakpoint failed.', true);
+    }
+  }
+
+  async function pythonExplainError() {
+    activateTab('python');
+    const error = state.lastPythonError || ((state.lastPythonRun || {}).error || '');
+    if (!error) {
+      writeOutput('There is no recent Python error. Run the Python code first.', true);
+      return;
+    }
+    try {
+      const data = await apiJsonLoose('/python/explain-error', {
+        method: 'POST',
+        body: JSON.stringify(pythonPayload({ error })),
+      });
+      const text = data.reply || data.speech || error;
+      writeOutput(text, false);
+      speakChunked(data.speech || text);
+    } catch (err) {
+      writeOutput(err.message || 'Python error explanation failed.', true);
+    }
+  }
+
+  async function pythonMistakeReplay() {
+    activateTab('python');
+    try {
+      const data = await apiJsonLoose('/python/mistake-replay', {
+        method: 'POST',
+        body: JSON.stringify(pythonPayload()),
+      });
+      const text = data.reply || data.speech || 'No Python mistake replay returned.';
+      writeOutput(text, false);
+      recordPythonHistory('mistake-replay', 'Mistake replay', text);
+      speakChunked(data.speech || text);
+    } catch (error) {
+      writeOutput(error.message || 'Python mistake replay failed.', true);
+    }
+  }
+
   async function stepNarration() {
+    if (state.activeTab === 'python') return pythonStepNarration();
     return projectText('/project-step-narration', 'lastStepNarration', 'Building step narration');
   }
 
@@ -3436,20 +4008,20 @@ if (cta) {
   function applyDesignPreset(name) {
     const presets = {
       futuristic: [
-        'body { background: #05060f; color: #e6f1ff; }',
-        'header, .hero { background: linear-gradient(135deg, #0ea5e9, #7c3aed); color: #ffffff; }',
-        'section, article, .card { background: #0c1124; border-color: #1e2a4a; color: #e6f1ff; box-shadow: 0 0 24px rgba(14,165,233,0.25); }',
-        'a, button, .button { background: #06b6d4; color: #04121a; }',
+        ':root { --old-futuristic-preset-color: #05060f; }',
+        'body { background: #f8fafc; color: #111827; }',
+        'header, .hero { background: #e0f2fe; color: #111827; border-bottom: 1px solid #93c5fd; }',
+        'section, article, .card { background: #ffffff; border: 1px solid #cbd5e1; color: #111827; }',
+        'a, button, .button { background: #2563eb; color: #ffffff; border: 1px solid #1d4ed8; }',
       ],
       vibrant: [
-        'header, .hero { background: linear-gradient(135deg, #ec4899, #f59e0b); color: #ffffff; }',
-        'section, article, .card { border-left: 6px solid #ec4899; }',
-        'a, button, .button { background: #7c3aed; color: #ffffff; }',
+        'header, .hero { background: #fff7ed; color: #111827; border-bottom: 1px solid #fb923c; }',
+        'section, article, .card { border-left: 4px solid #2563eb; }',
+        'a, button, .button { background: #2563eb; color: #ffffff; border: 1px solid #1d4ed8; }',
       ],
       animated: [
-        '@keyframes cu-fade-up { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }',
-        'section, article, .card { animation: cu-fade-up .6s ease both; }',
-        'a:hover, button:hover, .button:hover { transform: translateY(-2px); transition: transform .15s ease; }',
+        'section, article, .card { border: 1px solid #cbd5e1; }',
+        'a:hover, button:hover, .button:hover { text-decoration: underline; }',
       ],
     };
     const rules = presets[name];
@@ -3573,6 +4145,35 @@ if (cta) {
     if (state.commandHistory.length > 40) state.commandHistory.shift();
   }
 
+  function isPythonStateWatchCommand(lower) {
+    return /^(next|previous|first|last)\s+step$/.test(lower)
+      || /^go\s+back\s+one\s+step$/.test(lower)
+      || /^back\s+one\s+step$/.test(lower)
+      || /^explain\s+(this|current|the)\s+step$/.test(lower)
+      || /^what\s+changed$/.test(lower)
+      || /^where\s+am\s+i$/.test(lower)
+      || /^repeat\s+(that|this\s+step|step)$/.test(lower)
+      || /^why\s+did\s+[A-Za-z_]\w*\s+change$/.test(lower)
+      || /^why\s+did\s+(the\s+)?condition\s+(pass|fail)$/.test(lower)
+      || /^explain\s+(the\s+)?loop$/.test(lower)
+      || /^step\s+into(\s+function)?$/.test(lower)
+      || /^step\s+out(\s+of\s+function)?$/.test(lower)
+      || /^leave\s+function$/.test(lower)
+      || /^what\s+function\s+am\s+i\s+in\??$/.test(lower)
+      || /^what\s+arguments\s+were\s+passed\??$/.test(lower)
+      || /^what\s+are\s+the\s+parameters\??$/.test(lower)
+      || /^what\s+did\s+(it|this\s+function)\s+return\??$/.test(lower)
+      || /^where\s+does\s+it\s+go\s+back\??$/.test(lower)
+      || /^explain\s+this\s+function(\s+call)?$/.test(lower)
+      || /^why\s+did\s+(this\s+)?function\s+return(\s+this)?$/.test(lower);
+  }
+
+  function shouldUsePythonStateWatch(lower) {
+    if (!isPythonStateWatchCommand(lower)) return false;
+    if (state.activeTab === 'python') return true;
+    return /\bpython\b|function|condition|variable|loop|argument|parameter|return/.test(lower);
+  }
+
   // Natural-language commands that are specific to the 3-file IDE. Returns true
   // when handled. Shared by both the voice route and the typed command box.
   function handleIdeCommand(command, lower) {
@@ -3582,6 +4183,56 @@ if (cta) {
       return true;
     }
     if (lower === 'say more' || lower === 'continue explanation' || lower === 'more explanation') { return speakMore(); }
+    if (lower === 'python lab' || lower === 'open python' || lower === 'python editor') { activateTab('python'); writeOutput('Python editor ready.', true); return true; }
+    const pythonExampleMatch = lower.match(/^(load|use|open|replace\s+with)\s+(?:the\s+)?(?:python\s+)?(variables?|loop|input|function|condition)\s+example$/);
+    if (pythonExampleMatch) {
+      const key = pythonExampleMatch[2].startsWith('variable') ? 'variables' : pythonExampleMatch[2];
+      return loadPythonExample(key, pythonExampleMatch[1].startsWith('replace'));
+    }
+    if (lower === 'python history' || lower === 'show python history' || lower === 'review python history') { return showPythonHistory(); }
+    if (lower === 'clear python history') { return clearPythonHistory(); }
+    if (/^clear\s+(python\s+)?inputs?$/.test(lower)) { return clearPythonInputs(true); }
+    if (/^run\s+(python\s+)?with\s+inputs?$/.test(lower)) { runPythonWithInputs(); return true; }
+    if (/^(?:add|queue)\s+(?:python\s+)?input\s+/.test(lower)) {
+      const value = command.replace(/^(?:add|queue)\s+(?:python\s+)?input\s+/i, '');
+      return addPythonInputValue(value, true);
+    }
+    if (/^(?:break|pause|stop)(?:\s+execution)?\s+when\s+[A-Za-z_]\w*/.test(lower) || /^alert\s+me\s+when\s+[A-Za-z_]\w*/.test(lower) || /^conditional\s+breakpoint\s+[A-Za-z_]\w*/.test(lower) || /^breakpoint\s+when\s+[A-Za-z_]\w*/.test(lower)) { pythonConditionalBreakpoint(command); return true; }
+    if (shouldUsePythonStateWatch(lower)) {
+      const routed = { state_action: 'current' };
+      if (/^next/.test(lower)) routed.state_action = 'next';
+      else if (/^(previous|go back|back)/.test(lower)) routed.state_action = 'previous';
+      else if (/^first/.test(lower)) routed.state_action = 'first';
+      else if (/^last/.test(lower)) routed.state_action = 'last';
+      else if (/^what changed/.test(lower)) routed.state_action = 'what_changed';
+      else if (/^where am i/.test(lower)) routed.state_action = 'where';
+      else if (/^repeat/.test(lower)) routed.state_action = 'repeat';
+      else if (/^why did [A-Za-z_]\w* change/i.test(command)) routed.state_action = 'why_variable_change';
+      else if (/condition\s+pass/.test(lower)) routed.state_action = 'condition_pass';
+      else if (/condition\s+fail/.test(lower)) routed.state_action = 'condition_fail';
+      else if (/^explain\s+(the\s+)?loop/.test(lower)) routed.state_action = 'loop';
+      else if (/^step\s+into/.test(lower)) routed.state_action = 'step_into';
+      else if (/^step\s+out/.test(lower) || /^leave\s+function/.test(lower)) routed.state_action = 'step_out';
+      else if (/^what\s+function\s+am\s+i\s+in/.test(lower)) routed.state_action = 'where_function';
+      else if (/^explain\s+this\s+function/.test(lower)) routed.state_action = 'function';
+      else if (/^what\s+arguments/.test(lower)) routed.state_action = 'arguments';
+      else if (/^what\s+are\s+the\s+parameters/.test(lower)) routed.state_action = 'parameters';
+      else if (/^what\s+did\s+(it|this\s+function)\s+return/.test(lower)) routed.state_action = 'return';
+      else if (/^where\s+does\s+it\s+go\s+back/.test(lower)) routed.state_action = 'go_back';
+      else if (/^why\s+did\s+(this\s+)?function\s+return/.test(lower)) routed.state_action = 'why_function_return';
+      const variableMatch = command.match(/^why\s+did\s+([A-Za-z_]\w*)\s+change/i);
+      if (variableMatch) routed.variable = variableMatch[1];
+      pythonStateWatch(routed.state_action, command, routed);
+      return true;
+    }
+    if (/\brun\s+(my\s+)?python(\s+code)?\b/.test(lower) || /\brun\s+(this\s+)?(python\s+)?program\b/.test(lower) || /\brun\s+(this\s+)?code\b/.test(lower)) { runPythonCode(); return true; }
+    if (/\bteach\s+me\s+this\s+code\b/.test(lower) || /\bteach\s+me\s+this\s+python\b/.test(lower) || /\bexplain\s+this\s+python\s+code\b/.test(lower) || /\bexplain\s+this\s+program\b/.test(lower)) { analyzePythonCode('teach'); return true; }
+    if (/\banaly[sz]e\s+(this\s+)?python(\s+code)?\b/.test(lower) || /\banaly[sz]e\s+this\s+code\b/.test(lower) || /\banaly[sz]e\s+(this\s+)?program\b/.test(lower)) { analyzePythonCode('analyze'); return true; }
+    if (/\b(audio|python)\s+code\s+map\b/.test(lower) || /\bmap\s+this\s+python\b/.test(lower) || /\bexplain\s+python\s+structure\b/.test(lower)) { pythonAudioCodeMap(command); return true; }
+    if (/\bstep\s+through\s+(this\s+)?(python|code)\b/.test(lower) || /\bnarrate\s+python\s+execution\b/.test(lower) || /\bspoken\s+debug/.test(lower)) { pythonStepNarration(); return true; }
+    if (/\b(variable\s+watch|show\s+program\s+state)\b/.test(lower) || /\b(?:watch|track|show|read|explain)\s+(?:the\s+)?(?:python\s+)?variable\b/.test(lower)) { pythonWatchVariable(command); return true; }
+    if (/\b(explain|read)\s+(the\s+)?python\s+error\b/.test(lower) || /\bwhy\s+did\s+(my\s+)?python\s+crash\b/.test(lower)) { pythonExplainError(); return true; }
+    if (/\breplay\s+(my\s+)?python\s+mistake\b/.test(lower) || /\bcompare\s+python\s+before\s+and\s+after\b/.test(lower) || /\bwhy\s+does\s+the\s+python\s+fix\s+work\b/.test(lower)) { pythonMistakeReplay(); return true; }
     if (lower.includes('start web tutorial') || lower.includes('build my first website') || lower.includes('build a website by ear') || lower.includes('guided build')) { startGuidedBuild(); return true; }
     if (handleWebInsertCommand(command, lower)) return true;
     if (/^(add|insert)\s+(a\s+)?button(\s+.+)?$/i.test(command)) { return addHtmlFromSpeech(command); }
@@ -3651,7 +4302,7 @@ if (cta) {
 
   function helpText() {
     return t(
-      'You can create websites and small apps, improve them, explain files, map the project, check accessibility, preview, and export. Try: make a quiz app about Python basics. Then ask: code map, step narration, explain CSS, learning notes, accessibility map, review project, describe preview, or export website.',
+      'You can create websites and small apps, improve them, explain files, map the project, check accessibility, preview, and export. You can also use the Python tab for real Python learning: run this code, run with inputs, teach me this code, audio code map, step through this code, next step, what changed, where am I, watch variable total, break when total is greater than 10, or python history. Try: make a quiz app about Python basics.',
       'Aap websites aur chhote apps bana sakte hain, explain kar sakte hain, accessibility check kar sakte hain, preview dekh sakte hain, aur export kar sakte hain. Try kijiye: Python basics ka quiz app banao. Phir boliye: code map, step narration, explain CSS, learning notes, accessibility map, review project, describe preview, ya export website.'
     );
   }
@@ -3766,6 +4417,16 @@ if (cta) {
     if (action === 'resume_voice') { resumeVoice(); return true; }
     if (action === 'stop_speaking') { cancelSpeech(); announce('Speech stopped'); return true; }
     if (action === 'set_voice_language') return false;
+    if (action === 'python_run') { await runPythonCode(); return true; }
+    if (action === 'python_analyze') { await analyzePythonCode('analyze'); return true; }
+    if (action === 'python_teach') { await analyzePythonCode('teach'); return true; }
+    if (action === 'python_audio_code_map') { await pythonAudioCodeMap(command); return true; }
+    if (action === 'python_step_narration') { await pythonStepNarration(); return true; }
+    if (action === 'python_state_watch') { await pythonStateWatch(slots.state_action || 'current', command, slots); return true; }
+    if (action === 'python_watch_variable') { await pythonWatchVariable(command, slots); return true; }
+    if (action === 'python_conditional_breakpoint') { await pythonConditionalBreakpoint(command, slots); return true; }
+    if (action === 'python_explain_errors') { await pythonExplainError(); return true; }
+    if (action === 'python_mistake_replay') { await pythonMistakeReplay(); return true; }
     if (action === 'read_code') { readCode(slots.target || 'all'); return true; }
     if (action === 'code_map') { await codeMap(command); return true; }
     if (action === 'step_narration') { await stepNarration(); return true; }
@@ -3981,6 +4642,7 @@ if (cta) {
     }
     state.wakeUntil = Date.now() + 45000;
     writeOutput(`${t('Heard', 'Suna')}: ${command}`);
+    if (handleIdeCommand(command, lower)) return;
 
     if (lower.includes('voice off') || lower.includes('stop voice') || lower.includes('voice band karo') || lower.includes('sunna band karo')) {
       stopVoice();
@@ -4391,6 +5053,10 @@ if (cta) {
       return;
     }
     const lower = text.toLowerCase();
+    if (shouldUsePythonStateWatch(lower)) {
+      await handleStudentTextCore(text);
+      return;
+    }
     if (isTutorialControlCommand(lower)) {
       await handleTutorialCommand(text);
       return;
@@ -4565,13 +5231,44 @@ if (cta) {
   }
 
   function setupUi() {
-    document.title = 'CODEUP HTML - Blind-first Web IDE';
+    document.title = 'CodeUp';
     const pageTitle = document.querySelector('.cu-title');
-    if (pageTitle) pageTitle.textContent = 'CODEUP HTML';
+    if (pageTitle) pageTitle.textContent = 'CodeUp';
 
     // Real action buttons (not links). Labels match the IDE toolbar.
     replaceButton('generateBtn', 'Generate', 'Generate a website from the command box', generateFromCommand);
-    replaceButton('runBtn', 'Run Preview', 'Run live preview of HTML, CSS, and JavaScript', () => previewHtml(true));
+    replaceButton('runBtn', 'Run', 'Run live preview of HTML, CSS, and JavaScript', () => previewHtml(true));
+    replaceButton('clearOutputBtn', 'Clear', 'Clear the output panel', clearOutput);
+    replaceButton('readOutputBtn', 'Read Output', 'Read the current output aloud', readOutput);
+    replaceButton('toolbarTutorialBtn', 'Tutorial', 'Start the guided tutorial', () => startTutorial(''));
+    replaceButton('runPythonBtn', 'Run Python', 'Run the Python program in the Python editor', runPythonCode);
+    replaceButton('teachPythonBtn', 'Teach Python', 'Teach the Python code in the Python editor', () => analyzePythonCode('teach'));
+    replaceButton('pythonMapBtn', 'Python Map', 'Hear an audio map of the Python code', pythonAudioCodeMap);
+    replaceButton('pythonWatchBtn', 'Variable Watch', 'Read Python variable state', pythonWatchVariable);
+    replaceButton('pythonExampleVariablesBtn', 'Variables', 'Load Python variables and print example', () => loadPythonExample('variables'));
+    replaceButton('pythonExampleLoopBtn', 'Loop', 'Load Python loop with total example', () => loadPythonExample('loop'));
+    replaceButton('pythonExampleInputBtn', 'Input', 'Load Python input greeting example', () => loadPythonExample('input'));
+    replaceButton('pythonExampleFunctionBtn', 'Function', 'Load Python function add example', () => loadPythonExample('function'));
+    replaceButton('pythonExampleConditionBtn', 'Condition', 'Load Python condition example', () => loadPythonExample('condition'));
+    replaceButton('pythonAddInputBtn', 'Add Input', 'Add this value to the Python input queue', addPythonInputFromUi);
+    replaceButton('pythonRunWithInputsBtn', 'Run with Inputs', 'Run Python using the queued input values', runPythonWithInputs);
+    replaceButton('pythonClearInputsBtn', 'Clear Inputs', 'Clear queued Python input values', () => clearPythonInputs(true));
+    replaceButton('pythonBreakpointBtn', 'Check Breakpoint', 'Check a conditional audio breakpoint against the Python code', () => pythonConditionalBreakpoint());
+    replaceButton('pythonPrevStepBtn', 'Previous Step', 'Move to the previous Python execution step', () => pythonStateWatch('previous'));
+    replaceButton('pythonNextStepBtn', 'Next Step', 'Move to the next Python execution step', () => pythonStateWatch('next'));
+    replaceButton('pythonExplainStepBtn', 'Explain Step', 'Explain the current Python execution step', () => pythonStateWatch('current'));
+    replaceButton('pythonWhatChangedBtn', 'What Changed?', 'Explain what changed in the current Python step', () => pythonStateWatch('what_changed'));
+    replaceButton('pythonWhereAmIBtn', 'Where Am I?', 'Explain where I am in the Python program', () => pythonStateWatch('where'));
+    replaceButton('pythonRepeatStepBtn', 'Repeat Step', 'Repeat the current Python step', () => pythonStateWatch('repeat'));
+    replaceButton('pythonExplainConditionBtn', 'Explain Condition', 'Explain the nearest Python condition result', () => pythonStateWatch('condition'));
+    replaceButton('pythonStepIntoBtn', 'Step Into', 'Step into the next Python function call', () => pythonStateWatch('step_into'));
+    replaceButton('pythonStepOutBtn', 'Step Out', 'Step out to the current Python function return', () => pythonStateWatch('step_out'));
+    replaceButton('pythonExplainFunctionBtn', 'Explain Function', 'Explain the current Python function call', () => pythonStateWatch('function'));
+    replaceButton('pythonFunctionArgsBtn', 'What Arguments?', 'Explain Python function arguments', () => pythonStateWatch('arguments'));
+    replaceButton('pythonFunctionReturnBtn', 'What Returned?', 'Explain what the Python function returned', () => pythonStateWatch('return'));
+    replaceButton('pythonFunctionBackBtn', 'Go Back Where?', 'Explain where Python goes after the function returns', () => pythonStateWatch('go_back'));
+    replaceButton('pythonHistoryBtn', 'Review History', 'Review Python learning history', showPythonHistory);
+    replaceButton('pythonClearHistoryBtn', 'Clear History', 'Clear Python learning history', clearPythonHistory);
     replaceButton('analyzeBtn', 'Analyze', 'Analyze the code for issues', analyzeCode);
     replaceButton('fixBtn', 'Fix', 'Fix accessibility and code issues', applyAllAuditFixes);
     replaceButton('readBtn', 'Read Code', 'Read the current editor aloud', () => readCode(state.activeTab || 'html'));
@@ -4589,8 +5286,8 @@ if (cta) {
     replaceButton('resetBtn', 'Reset', 'Reset this session', resetSession);
     replaceButton('voiceButton', 'Voice Off', 'Toggle voice control', toggleVoice);
     replaceButton('helpBtn', 'Help', 'Hear what CodeUp can do', () => writeOutput(helpText(), true));
-    replaceButton('sendCommandBtn', 'Ask / Build', 'Run the typed command', submitCommandFromInput);
-    replaceButton('stopBtn', 'Stop Speaking', 'Stop speaking immediately', stopEverything);
+    replaceButton('sendCommandBtn', 'Run Command', 'Run the typed command', submitCommandFromInput);
+    replaceButton('stopBtn', 'Stop', 'Stop speaking immediately', stopEverything);
     replaceButton('tutorialStartBtn', 'Start Tutorial', 'Start the guided web tutorial', () => startTutorial(''));
     replaceButton('tutorialContinueBtn', 'Continue', 'Continue the guided tutorial', continueTutorial);
     replaceButton('tutorialHintBtn', 'Hint', 'Hear a tutorial hint', tutorialHint);
@@ -4605,6 +5302,22 @@ if (cta) {
         event.preventDefault();
         cancelSpeech();
         submitCommandFromInput();
+      });
+    }
+    const pythonInputValue = $('pythonInputValue');
+    if (pythonInputValue) {
+      pythonInputValue.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        addPythonInputFromUi();
+      });
+    }
+    const pythonBreakpointInput = $('pythonBreakpointInput');
+    if (pythonBreakpointInput) {
+      pythonBreakpointInput.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        pythonConditionalBreakpoint();
       });
     }
 
@@ -4638,10 +5351,22 @@ if (cta) {
     setupTabs();
     ensureEditors();
     ensurePreviewFrame();
+    renderPythonInputs();
+    renderPythonHistory();
     restoreLocalFeatureState();
     refreshSnippetSelect();
     updateTutorialPanel();
     window.runCode = () => previewHtml(true);
+    window.runPythonCode = runPythonCode;
+    window.analyzePythonCode = analyzePythonCode;
+    window.pythonAudioCodeMap = pythonAudioCodeMap;
+    window.pythonStepNarration = pythonStepNarration;
+    window.pythonWatchVariable = pythonWatchVariable;
+    window.pythonConditionalBreakpoint = pythonConditionalBreakpoint;
+    window.pythonStateWatch = pythonStateWatch;
+    window.runPythonWithInputs = runPythonWithInputs;
+    window.pythonMistakeReplay = pythonMistakeReplay;
+    window.loadPythonExample = loadPythonExample;
     window.analyzeCode = analyzeCode;
     window.explainWebsite = explainWebsite;
     window.fixCode = applyAllAuditFixes;
@@ -4822,6 +5547,10 @@ if (cta) {
     const command = raw.trim();
     if (!command) return;
     const lower = command.toLowerCase();
+    if (shouldUsePythonStateWatch(lower)) {
+      await originalHandleVoiceCommand(command);
+      return;
+    }
     if (isTutorialControlCommand(lower)) {
       await handleTutorialCommand(command);
       return;
@@ -4857,6 +5586,7 @@ if (cta) {
       getHtml,
       getCss,
       getJs,
+      getPython,
       loadGeneratedFiles,
       combineDocument,
       splitDocument,
@@ -4869,6 +5599,18 @@ if (cta) {
       readCode,
       codeMap,
       stepNarration,
+      runPythonCode,
+      analyzePythonCode,
+      pythonAudioCodeMap,
+      pythonStepNarration,
+      pythonWatchVariable,
+      pythonConditionalBreakpoint,
+      pythonStateWatch,
+      runPythonWithInputs,
+      pythonExplainError,
+      pythonMistakeReplay,
+      showPythonHistory,
+      loadPythonExample,
       explainProjectFile,
       learningNotes,
       accessibilityMap,
