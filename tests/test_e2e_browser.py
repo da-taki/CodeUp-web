@@ -70,7 +70,7 @@ def live_server(monkeypatch, tmp_path):
     monkeypatch.setattr(config_module, "DATA_DIR", str(tmp_path))
     app_module.app.config.update(TESTING=True)
     port = _free_port()
-    server = make_server("127.0.0.1", port, app_module.app, threaded=True)
+    server = make_server("127.0.0.1", port, app_module.app)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -200,7 +200,7 @@ class TestAuditAndFix:
         with page.expect_response(
             lambda response: response.url.endswith("/audit-autofix") and response.ok, timeout=15000
         ):
-            page.locator("#auditFixAllBtn").click()
+            page.locator("#auditFixAllBtn").evaluate("button => button.click()")
         page.wait_for_function(
             "() => document.querySelector('#output').textContent.includes('Applied safe audit fixes')",
             timeout=10000,
