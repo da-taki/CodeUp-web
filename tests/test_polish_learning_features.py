@@ -37,18 +37,12 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setattr(config_module, "DATA_DIR", str(tmp_path))
     app_module.app.config.update(TESTING=True)
     return app_module.app.test_client()
-
-
-# --------------------------------------------------------------------------- #
-# README / docs consolidation
-# --------------------------------------------------------------------------- #
 def test_readme_includes_merged_demo_and_app_demo():
     text = README.read_text(encoding="utf-8")
     assert "make a website for my school robotics club" in text
     assert "make a quiz app about Python basics" in text
     assert "add score tracking" in text
     assert "Demo flow" in text
-    # The optional app demo and the 5-minute demo were merged from the demo scripts.
     assert "describe preview" in text
 
 
@@ -92,14 +86,12 @@ def test_readme_lists_all_export_artifacts():
 def test_readme_links_to_security_policy():
     text = README.read_text(encoding="utf-8")
     assert "SECURITY.md" in text
-    # The full policy should live in SECURITY.md, not be duplicated into the README.
     assert "Reporting a Vulnerability" not in text
 
 
 def test_redundant_markdown_files_removed():
     for name in ("DEMO.md", "DEMO_SCRIPT.md", "DEMO_READINESS.md", "HTML_MODE.md"):
         assert not (REPO_ROOT / name).exists(), name
-    # Only README.md and SECURITY.md remain at the repo root.
     root_markdown = sorted(p.name for p in REPO_ROOT.glob("*.md"))
     assert root_markdown == ["README.md", "SECURITY.md"], root_markdown
 
@@ -112,11 +104,6 @@ def test_security_policy_exists_and_is_strong():
     assert "Content Security Policy" in text
     for guarantee in ("eval", "credential", "phishing", "tracking"):
         assert guarantee in text.lower(), guarantee
-
-
-# --------------------------------------------------------------------------- #
-# Feature routing
-# --------------------------------------------------------------------------- #
 @pytest.mark.parametrize(
     ("command", "action"),
     [
@@ -140,7 +127,6 @@ def test_security_policy_exists_and_is_strong():
         ("repeat", "tutorial_control"),
         ("exit tutorial", "tutorial_control"),
         ("list bookmarks", "list_bookmarks"),
-        # Existing routes must be preserved after the split.
         ("learning notes", "learning_notes"),
         ("what did I build", "project_summary"),
         ("recap", "tutorial_control"),
@@ -185,11 +171,6 @@ def test_repair_command_fixes_known_typos():
     assert repair_command("step naration") == "step narration"
     assert repair_command("add cantact form") == "add contact form"
     assert repair_command("make profeshnal") == "make professional"
-
-
-# --------------------------------------------------------------------------- #
-# New explanation endpoints
-# --------------------------------------------------------------------------- #
 def test_learning_endpoints_return_artifacts(client):
     files = generate_site_files("make a website for my school robotics club")
     payload = {
@@ -212,11 +193,6 @@ def test_learning_endpoints_return_artifacts(client):
 
     landmarks = client.post("/project-landmarks", json=payload).get_json()["text"]
     assert "This website has" in landmarks
-
-
-# --------------------------------------------------------------------------- #
-# Export additions
-# --------------------------------------------------------------------------- #
 def _export(client, **extra):
     files = generate_site_files("make a website for my school robotics club")
     body = {
@@ -277,11 +253,6 @@ def test_change_replay_artifact_describes_the_edit(client):
         replay = archive.read("CHANGE_REPLAY.txt").decode("utf-8")
     assert "add a history section" in replay
     assert "section" in replay.lower()
-
-
-# --------------------------------------------------------------------------- #
-# Safety
-# --------------------------------------------------------------------------- #
 def _looks_like_code(text: str) -> bool:
     lowered = text.lower()
     return "<script" in lowered or "<style" in lowered or "<!doctype" in lowered or "function(" in lowered
@@ -315,7 +286,6 @@ def test_learning_endpoints_do_not_mutate_website_files(client):
     }
     for endpoint in ("/trainer-notes", "/student-recap", "/screen-reader-summary", "/project-landmarks"):
         data = client.post(endpoint, json=payload).get_json()
-        # These features explain; they never return modified source files.
         assert "files" not in data
         assert "html" not in data
         assert "code" not in data
@@ -327,14 +297,8 @@ def test_command_repair_does_not_alter_generated_code():
         assert repair_command(files["html"]) == files["html"], prompt
         assert repair_command(files["css"]) == files["css"], prompt
         assert repair_command(files["js"]) == files["js"], prompt
-
-
-# --------------------------------------------------------------------------- #
-# UI / output
-# --------------------------------------------------------------------------- #
 def test_big_help_panel_removed(client):
     html = client.get("/ide").get_data(as_text=True)
-    # The old always-visible command box is gone from default page load.
     assert "What CodeUp Web Does" not in html
     assert 'id="helpPanelTitle"' not in html
 
@@ -353,9 +317,7 @@ def test_command_palette_is_collapsed_dialog_by_default(client):
     assert 'id="commandPalette"' in html
     assert 'role="dialog"' in html
     assert 'aria-modal="true"' in html
-    # The palette overlay ships hidden so it does not dominate page load.
     assert 'id="paletteOverlay" class="ide-palette-overlay" hidden' in html
-    # Close control is labelled.
     assert 'id="closePaletteBtn"' in html
     assert 'aria-label="Close command palette"' in html
 
@@ -373,7 +335,6 @@ def test_command_palette_contains_grouped_commands_in_markup(client):
         "export website",
     ):
         assert command in html, command
-    # Chips still carry their command text in data-cmd so they click/fill/run.
     assert 'data-cmd="code map"' in html
     assert 'data-cmd="export website"' in html
 
@@ -402,7 +363,6 @@ def test_empty_states_present(client):
     html = client.get("/ide").get_data(as_text=True)
     assert 'id="outputEmpty"' in html
     assert "Ask me to" in html
-    # The sketchbook preview placeholder is rendered by the preview frame builder.
     js = FRONTEND_JS.read_text(encoding="utf-8")
     assert "Your website preview will appear here" in js
     assert 'id="previewEmpty"' in js
@@ -414,7 +374,6 @@ def test_palette_keyboard_and_focus_behavior_present():
     assert "closeCommandPalette" in js
     assert "paletteTrapFocus" in js
     assert "Escape" in js
-    # Focus returns to the opener after close.
     assert "paletteOpener" in js
 
 

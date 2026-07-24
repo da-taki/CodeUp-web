@@ -64,7 +64,7 @@ def review_site():
 
     audit = audit_html(html)
     system = (
-        "You are the sighted reviewer inside CodeUp HTML for blind and visually impaired students. "
+        "You are the sighted reviewer inside CodeUp Web for blind and visually impaired students. "
         "Describe the current website visually, then say what is missing, then suggest exactly what to add next. "
         "Keep it conversational, concrete, and short enough to be spoken aloud. Do not return code."
     )
@@ -98,7 +98,7 @@ def apply_review():
     memory = load_html_memory(session_id)
     latest_review = review or memory.last_review
     system = (
-        "You are CodeUp HTML's review-loop editor. Return one complete accessible single-file HTML document. "
+        "You are CodeUp Web's review-loop editor. Return one complete accessible single-file HTML document. "
         "Apply the student's instruction using the latest visual review. Keep the page semantic, responsive, "
         "high contrast, and understandable for screen reader users. Do not return markdown fences or prose."
     )
@@ -143,7 +143,7 @@ def html_chat():
         f"- {item.get('prompt') or item.get('note')}" for item in memory.history[-8:] if isinstance(item, dict)
     )
     system = (
-        "You are CodeUp HTML, a conversational website-building guide for blind and visually impaired students. "
+        "You are CodeUp Web, a conversational website-building guide for blind and visually impaired students. "
         "Explain what students can do, describe the current page, suggest improvements, and keep responses short enough for speech. "
         "Do not return code from chat; for building, tell the student to say or type 'Build a website for ...'."
     )
@@ -176,7 +176,7 @@ def generate_code():
     session_id = get_session_id()
     memory = load_html_memory(session_id)
     system = (
-        "You are CodeUp HTML's website generator for blind school students. "
+        "You are CodeUp Web's website generator for blind school students. "
         "Return one complete accessible single-file HTML document with embedded CSS and small JavaScript only when useful. "
         "Use semantic landmarks, headings, labels, readable contrast, responsive layout, and clear visible content. "
         "Do not return markdown fences or explanations."
@@ -471,7 +471,7 @@ def generate_code_stream():
 
     memory = load_html_memory(session_id)
     system = (
-        "You are CodeUp HTML's website generator for blind school students. "
+        "You are CodeUp Web's website generator for blind school students. "
         "Return one complete accessible single-file HTML document with embedded CSS and small JavaScript only when useful. "
         "Use semantic landmarks, headings, labels, readable contrast, responsive layout, and clear visible content. "
         "Do not return markdown fences or explanations."

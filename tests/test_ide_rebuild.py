@@ -183,7 +183,8 @@ def test_edit_site_updates_existing_project_without_replacing_topic(client):
         },
     ).get_json()
     assert polished["success"] is True
-    assert "professional polish" in polished["css"].lower()
+    assert "line-height: 1.65" in polished["css"]
+    assert "Made the visual style more professional." in polished["summary"]
     assert "robotics" in polished["html"].lower()
 
 
@@ -224,9 +225,10 @@ def test_beginner_followup_edits_are_deterministic(client):
         },
     ).get_json()
     assert commented["success"] is True
-    assert "CodeUp Web note: HTML" in commented["html"]
-    assert "CodeUp Web note: CSS" in commented["css"]
-    assert "CodeUp Web note: JavaScript" in commented["js"]
+    assert "CodeUp Web note" not in commented["html"]
+    assert "CodeUp Web note" not in commented["css"]
+    assert "CodeUp Web note" not in commented["js"]
+    assert any("source files clean" in item for item in commented["summary"])
     assert 'id="comments"' not in commented["html"]
 
     functional = client.post(

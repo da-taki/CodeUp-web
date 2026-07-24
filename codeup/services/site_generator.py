@@ -23,10 +23,6 @@ from codeup.services.project_type_router import (
     project_type_to_legacy_kind,
 )
 
-# --------------------------------------------------------------------------- #
-# Topic detection and naming helpers
-# --------------------------------------------------------------------------- #
-
 _KIND_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("robotics", ("robot", "robotics", "stem", "engineering", "maker", "tech club", "coding club", "ai lab")),
     ("food", ("bakery", "cafe", "coffee", "restaurant", "food", "pizza", "kitchen", "bake", "patisserie")),
@@ -42,7 +38,6 @@ _KIND_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 _PALETTES: dict[str, tuple[str, str, str]] = {
-    # kind: (brand, accent, hero-gradient-end)
     "robotics": ("#6d28d9", "#06b6d4", "#0ea5e9"),
     "food": ("#b91c1c", "#f59e0b", "#ef4444"),
     "portfolio": ("#2563eb", "#10b981", "#6366f1"),
@@ -89,11 +84,6 @@ def topic_phrase(prompt: str) -> str:
 def _slugify(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", (value or "").lower()).strip("-")
     return slug or "codeup-site"
-
-
-# --------------------------------------------------------------------------- #
-# Content blueprints
-# --------------------------------------------------------------------------- #
 
 
 def _blueprint(kind: str, title: str, topic: str) -> dict:
@@ -599,11 +589,6 @@ def _blueprint(kind: str, title: str, topic: str) -> dict:
     return base
 
 
-# --------------------------------------------------------------------------- #
-# HTML / CSS / JS rendering
-# --------------------------------------------------------------------------- #
-
-
 def _nav_html() -> str:
     links = [
         ("#about", "About"),
@@ -808,8 +793,7 @@ def _render_html(prompt: str, kind: str, title: str, topic: str, bp: dict) -> st
 </html>"""
 
 
-_SITE_CSS = """/* CodeUp-Web generated styles — responsive, accessible, no external assets */
-:root {
+_SITE_CSS = """:root {
   color-scheme: light dark;
   --brand: #4f46e5;
   --accent: #06b6d4;
@@ -868,8 +852,6 @@ a { color: var(--brand); }
 }
 .skip-link:focus { top: 12px; }
 :focus-visible { outline: 3px solid var(--ring); outline-offset: 3px; border-radius: 6px; }
-
-/* Header / nav */
 .site-header {
   position: sticky; top: 0; z-index: 50;
   background: color-mix(in srgb, var(--surface) 86%, transparent);
@@ -892,8 +874,6 @@ a { color: var(--brand); }
 }
 .nav-toggle { display: none; margin-left: auto; }
 .theme-toggle { white-space: nowrap; }
-
-/* Buttons */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   font: inherit; font-weight: 700; text-decoration: none; cursor: pointer;
@@ -903,8 +883,6 @@ a { color: var(--brand); }
 .btn-primary { color: #fff; background: linear-gradient(135deg, var(--brand), var(--accent)); box-shadow: var(--shadow); }
 .btn-ghost { color: var(--ink); background: var(--surface); border-color: var(--line); }
 .btn-small { padding: 8px 14px; font-size: 0.9rem; background: var(--surface-2); color: var(--ink); }
-
-/* Hero */
 .hero { position: relative; overflow: hidden; color: #fff; padding: clamp(56px, 10vw, 120px) 0; text-align: center;
   background: radial-gradient(1200px 400px at 10% -10%, var(--accent), transparent 60%),
               linear-gradient(135deg, var(--brand), var(--hero-end)); }
@@ -915,8 +893,6 @@ a { color: var(--brand); }
 .hero-cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 .badges { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 1.6rem; }
 .badge { background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.28); padding: 6px 14px; border-radius: 999px; font-size: 0.85rem; font-weight: 600; }
-
-/* Sections */
 .section { padding: clamp(48px, 8vw, 92px) 0; }
 .section-alt { background: var(--surface-2); }
 .two-col { display: grid; grid-template-columns: 1.4fr 1fr; gap: 32px; align-items: start; }
@@ -924,8 +900,6 @@ a { color: var(--brand); }
 .checklist { list-style: none; padding: 0; margin: 1rem 0 0; display: grid; gap: 10px; }
 .checklist li { position: relative; padding-left: 30px; }
 .checklist li::before { content: "✓"; position: absolute; left: 0; top: 0; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; background: linear-gradient(135deg, var(--brand), var(--accent)); color: #fff; font-size: 0.75rem; }
-
-/* Grid + cards */
 .grid { display: grid; gap: 18px; margin-top: 1.6rem; }
 .cards { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
 .card {
@@ -939,33 +913,23 @@ a { color: var(--brand); }
 .tag { display: inline-block; font-size: 0.74rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
   color: var(--brand); background: color-mix(in srgb, var(--brand) 14%, transparent); padding: 4px 10px; border-radius: 999px; }
 .card[hidden] { display: none; }
-
-/* Filters */
 .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 1.2rem; }
 .filter-btn { font: inherit; font-weight: 600; cursor: pointer; padding: 8px 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); }
 .filter-btn[aria-pressed="true"] { color: #fff; background: linear-gradient(135deg, var(--brand), var(--accent)); border-color: transparent; }
-
-/* Stats */
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 18px; margin-top: 1.6rem; }
 .stat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 26px 18px; text-align: center; box-shadow: var(--shadow); }
 .stat-num { display: block; font-size: clamp(2.2rem, 5vw, 3.2rem); font-weight: 800; background: linear-gradient(135deg, var(--brand), var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .stat-label { color: var(--muted); font-weight: 600; }
-
-/* Team */
 .team-grid { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
 .member { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; text-align: center; box-shadow: var(--shadow); }
 .avatar { width: 72px; height: 72px; margin: 0 auto 12px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 1.4rem; color: #fff; background: linear-gradient(135deg, var(--brand), var(--accent)); }
 .member h3 { margin: 0 0 0.2rem; }
 .member p { color: var(--muted); margin: 0; }
-
-/* Facilities */
 .facilities-grid { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
 .facility { display: flex; gap: 16px; align-items: flex-start; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; box-shadow: var(--shadow); }
 .facility-icon { font-size: 1.6rem; width: 48px; height: 48px; flex: none; display: grid; place-items: center; border-radius: 12px; background: var(--surface-2); }
 .facility h3 { margin: 0 0 0.3rem; }
 .facility p { color: var(--muted); margin: 0; }
-
-/* Events */
 .events { list-style: none; margin: 1.6rem 0 0; padding: 0; display: grid; gap: 12px; }
 .event { display: flex; align-items: center; gap: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 22px; box-shadow: var(--shadow); }
 .event-date { flex: none; font-weight: 800; color: var(--brand); min-width: 90px; }
@@ -973,8 +937,6 @@ a { color: var(--brand); }
 .event-body h3 { margin: 0 0 0.2rem; }
 .event-body p { color: var(--muted); margin: 0; }
 .event[data-done] .btn { background: #16a34a; color: #fff; }
-
-/* Form */
 .contact-form { margin-top: 1.6rem; display: grid; gap: 16px; }
 .field { display: grid; gap: 6px; }
 .field label { font-weight: 600; }
@@ -983,12 +945,8 @@ a { color: var(--brand); }
 .form-status { font-weight: 600; min-height: 1.2em; margin: 0; }
 .form-status[data-state="ok"] { color: #16a34a; }
 .form-status[data-state="error"] { color: #dc2626; }
-
-/* Footer */
 .site-footer { padding: 40px 0; border-top: 1px solid var(--line); text-align: center; background: var(--surface); }
 .site-footer p { margin: 0.2rem 0; }
-
-/* Responsive */
 @media (max-width: 760px) {
   .nav-toggle { display: inline-flex; }
   .theme-toggle { order: 3; }
@@ -1006,13 +964,10 @@ a { color: var(--brand); }
 """
 
 
-_SITE_JS = """/* CodeUp-Web generated interactivity — accessible, dependency-free */
-(function () {
+_SITE_JS = """(function () {
   "use strict";
   var root = document.documentElement;
   var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  /* Theme toggle (persisted) */
   var themeBtn = document.querySelector("[data-theme-toggle]");
   function applyTheme(mode) {
     if (mode === "dark") {
@@ -1034,8 +989,6 @@ _SITE_JS = """/* CodeUp-Web generated interactivity — accessible, dependency-f
       try { localStorage.setItem("codeup-site-theme", next); } catch (e) {}
     });
   }
-
-  /* Mobile navigation */
   var navToggle = document.querySelector("[data-nav-toggle]");
   var nav = document.querySelector("[data-nav]");
   function closeNav() {
@@ -1056,8 +1009,6 @@ _SITE_JS = """/* CodeUp-Web generated interactivity — accessible, dependency-f
     nav.addEventListener("click", function (e) { if (e.target.closest("a")) closeNav(); });
     document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeNav(); });
   }
-
-  /* Project filtering */
   var filterBtns = Array.prototype.slice.call(document.querySelectorAll("[data-filter]"));
   var cards = Array.prototype.slice.call(document.querySelectorAll("[data-cards] .card"));
   var filterStatus = document.querySelector("[data-filter-status]");
@@ -1073,8 +1024,6 @@ _SITE_JS = """/* CodeUp-Web generated interactivity — accessible, dependency-f
       if (filterStatus) filterStatus.textContent = "Showing " + shown + " project" + (shown === 1 ? "" : "s") + ".";
     });
   });
-
-  /* Animated stats */
   var counters = Array.prototype.slice.call(document.querySelectorAll("[data-count]"));
   function runCounter(el) {
     var target = parseInt(el.getAttribute("data-target"), 10) || 0;
@@ -1100,8 +1049,6 @@ _SITE_JS = """/* CodeUp-Web generated interactivity — accessible, dependency-f
   } else {
     counters.forEach(runCounter);
   }
-
-  /* Event sign-up (in-page, no network) */
   var signupStatus = document.querySelector("[data-signup-status]");
   document.querySelectorAll("[data-signup]").forEach(function (btn) {
     btn.addEventListener("click", function () {
@@ -1113,8 +1060,6 @@ _SITE_JS = """/* CodeUp-Web generated interactivity — accessible, dependency-f
       if (signupStatus) signupStatus.textContent = "You're signed up for " + name + ".";
     });
   });
-
-  /* Contact form (validated, no network) */
   var form = document.querySelector("[data-contact-form]");
   if (form) {
     var status = form.querySelector("[data-form-status]");
@@ -1143,7 +1088,6 @@ def _palette_override(kind: str) -> str:
 
 
 _APP_PROJECT_CSS = """
-/* CodeUp Web app template - accessible, responsive, no external assets */
 :root {
   color-scheme: light;
   --brand: #1f6f8b;
@@ -1810,11 +1754,6 @@ def _render_interactive_project(project_type: str, title: str, topic: str) -> tu
     return html, _APP_PROJECT_CSS, js
 
 
-# --------------------------------------------------------------------------- #
-# Public API
-# --------------------------------------------------------------------------- #
-
-
 def generate_site_files(prompt: str) -> dict[str, str]:
     """Build a complete, polished 3-file website from a natural-language prompt."""
 
@@ -1902,15 +1841,11 @@ def combine_site_files(html: str, css: str = "", js: str = "", **_ignored: objec
             '<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n'
             "<title>CodeUp Site</title>\n</head>\n<body>\n" + doc + "\n</body>\n</html>"
         )
-
-    # Drop external references to the sibling files (they are inlined below).
     doc = re.sub(r'\s*<link\b[^>]*href=["\']?(?:\./)?style\.css["\']?[^>]*>', "", doc, flags=re.IGNORECASE)
     doc = re.sub(r'\s*<script\b[^>]*src=["\']?(?:\./)?script\.js["\']?[^>]*>\s*</script>', "", doc, flags=re.IGNORECASE)
 
     if css and css.strip():
         style_block = "<style>\n" + css.strip() + "\n</style>"
-        # Use a callable replacement so backslash sequences (e.g. \u in JS/CSS)
-        # are inserted literally rather than treated as regex escapes.
         if re.search(r"</head\s*>", doc, re.IGNORECASE):
             doc = re.sub(r"</head\s*>", lambda _m: style_block + "\n</head>", doc, count=1, flags=re.IGNORECASE)
         else:

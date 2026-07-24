@@ -242,28 +242,6 @@ def _button_block(label: str = "New button") -> str:
 """
 
 
-def _commented_html(html: str) -> str:
-    if "CodeUp Web note: HTML" in html:
-        return html
-    comment = "\n  <!-- CodeUp Web note: HTML gives the page its structure and meaning. -->"
-    document = wrap_html(html)
-    if re.search(r"<body\b[^>]*>", document, re.I):
-        return re.sub(r"<body\b[^>]*>", lambda match: match.group(0) + comment, document, count=1, flags=re.I)
-    return comment + "\n" + document
-
-
-def _commented_css(css: str) -> str:
-    if "CodeUp Web note: CSS" in css:
-        return css
-    return "/* CodeUp Web note: CSS controls colors, spacing, layout, and focus styles. */\n" + css
-
-
-def _commented_js(js: str) -> str:
-    if "CodeUp Web note: JavaScript" in js:
-        return js
-    return "// CodeUp Web note: JavaScript makes the page respond to clicks, typing, and other actions.\n" + js
-
-
 def _function_based_js(js: str) -> tuple[str, str]:
     if re.search(r"\bfunction\s+[A-Za-z_$][\w$]*\s*\(", js):
         return js, "JavaScript already uses named functions."
@@ -300,7 +278,7 @@ def _shorten_title(html: str) -> str:
 def _professional_css() -> str:
     return """
 
-/* CodeUp Web professional polish */
+
 :root { --surface: #ffffff; --ink: #17202a; --muted: #526070; --brand: #1f6f8b; --accent: #f59e0b; }
 body { color: var(--ink); background: #f7fafc; line-height: 1.65; }
 header, .hero { background: linear-gradient(135deg, #1f6f8b, #2f855a); color: #ffffff; }
@@ -321,7 +299,7 @@ def _color_css(color: str = "blue") -> str:
     brand, accent = palettes.get(color, ("#1d4ed8", "#0f766e"))
     return f"""
 
-/* CodeUp Web color theme */
+
 :root {{ --brand: {brand}; --accent: {accent}; }}
 header, .hero {{ background: linear-gradient(135deg, var(--brand), var(--accent)); color: #ffffff; }}
 a, button, .button {{ color: #ffffff; background: var(--brand); }}
@@ -332,7 +310,7 @@ a:focus-visible, button:focus-visible {{ outline: 3px solid #f59e0b; outline-off
 def _simple_css() -> str:
     return """
 
-/* CodeUp Web simpler reading mode */
+
 body { font-size: 1.05rem; line-height: 1.75; }
 main { max-width: 980px; margin: 0 auto; }
 section, article, .card { padding: 1.25rem; }
@@ -482,10 +460,7 @@ if (quizScoreStatus) {
             changes.append("Added a score tracking status area.")
 
     if "add comments" in lower or "add comment" in lower or "comment the code" in lower:
-        html = _commented_html(html)
-        css = _commented_css(css)
-        js = _commented_js(js)
-        changes.append("Added beginner-friendly comments to the files.")
+        changes.append("Kept the source files clean. Use code map, step narration, or learning notes for explanations instead of inserted comments.")
 
     if "use a function" in lower or "use function" in lower or "use functions" in lower:
         js, message = _function_based_js(js)

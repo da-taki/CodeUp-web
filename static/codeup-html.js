@@ -54,8 +54,6 @@
   </main>
 </body>
 </html>`;
-
-  // Split starter for the 3-file IDE: HTML structure, CSS in its own pane, JS in its own pane.
   const starterBodyHtml = `<!doctype html>
 <html lang="en">
 <head>
@@ -206,6 +204,9 @@ else:
       lastValidation: null,
     },
     track: { active: false, id: '', index: 0, steps: [], title: '' },
+    generationWizard: { active: false, index: 0, answers: {} },
+    guidedProjects: null,
+    guidedProject: loadJsonStore('codeup_guided_project', null),
     tracks: null,
     teacherSuggestions: [],
     walkthrough: {
@@ -377,6 +378,12 @@ else:
 
   const CODEUP_CSS_ID = 'codeup-ide-css';
   const CODEUP_JS_ID = 'codeup-ide-js';
+  const MONACO_LANGUAGES = {
+    htmlEditor: 'html',
+    cssEditor: 'css',
+    jsEditor: 'javascript',
+    pythonEditor: 'python',
+  };
 
   function getEditor() { return $('htmlEditor'); }
   function getCssEditor() { return $('cssEditor'); }
@@ -386,22 +393,16 @@ else:
   function getCss() { const el = getCssEditor(); return el ? el.value : ''; }
   function getJs() { const el = getJsEditor(); return el ? el.value : ''; }
   function getPython() { const el = getPythonEditor(); return el ? el.value : ''; }
-
-  // Remove only the IDE-managed inline <style>/<script> blocks.
   function stripManagedBlocks(html) {
     return String(html || '')
       .replace(new RegExp('\\s*<style\\b[^>]*id=["\\\']?' + CODEUP_CSS_ID + '["\\\']?[^>]*>[\\s\\S]*?<\\/style>', 'gi'), '')
       .replace(new RegExp('\\s*<script\\b[^>]*id=["\\\']?' + CODEUP_JS_ID + '["\\\']?[^>]*>[\\s\\S]*?<\\/script>', 'gi'), '');
   }
-
-  // Remove external references to the sibling files (used only for the inlined preview).
   function stripExternalRefs(html) {
     return String(html || '')
       .replace(/\s*<link\b[^>]*href=["']?(?:\.\/)?style\.css["']?[^>]*>/gi, '')
       .replace(/\s*<script\b[^>]*src=["']?(?:\.\/)?script\.js["']?[^>]*>\s*<\/script>/gi, '');
   }
-
-  // Keep index.html honest: ensure it links style.css / script.js when those panes have content.
   function ensureManagedRefs(html, hasCss, hasJs) {
     let doc = normalizeHtmlDocument(html);
     if (hasCss && !/<link\b[^>]*href=["']?(?:\.\/)?style\.css["']?/i.test(doc)) {
@@ -414,8 +415,6 @@ else:
     }
     return doc;
   }
-
-  // Merge the three editors into a single, self-contained document for preview/publish.
   function combineDocument(html, css, js) {
     let doc = normalizeHtmlDocument(stripExternalRefs(stripManagedBlocks(html)));
     if (css && css.trim()) {
@@ -432,9 +431,6 @@ else:
     }
     return doc;
   }
-
-  // Split a single document back into {html, css, js} using the managed block ids.
-  // The returned HTML keeps/ensures the external style.css / script.js references.
   function splitDocument(doc) {
     const source = String(doc || '');
     let css = '';
@@ -451,9 +447,6 @@ else:
     if (css || js) html = ensureManagedRefs(html, !!css, !!js);
     return { html, css, js };
   }
-
-  // getHtml() returns the combined document. When the CSS/JS panes are empty (or
-  // absent, as in the unit-test harness) it returns the raw HTML editor value.
   function getHtml() {
     const html = getHtmlSource();
     const css = getCss();
@@ -464,15 +457,15 @@ else:
 
   function persistDrafts() {
     try {
-      const h = getEditor(); if (h) sessionStorage.setItem('codeup_html_draft', h.value);
-      const c = getCssEditor(); if (c) sessionStorage.setItem('codeup_css_draft', c.value);
-      const j = getJsEditor(); if (j) sessionStorage.setItem('codeup_js_draft', j.value);
-      const p = getPythonEditor(); if (p) sessionStorage.setItem('codeup_python_draft', p.value);
+      const h = getEditor(); if (h) sessionStorage.setItem('codeup_html_draft', editorValue(h));
+      const c = getCssEditor(); if (c) sessionStorage.setItem('codeup_css_draft', editorValue(c));
+      const j = getJsEditor(); if (j) sessionStorage.setItem('codeup_js_draft', editorValue(j));
+      const p = getPythonEditor(); if (p) sessionStorage.setItem('codeup_python_draft', editorValue(p));
       localStorage.setItem('codeup_last_work', JSON.stringify({
-        html: h ? h.value : '',
-        css: c ? c.value : '',
-        js: j ? j.value : '',
-        python: p ? p.value : '',
+        html: h ? editorValue(h) : '',
+        css: c ? editorValue(c) : '',
+        js: j ? editorValue(j) : '',
+        python: p ? editorValue(p) : '',
         projectId: state.projectId,
         projectName: state.projectName,
         currentPage: state.currentPage,
@@ -481,8 +474,6 @@ else:
       }));
     } catch (error) {}
   }
-
-  // Load three generated files directly into the three editors.
   function loadGeneratedFiles(files) {
     const htmlEl = getEditor();
     const cssEl = getCssEditor();
@@ -491,11 +482,11 @@ else:
     const js = files.js || '';
     const html = ensureManagedRefs(stripManagedBlocks(normalizeHtmlDocument(files.html || '')), !!css.trim(), !!js.trim());
     if (cssEl || jsEl) {
-      if (htmlEl) htmlEl.value = html;
-      if (cssEl) cssEl.value = css;
-      if (jsEl) jsEl.value = js;
+      setEditorValue(htmlEl, html);
+      setEditorValue(cssEl, css);
+      setEditorValue(jsEl, js);
     } else if (htmlEl) {
-      htmlEl.value = combineDocument(html, css, js);
+      setEditorValue(htmlEl, combineDocument(html, css, js));
     }
     persistDrafts();
     state.pages[state.currentPage] = getHtml();
@@ -517,14 +508,16 @@ else:
 
   function snapshotVersion(note, summary) {
     const html = getHtml();
+    const css = getCss();
+    const js = getJs();
     if (!html) return;
     const last = state.versions[state.versions.length - 1];
-    if (last && last.html === html) return;
+    if (last && last.html === html && last.css === css && last.js === js) return;
     const version = {
       id: '',
       html,
-      css: getCss(),
-      js: getJs(),
+      css,
+      js,
       note: note || 'Edited website',
       label: note || 'Edited website',
       source: 'frontend',
@@ -556,15 +549,12 @@ else:
 
   function finishReplay(label) {
     state.replay.after = sourceSnapshot(label || 'After change');
-    // A fresh generation is not an "edit"; everything else counts as a change.
     if (!/generation/i.test(label || '')) {
       state.editHappened = true;
       state.lastEditInstruction = state.lastCommand || (state.commandHistory || []).slice(-1)[0] || state.lastEditInstruction || '';
     }
     persistDrafts();
   }
-
-  // Snapshot of the most recent edit for export, only when an edit actually happened.
   function exportChangeReplay() {
     if (!state.editHappened) return null;
     const before = state.replay && state.replay.before;
@@ -618,13 +608,10 @@ else:
     if (lower.includes('explain this change') || lower.includes('why does the fixed version work')) return 'explain';
     return 'summary';
   }
-
-  // Render small, clickable "Try this next" chips below the output (no walls of text).
   function suggestNext(suggestions) {
     const list = (suggestions || []).filter(Boolean);
     const region = $('tryNext');
     if (!region) {
-      // Fallback for environments without the try-next region: append a short line.
       const output = $('output');
       if (list.length && output && (output.textContent || '').trim()) {
         output.textContent += `\n\nTry this next: ${list.map((item) => `"${item}"`).join(', ')}.`;
@@ -680,25 +667,21 @@ else:
       writeOutput(error.message, true);
     }
   }
-
-  // setHtml() accepts a full document. When the CSS/JS panes exist it splits the
-  // managed style/script blocks back into them; otherwise it behaves like the
-  // original single-editor model (used by the unit-test harness).
   function setHtml(html) {
     const editor = getEditor();
     const cssEl = getCssEditor();
     const jsEl = getJsEditor();
     if (cssEl || jsEl) {
       const parts = splitDocument(html);
-      if (editor) editor.value = parts.html;
-      if (cssEl) cssEl.value = parts.css;
-      if (jsEl) jsEl.value = parts.js;
+      setEditorValue(editor, parts.html);
+      setEditorValue(cssEl, parts.css);
+      setEditorValue(jsEl, parts.js);
       persistDrafts();
       state.pages[state.currentPage] = getHtml();
       state.currentFiles = { html: parts.html, css: parts.css, js: parts.js };
       scheduleAutosave();
     } else if (editor) {
-      editor.value = html;
+      setEditorValue(editor, html);
       try { sessionStorage.setItem('codeup_html_draft', html); } catch (error) {}
       state.pages[state.currentPage] = html;
       state.currentFiles = { html, css: '', js: '' };
@@ -918,10 +901,82 @@ else:
     const existingLines = existing.split('\n').map(line => line.trim()).filter(Boolean);
     const nextRules = rules.filter(rule => !existingLines.includes(rule));
     if (!nextRules.length) return;
-    cssEl.value = existing + (existing ? '\n\n' : '') + nextRules.join('\n');
+    setEditorValue(cssEl, existing + (existing ? '\n\n' : '') + nextRules.join('\n'));
     persistDrafts();
     state.pages[state.currentPage] = getHtml();
     scheduleAutosave();
+  }
+
+  function noteEditorChanged(editor, draftKey) {
+    try { sessionStorage.setItem(draftKey, editorValue(editor)); } catch (error) {}
+    state.pages[state.currentPage] = getHtml();
+    scheduleAutosave();
+  }
+
+  function upgradeTextareaToMonaco(host, editor, editorId, ariaLabel, draftKey) {
+    if (!host || !editor || editor.__codeupMonacoEditor || !window.monaco || !window.monaco.editor) return false;
+    const monacoHost = document.createElement('div');
+    monacoHost.id = editorId + 'Monaco';
+    monacoHost.className = 'cu-monaco-editor';
+    monacoHost.setAttribute('role', 'region');
+    monacoHost.setAttribute('aria-label', ariaLabel + ' Monaco editor');
+    host.appendChild(monacoHost);
+    try {
+      const model = window.monaco.editor.createModel(editor.value || '', MONACO_LANGUAGES[editorId] || 'plaintext');
+      const monacoEditor = window.monaco.editor.create(monacoHost, {
+        model,
+        automaticLayout: true,
+        minimap: { enabled: false },
+        wordWrap: 'on',
+        accessibilitySupport: 'auto',
+        tabSize: 2,
+        fontFamily: 'JetBrains Mono, Consolas, monospace',
+        fontSize: 14,
+        lineHeight: 22,
+        scrollBeyondLastLine: false,
+      });
+      if (window.monaco.KeyMod && window.monaco.KeyCode) {
+        monacoEditor.addCommand(window.monaco.KeyMod.CtrlCmd | window.monaco.KeyCode.Enter, function () {
+          if (editorId === 'pythonEditor') runPythonCode();
+          else previewHtml(true);
+        });
+      }
+      editor.__codeupMonacoEditor = monacoEditor;
+      editor.__codeupMonacoModel = model;
+      editor.dataset.monacoShadow = 'true';
+      editor.classList.add('cu-editor-textarea-fallback');
+      monacoEditor.onDidChangeModelContent(() => {
+        editor.value = monacoEditor.getValue();
+        noteEditorChanged(editor, draftKey);
+      });
+      document.body.dataset.monacoEnabled = 'true';
+      const monacoStatus = $('monacoStatusText');
+      if (monacoStatus) monacoStatus.textContent = 'active';
+      const editorStatus = $('editorModeStatus');
+      if (editorStatus) editorStatus.textContent = 'Monaco active';
+      return true;
+    } catch (error) {
+      monacoHost.remove();
+      return false;
+    }
+  }
+
+  function upgradeEditorsWithMonaco() {
+    if (!window.monaco || !window.monaco.editor) {
+      const monacoStatus = $('monacoStatusText');
+      if (monacoStatus) monacoStatus.textContent = 'fallback';
+      const editorStatus = $('editorModeStatus');
+      if (editorStatus) editorStatus.textContent = 'Textarea fallback';
+      return false;
+    }
+    const upgraded = [
+      upgradeTextareaToMonaco($('editor'), getEditor(), 'htmlEditor', 'HTML editor. Type or dictate the page structure.', 'codeup_html_draft'),
+      upgradeTextareaToMonaco($('cssEditorHost'), getCssEditor(), 'cssEditor', 'CSS editor. Type or dictate the styles.', 'codeup_css_draft'),
+      upgradeTextareaToMonaco($('jsEditorHost'), getJsEditor(), 'jsEditor', 'JavaScript editor. Type or dictate the behaviour.', 'codeup_js_draft'),
+      upgradeTextareaToMonaco($('pythonEditorHost'), getPythonEditor(), 'pythonEditor', 'Python editor. Type or dictate a beginner Python program.', 'codeup_python_draft'),
+    ].some(Boolean);
+    if (upgraded) announce('Monaco editor enabled.');
+    return upgraded;
   }
 
   function makeEditor(hostId, editorId, ariaLabel, draftKey) {
@@ -937,9 +992,7 @@ else:
     editor.setAttribute('aria-label', ariaLabel);
     try { editor.value = sessionStorage.getItem(draftKey) || ''; } catch (error) { editor.value = ''; }
     editor.addEventListener('input', () => {
-      try { sessionStorage.setItem(draftKey, editor.value); } catch (error) {}
-      state.pages[state.currentPage] = getHtml();
-      scheduleAutosave();
+      noteEditorChanged(editor, draftKey);
     });
     editor.addEventListener('keydown', (event) => {
       if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
@@ -960,19 +1013,18 @@ else:
     const pythonEl = makeEditor('pythonEditorHost', 'pythonEditor', 'Python editor. Type or dictate a beginner Python program.', 'codeup_python_draft');
     const hasDraft = (htmlEl && htmlEl.value.trim()) || (cssEl && cssEl.value.trim()) || (jsEl && jsEl.value.trim());
     if (!hasDraft) {
-      if (htmlEl) htmlEl.value = state.memory.last_html || starterBodyHtml;
-      if (cssEl && !state.memory.last_html) cssEl.value = starterCss;
-      if (jsEl && !state.memory.last_html) jsEl.value = starterJs;
+      setEditorValue(htmlEl, state.memory.last_html || starterBodyHtml);
+      if (cssEl && !state.memory.last_html) setEditorValue(cssEl, starterCss);
+      if (jsEl && !state.memory.last_html) setEditorValue(jsEl, starterJs);
       persistDrafts();
     }
     if (pythonEl && !pythonEl.value.trim()) {
-      pythonEl.value = starterPython;
-      try { sessionStorage.setItem('codeup_python_draft', pythonEl.value); } catch (error) {}
+      setEditorValue(pythonEl, starterPython);
+      try { sessionStorage.setItem('codeup_python_draft', editorValue(pythonEl)); } catch (error) {}
     }
+    upgradeEditorsWithMonaco();
     return htmlEl;
   }
-
-  // Backwards-compatible alias (used by the existing setup flow).
   function ensureHtmlEditor() { return ensureEditors(); }
 
   function replaceButton(id, label, aria, handler, extraClass) {
@@ -1004,7 +1056,12 @@ else:
     preview.setAttribute('aria-label', 'Local website preview');
     preview.innerHTML = [
       '<div class="cu-panel-title">LOCAL WEBSITE PREVIEW</div>',
-      '<div class="cu-preview-toolbar">',
+      '<div class="cu-preview-toolbar" role="toolbar" aria-label="Preview controls">',
+      '  <button id="previewDesktopBtn" class="cu-button" type="button" aria-pressed="true">Desktop</button>',
+      '  <button id="previewTabletBtn" class="cu-button" type="button" aria-pressed="false">Tablet</button>',
+      '  <button id="previewMobileBtn" class="cu-button" type="button" aria-pressed="false">Mobile</button>',
+      '  <button id="previewRefreshBtn" class="cu-button" type="button">Reload</button>',
+      '  <button id="previewDescribeBtn" class="cu-button" type="button">Describe</button>',
       '  <button id="sitePreviewOpenBtn" class="cu-button cu-button-secondary" type="button" disabled>Open local site</button>',
       '</div>',
       '<div id="previewEmpty" class="ide-preview-empty">',
@@ -1027,13 +1084,47 @@ else:
         if (url) window.open(url, '_blank', 'noopener');
       });
     }
+    bindPreviewToolbar();
     return $('sitePreviewFrame');
   }
 
-  // Swap the sketchbook empty-state for the live iframe once a preview exists.
+  function setPreviewViewport(mode, shouldSpeak = true) {
+    const preview = $('sitePreview');
+    const frame = ensurePreviewFrame();
+    if (!preview || !frame) return false;
+    const next = ['mobile', 'tablet', 'desktop'].includes(mode) ? mode : 'desktop';
+    preview.dataset.viewport = next;
+    [['previewDesktopBtn', 'desktop'], ['previewTabletBtn', 'tablet'], ['previewMobileBtn', 'mobile']].forEach(([id, value]) => {
+      const button = $(id);
+      if (button) button.setAttribute('aria-pressed', value === next ? 'true' : 'false');
+    });
+    const label = next.charAt(0).toUpperCase() + next.slice(1);
+    announce(`Preview viewport: ${label}.`);
+    if (shouldSpeak) writeOutput(`Preview switched to ${label} width.`, true);
+    return true;
+  }
+
+  function bindPreviewToolbar() {
+    const bindings = [
+      ['previewDesktopBtn', () => setPreviewViewport('desktop')],
+      ['previewTabletBtn', () => setPreviewViewport('tablet')],
+      ['previewMobileBtn', () => setPreviewViewport('mobile')],
+      ['previewRefreshBtn', () => previewHtml(true)],
+      ['previewDescribeBtn', () => describePreview()],
+    ];
+    bindings.forEach(([id, handler]) => {
+      const button = $(id);
+      if (button && !button.dataset.bound) {
+        button.dataset.bound = 'true';
+        button.addEventListener('click', handler);
+      }
+    });
+  }
   function markPreviewReady() {
     const preview = $('sitePreview');
     if (preview) preview.classList.add('has-preview');
+    const previewStatus = $('previewStatusText');
+    if (previewStatus) previewStatus.textContent = 'live';
   }
 
   async function saveMemory(payload) {
@@ -1774,8 +1865,6 @@ else:
       writeOutput(error.message, true);
     }
   }
-
-  // Generate (or edit) a complete website as three separate files via /generate-site.
   async function buildWebsite(prompt, shouldSpeak = true, options = {}) {
     cancelSpeech();
     if (!prompt) {
@@ -2013,8 +2102,6 @@ else:
       speak(summary);
     }, Math.ceil(capped.length * GAP * 1000) + 200);
   }
-
-  // --- Snippet persistence (localStorage) ---
   const SNIPPET_STORAGE_KEY = 'codeup_snippets';
   const MAX_SNIPPETS = 30;
 
@@ -2100,16 +2187,22 @@ else:
   function insertAtCursor(text) {
     const editor = getEditor();
     if (!editor) return;
+    if (editor.__codeupMonacoEditor) {
+      const monacoEditor = editor.__codeupMonacoEditor;
+      const selection = monacoEditor.getSelection();
+      monacoEditor.executeEdits('codeup-voice', [{ range: selection, text, forceMoveMarkers: true }]);
+      monacoEditor.focus();
+      return;
+    }
     const start = editor.selectionStart;
     const end = editor.selectionEnd;
-    const before = editor.value.slice(0, start);
-    const after = editor.value.slice(end);
-    editor.value = before + text + after;
+    const source = editorValue(editor);
+    const before = source.slice(0, start);
+    const after = source.slice(end);
+    setEditorValue(editor, before + text + after);
     editor.selectionStart = editor.selectionEnd = start + text.length;
     editor.focus();
-    try { sessionStorage.setItem('codeup_html_draft', editor.value); } catch (error) {}
-    state.pages[state.currentPage] = getHtml();
-    scheduleAutosave();
+    noteEditorChanged(editor, 'codeup_html_draft');
   }
 
   function escapeHtmlText(value) {
@@ -2132,7 +2225,7 @@ else:
     } else {
       html += `\n${text}`;
     }
-    editor.value = ensureManagedRefs(html, !!getCss().trim(), !!getJs().trim());
+    setEditorValue(editor, ensureManagedRefs(html, !!getCss().trim(), !!getJs().trim()));
     persistDrafts();
     state.pages[state.currentPage] = getHtml();
     scheduleAutosave();
@@ -2181,7 +2274,7 @@ else:
       html = `<!doctype html>\n<html lang="en">\n<head><title>${clean}</title><link rel="stylesheet" href="style.css"></head>\n<body>\n${html}\n<script src="script.js" defer></script>\n</body>\n</html>`;
     }
     const editor = getEditor();
-    if (editor) editor.value = ensureManagedRefs(html, !!getCss().trim(), !!getJs().trim());
+    if (editor) setEditorValue(editor, ensureManagedRefs(html, !!getCss().trim(), !!getJs().trim()));
     persistDrafts();
     state.pages[state.currentPage] = getHtml();
     scheduleAutosave();
@@ -2236,14 +2329,14 @@ else:
     }
     const jsEl = getJsEditor();
     if (jsEl && !/demo-action/.test(getJs())) {
-      jsEl.value = getJs().trim() + (getJs().trim() ? '\n\n' : '') +
+      setEditorValue(jsEl, getJs().trim() + (getJs().trim() ? '\n\n' : '') +
         "var demoButton = document.getElementById('demo-action');\n" +
         "var demoResult = document.getElementById('demo-result');\n" +
         "if (demoButton && demoResult) {\n" +
         "  demoButton.addEventListener('click', function () {\n" +
         "    demoResult.textContent = 'The button interaction works.';\n" +
         "  });\n" +
-        "}";
+        "}");
       persistDrafts();
       state.pages[state.currentPage] = getHtml();
       scheduleAutosave();
@@ -2500,8 +2593,6 @@ else:
     state.walkthrough.currentIssueIndex = 0;
     writeOutput(t('Walkthrough stopped.', 'Walkthrough band ho gaya.'), true);
   }
-
-  // ----- Guided tutorial -----
   const tutorialOrder = ['html_basics', 'structure', 'css_basics', 'javascript_basics', 'accessibility_repair', 'export_share'];
 
   function updateTutorialPanel(message) {
@@ -2689,8 +2780,6 @@ else:
     if (lower === 'exit tutorial' || lower === 'start coding') { exitTutorial(); return true; }
     return false;
   }
-
-  // ----- Macros and bookmarks -----
   function macroName(command) {
     const match = command.match(/\b(?:as|macro)\s+(.+)$/i);
     return (match ? match[1] : '').trim();
@@ -2902,7 +2991,7 @@ else:
     if (!describeOnly) {
       loadGeneratedFiles({ html: saved.html || starterBodyHtml, css: saved.css || '', js: saved.js || '' });
       const pythonEl = getPythonEditor();
-      if (pythonEl && saved.python) pythonEl.value = saved.python;
+      if (pythonEl && saved.python) setEditorValue(pythonEl, saved.python);
       state.projectId = saved.projectId || state.projectId;
       state.projectName = saved.projectName || state.projectName;
       state.currentPage = saved.currentPage || state.currentPage;
@@ -2915,7 +3004,18 @@ else:
   function restoreLocalFeatureState() {
     const watchpoints = loadJsonStore('codeup_watchpoints', []);
     state.watchpointRules = Array.isArray(watchpoints) ? watchpoints : [];
-    const saved = loadJsonStore('codeup_last_work', null);
+    const savedTrack = loadJsonStore('codeup_track_state', null);
+    if (savedTrack && savedTrack.active && Array.isArray(savedTrack.steps) && savedTrack.steps.length) {
+      state.track = {
+        active: true,
+        guided: !!savedTrack.guided,
+        id: savedTrack.id || '',
+        index: Math.min(Number(savedTrack.index) || 0, savedTrack.steps.length),
+        steps: savedTrack.steps,
+        title: savedTrack.title || 'Tutorial',
+      };
+      updateTutorialPanel(trackStepMessage());
+    }    const saved = loadJsonStore('codeup_last_work', null);
     if (saved && saved.previewUrl && /^\/student-site\//.test(saved.previewUrl)) {
       state.lastUrl = saved.previewUrl;
       const frame = ensurePreviewFrame();
@@ -2928,8 +3028,6 @@ else:
       }
     }
   }
-
-  // ----- Tabs -----
   const TAB_IDS = { html: 'tabHtml', css: 'tabCss', js: 'tabJs', python: 'tabPython' };
   const PANEL_IDS = { html: 'panelHtml', css: 'panelCss', js: 'panelJs', python: 'panelPython' };
 
@@ -2988,8 +3086,6 @@ else:
     }
     buildWebsite(value, true);
   }
-
-  // ----- Read code aloud (stoppable) -----
   function describeForSpeech(label, code) {
     const trimmed = (code || '').trim();
     if (!trimmed) return t(`The ${label} is empty.`, `${label} khaali hai.`);
@@ -3022,8 +3118,6 @@ else:
     activateTab(which);
     writeOutput(describeForSpeech(entry[0], entry[1]), true);
   }
-
-  // ----- Code map (deterministic, beginner friendly) -----
   function buildCodeMap() {
     const doc = previewDocument();
     const sections = [];
@@ -3112,8 +3206,6 @@ else:
       if (!text) throw new Error(`${label} returned no text.`);
       state[stateKey] = text;
       writeOutput(text, false);
-      // Speak the short summary when the endpoint provides one (keeps spoken
-      // output concise by ear); the full report stays in the output panel.
       speakChunked(data.speech || text);
       return text;
     } catch (error) {
@@ -3208,8 +3300,8 @@ else:
       return false;
     }
     activateTab('python');
-    editor.value = example.code;
-    try { sessionStorage.setItem('codeup_python_draft', editor.value); } catch (error) {}
+    setEditorValue(editor, example.code);
+    try { sessionStorage.setItem('codeup_python_draft', editorValue(editor)); } catch (error) {}
     state.lastPythonRun = null;
     state.lastPythonError = '';
     state.lastPythonStepCursor = 0;
@@ -3638,8 +3730,6 @@ else:
   async function projectSummary() {
     return projectText('/project-summary', 'lastProjectSummary', 'Building project summary');
   }
-
-  // ----- Learner-support features ported from the main CodeUp project -----
   async function landmarks() {
     return projectText('/project-landmarks', 'lastLandmarks', 'Listing page landmarks');
   }
@@ -3657,10 +3747,7 @@ else:
   async function screenReaderSummary() {
     return projectText('/screen-reader-summary', 'lastScreenReaderSummary', 'Preparing screen reader summary');
   }
-
-  // ----- Run / debug / accessibility lab -----
   async function runWebsite() {
-    // Website Runtime Teacher: a factual, spoken "what happens when this loads".
     const text = await projectText('/website-runtime-teacher', 'lastRunSummary', 'Reading your website');
     if (text) suggestNext(['what CSS affects the main button', 'debug website', 'is this ready to share']);
     return text;
@@ -3750,8 +3837,6 @@ else:
       writeOutput(error.message || 'Debug fix failed.', true);
     }
   }
-
-  // ----- Version history -----
   function showHistory() {
     const versions = state.versions || [];
     if (!versions.length) {
@@ -3770,8 +3855,6 @@ else:
     suggestNext(['undo last change', 'compare versions', 'replay change']);
     return true;
   }
-
-  // ----- Tutorial tracks -----
   function normalizeTrack(token) {
     const lowered = (token || '').toLowerCase();
     if (lowered === 'js') return 'javascript';
@@ -3800,12 +3883,28 @@ else:
     );
   }
 
+  function persistTrackState() {
+    if (!state.track || !state.track.id) return;
+    saveJsonStore('codeup_track_state', {
+      active: !!state.track.active,
+      guided: !!state.track.guided,
+      id: state.track.id,
+      index: state.track.index || 0,
+      steps: Array.isArray(state.track.steps) ? state.track.steps : [],
+      title: state.track.title || 'Tutorial',
+    });
+  }
+
+  function clearTrackState() {
+    try { localStorage.removeItem('codeup_track_state'); } catch (error) {}
+  }
   async function startTrack(trackId) {
     const tracks = await loadTutorialTracks();
     const track = tracks[trackId];
     if (!track) { writeOutput('That tutorial track is not available yet. Try "start HTML tutorial."', true); return true; }
     state.track = { active: true, id: trackId, index: 0, steps: track.steps || [], title: track.title || 'Tutorial' };
     state.tutorial.active = false;
+    persistTrackState();
     const msg = trackStepMessage();
     updateTutorialPanel(msg);
     writeOutput(msg, true);
@@ -3819,6 +3918,7 @@ else:
     updateTutorialPanel(msg);
     writeOutput(msg, true);
     if (state.track.index >= state.track.steps.length) state.track.active = false;
+    persistTrackState();
     return true;
   }
 
@@ -3832,6 +3932,7 @@ else:
 
   function trackExit() {
     state.track.active = false;
+    clearTrackState();
     updateTutorialPanel('Tutorial paused. Type "start HTML tutorial" or "start tutorial" to resume.');
     writeOutput('Tutorial paused. You are back in normal building mode.', true);
     return true;
@@ -3858,8 +3959,6 @@ else:
     writeOutput(msg, true);
     return true;
   }
-
-  // ----- Guided "build your first website by ear" track -----
   async function loadGuidedSteps() {
     if (state.guidedSteps) return state.guidedSteps;
     try {
@@ -3875,6 +3974,7 @@ else:
     const steps = await loadGuidedSteps();
     if (!steps.length) { writeOutput('The guided build track is not available right now.', true); return true; }
     state.track = { active: true, guided: true, id: 'first_website', index: 0, steps, title: 'Build your first website by ear' };
+    persistTrackState();
     state.tutorial.active = false;
     const intro = 'Guided build. We will make a website step by step, by ear. Say "next" to move on, "repeat" to hear the step, "hint" for help, "recap" for progress, or "exit tutorial" to stop.';
     const msg = `${intro}\n\n${trackStepMessage()}`;
@@ -3883,12 +3983,64 @@ else:
     return true;
   }
 
-  // Validate the current guided step against the live project. The step feedback
-  // goes ONLY to the tutorial panel (an aria-live region), never to the main
-  // output. This way a normal command's own answer is never swallowed or
-  // clobbered: the command speaks/writes its result, the panel shows step status.
-  // Deliberately does NOT take an async token, so the in-flight command keeps its
-  // own token and still writes its output when it resolves.
+  async function loadGuidedProjects() {
+    if (Array.isArray(state.guidedProjects)) return state.guidedProjects;
+    try {
+      const data = await apiJson('/guided-projects', { method: 'GET' });
+      state.guidedProjects = Array.isArray(data.projects) ? data.projects : [];
+    } catch (error) {
+      state.guidedProjects = [];
+    }
+    return state.guidedProjects;
+  }
+
+  function guidedProjectLine(project, index) {
+    const skills = Array.isArray(project.skills) ? project.skills.join(', ') : 'starter skills';
+    return `${index + 1}. ${project.title} (${project.slug})\n   Goal: ${project.goal}\n   Skills: ${skills}\n   Start: start guided project ${project.slug}`;
+  }
+
+  async function showGuidedProjects() {
+    const projects = await loadGuidedProjects();
+    if (!projects.length) {
+      writeOutput('No guided project starters are available right now.', true);
+      return true;
+    }
+    const lines = [
+      'GUIDED PROJECT STARTERS',
+      '',
+      'These are starter projects. Each one generates editable HTML, CSS, and JavaScript in Monaco, then uses preview, audit, debug, and export checks for review.',
+      '',
+      ...projects.map(guidedProjectLine),
+    ];
+    writeOutput(lines.join('\n'), true);
+    suggestNext(projects.slice(0, 3).map(project => `start guided project ${project.slug}`));
+    return true;
+  }
+
+  async function startGuidedProject(command) {
+    const projects = await loadGuidedProjects();
+    const requested = command.replace(/^(start|open|begin|build)\s+(a\s+|the\s+)?guided\s+project\s*/i, '').trim().toLowerCase();
+    const project = projects.find(item => {
+      const haystack = `${item.slug || ''} ${item.title || ''}`.toLowerCase();
+      return haystack.includes(requested) || requested.includes(item.slug || '') || requested.includes((item.title || '').toLowerCase());
+    }) || projects[0];
+    if (!project) {
+      writeOutput('No guided project starters are available right now.', true);
+      return true;
+    }
+    state.guidedProject = {
+      slug: project.slug,
+      title: project.title,
+      status: 'in_progress',
+      startedAt: new Date().toISOString(),
+      starterPrompt: project.starter_prompt,
+    };
+    saveJsonStore('codeup_guided_project', state.guidedProject);
+    snapshotVersion(`Checkpoint before guided project: ${project.title}`, [`Started guided project starter ${project.slug}.`]);
+    writeOutput(`Starting guided project: ${project.title}.\n\nGoal: ${project.goal}\n\nI will generate the starter now. Use preview, audit, debug, and export to verify it as you build.`, true);
+    await buildWebsite(project.starter_prompt || project.title || 'guided project starter', true);
+    return true;
+  }
   async function validateGuidedProgress() {
     const track = state.track;
     if (!track || !track.active || !track.guided) return;
@@ -3900,7 +4052,7 @@ else:
         body: JSON.stringify(projectPayload({ step: step.id })),
       });
       updateTutorialPanel(data.message);
-    } catch (error) { /* keep silent so the normal command response stands */ }
+    } catch (error) { }
   }
 
   function explainJs() {
@@ -3915,8 +4067,6 @@ else:
     );
     writeOutput(msg, true);
   }
-
-  // ----- Analyze: structured checks across HTML/CSS/JS with a short spoken summary -----
   async function analyzeCode() {
     const token = nextAsyncToken();
     writeOutput(t('Analyzing the code...', 'Code analyze ho raha hai...'));
@@ -3966,8 +4116,6 @@ else:
       writeOutput(error.message, true);
     }
   }
-
-  // Lightweight, CSP-safe JavaScript sanity check (balanced brackets/quotes).
   function analyzeJsSyntax() {
     const js = getJs() || (getHtmlSource().match(/<script\b(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/i) || [])[1] || '';
     if (!js.trim()) return { ok: true, message: 'No JavaScript yet.' };
@@ -3988,8 +4136,6 @@ else:
     if (stack.length) return { ok: false, message: 'Possible JavaScript syntax issue: unclosed bracket.' };
     return { ok: true, message: 'No obvious syntax problems.' };
   }
-
-  // ----- Stop everything -----
   function stopEverything() {
     nextAsyncToken();
     cancelSpeech();
@@ -4003,8 +4149,6 @@ else:
     const output = $('output');
     if (output) output.textContent = t('Stopped speaking.', 'Bolna band ho gaya.');
   }
-
-  // ----- Design presets (offline editing) -----
   function applyDesignPreset(name) {
     const presets = {
       futuristic: [
@@ -4030,12 +4174,11 @@ else:
     beginReplay('Before design preset');
     appendCssRules(rules);
     finishReplay('After design preset');
+    snapshotVersion('Applied design preset', [`Applied ${name} design rules.`]);
     writeOutput(t(`Applied a ${name} design.`, `${name} design apply ho gaya.`), true);
     previewHtml(false, { silent: true });
     return true;
   }
-
-  // ----- Add a contact section into the HTML pane -----
   function addContactSection() {
     snapshotVersion('Before adding contact section');
     beginReplay('Before adding contact section');
@@ -4060,8 +4203,6 @@ else:
     previewHtml(false, { silent: true });
     return true;
   }
-
-  // ----- Snippet dropdown -----
   function refreshSnippetSelect() {
     const select = $('snippetSelect');
     if (!select) return;
@@ -4109,10 +4250,6 @@ else:
     deleteSnippet(name);
     refreshSnippetSelect();
   }
-
-  // Gentle command repair: fix common web-command typos before routing. This only
-  // rewrites whole command tokens (and a couple of phrases), so it never touches the
-  // contents of generated HTML, CSS, or JavaScript.
   const COMMAND_PHRASE_REPAIRS = [
     [/\bexport\s+side\b/gi, 'export site'],
     [/\bmake\s+webside\b/gi, 'make website'],
@@ -4173,9 +4310,6 @@ else:
     if (state.activeTab === 'python') return true;
     return /\bpython\b|function|condition|variable|loop|argument|parameter|return/.test(lower);
   }
-
-  // Natural-language commands that are specific to the 3-file IDE. Returns true
-  // when handled. Shared by both the voice route and the typed command box.
   function handleIdeCommand(command, lower) {
     if (lower === 'help' || lower === 'what can i do here' || lower === 'what can i do here?'
         || lower.includes('what can codeup web do') || lower.includes('show examples')) {
@@ -4233,6 +4367,8 @@ else:
     if (/\b(variable\s+watch|show\s+program\s+state)\b/.test(lower) || /\b(?:watch|track|show|read|explain)\s+(?:the\s+)?(?:python\s+)?variable\b/.test(lower)) { pythonWatchVariable(command); return true; }
     if (/\b(explain|read)\s+(the\s+)?python\s+error\b/.test(lower) || /\bwhy\s+did\s+(my\s+)?python\s+crash\b/.test(lower)) { pythonExplainError(); return true; }
     if (/\breplay\s+(my\s+)?python\s+mistake\b/.test(lower) || /\bcompare\s+python\s+before\s+and\s+after\b/.test(lower) || /\bwhy\s+does\s+the\s+python\s+fix\s+work\b/.test(lower)) { pythonMistakeReplay(); return true; }
+    if (lower.includes('show guided projects') || lower.includes('list guided projects') || lower === 'guided projects') { showGuidedProjects(); return true; }
+    if (/^(start|open|begin|build)\s+(a\s+|the\s+)?guided\s+project\b/.test(lower)) { startGuidedProject(command); return true; }
     if (lower.includes('start web tutorial') || lower.includes('build my first website') || lower.includes('build a website by ear') || lower.includes('guided build')) { startGuidedBuild(); return true; }
     if (handleWebInsertCommand(command, lower)) return true;
     if (/^(add|insert)\s+(a\s+)?button(\s+.+)?$/i.test(command)) { return addHtmlFromSpeech(command); }
@@ -4242,7 +4378,6 @@ else:
     if (lower.includes('what did i learn') || lower.includes('session recap') || lower.includes('learning recap')) { studentRecap(); return true; }
     if (lower === 'landmarks' || lower.includes('list landmarks') || lower.includes('website landmarks') || lower.includes('page landmarks') || lower.includes('show landmarks') || lower === 'sections' || lower === 'show sections' || lower.includes('show me the sections') || lower.includes('list sections') || lower.includes('page sections')) { landmarks(); return true; }
     if (/prepare (this )?for nvda/.test(lower) || /prepare (this )?for (a )?screen reader/.test(lower) || lower.includes('screen reader summary') || lower.includes('nvda summary') || lower === 'nvda') { screenReaderSummary(); return true; }
-    // Run / debug / accessibility lab.
     if (lower.includes('fix website error') || lower.includes('fix javascript error') || lower.includes('fix js error')) { debugFix(); return true; }
     if (lower.includes('debug') || lower.includes('why is this website broken') || lower.includes('why is my button not working') || lower.includes('explain website error') || lower.includes('explain errors') || lower.includes('check console errors') || lower.includes('check javascript connections') || lower.includes('debug this like a teacher')) { debugWebsite(); return true; }
     if (lower.includes('run website') || lower.includes('test website') || lower.includes('run this website') || lower.includes('test this site') || lower.includes('test this website') || lower.includes('check if this website works') || lower.includes('what happens when this runs') || lower.includes('runtime teacher') || lower.includes('teach me how this website runs')) { runWebsite(); return true; }
@@ -4609,7 +4744,6 @@ else:
     nextAsyncToken();
     cancelSpeech();
     const lower = command.toLowerCase();
-    // Instant control commands (must work without any network round-trip).
     if (lower.includes('stop everything') || lower.includes('stop speaking') || lower === 'stop'
         || lower === 'cancel' || lower.includes('be quiet') || lower.includes('chup') || lower.includes('sab rok')) {
       stopEverything();
@@ -4764,8 +4898,6 @@ else:
       return;
     }
     if (addHtmlFromSpeech(command)) return;
-
-    // Hinglish clear/preview/structure/accessibility
     if (/\b(editor|page)\s+(clear|saaf)\s+karo\b/i.test(lower) || /\bnaya\s+page\s+shuru\s+karo\b/i.test(lower)) {
       await resetSession();
       return;
@@ -4786,8 +4918,6 @@ else:
       await auditWebsite(true);
       return;
     }
-
-    // Snippet commands
     if (isSnippetCommand(lower)) {
       if (handleSnippetCommand(command)) return;
     }
@@ -4799,8 +4929,6 @@ else:
       await buildWebsite(buildMatch ? buildMatch[1] : command, true);
       return;
     }
-
-    // Natural command via Groq structured router (fallback for conversational editing)
     if (command.length > 10) {
       writeOutput(t('Processing...', 'Process ho raha hai...'));
       const action = await routeNaturalCommand(command);
@@ -4823,7 +4951,6 @@ else:
     nextAsyncToken();
     state.wakeUntil = Date.now() + 45000;
     const lower = text.toLowerCase();
-    // Control + IDE commands route through the same handler as voice.
     if (lower.includes('stop everything') || lower.includes('stop speaking') || lower === 'stop'
         || lower === 'cancel' || lower.includes('clear command') || lower.includes('be quiet')) {
       await handleVoiceCommand(text);
@@ -4922,8 +5049,6 @@ else:
       await handleVoiceCommand(text);
       return;
     }
-
-    // Natural conversational editing via Groq router
     if (text.length > 10) {
       writeOutput(t('Processing...', 'Process ho raha hai...'));
       const action = await routeNaturalCommand(text);
@@ -5171,6 +5296,8 @@ else:
         ? 'Voice On'
         : 'Voice Off';
     const statusEl = $('voiceStatus');
+    const railStatus = $('voiceRailStatus');
+    if (railStatus) railStatus.textContent = state.paused ? 'paused' : state.activeVoice ? 'on' : 'off';
     if (statusEl) {
       statusEl.textContent = state.paused ? 'Voice paused' : activelyListening ? 'Voice on — listening' : 'Voice off';
       statusEl.setAttribute('data-voice', state.paused ? 'paused' : activelyListening ? 'on' : 'off');
@@ -5183,8 +5310,6 @@ else:
     if (field) field.value = '';
     await handleStudentText(value);
   }
-
-  // ----- Command palette (compact, keyboard + screen-reader accessible) -----
   function isPaletteOpen() {
     const overlay = $('paletteOverlay');
     return !!(overlay && !overlay.hidden);
@@ -5234,8 +5359,6 @@ else:
     document.title = 'CodeUp';
     const pageTitle = document.querySelector('.cu-title');
     if (pageTitle) pageTitle.textContent = 'CodeUp';
-
-    // Real action buttons (not links). Labels match the IDE toolbar.
     replaceButton('generateBtn', 'Generate', 'Generate a website from the command box', generateFromCommand);
     replaceButton('runBtn', 'Run', 'Run live preview of HTML, CSS, and JavaScript', () => previewHtml(true));
     replaceButton('clearOutputBtn', 'Clear', 'Clear the output panel', clearOutput);
@@ -5320,21 +5443,18 @@ else:
         pythonConditionalBreakpoint();
       });
     }
-
-    // Any command chip (palette, idea card, try-next, preview hint) runs the same
-    // pipeline. Delegated so dynamically added try-next chips work too.
     document.addEventListener('click', (event) => {
-      const chip = event.target && event.target.closest ? event.target.closest('.ide-chip[data-cmd]') : null;
+      const chip = event.target && event.target.closest ? event.target.closest('[data-cmd]') : null;
       if (!chip) return;
       const cmd = chip.getAttribute('data-cmd') || '';
+      const file = chip.getAttribute('data-file') || '';
+      if (file) activateTab(file);
       const box = $('commandInput');
       if (box) { box.value = cmd; box.focus(); }
       cancelSpeech();
       if (chip.closest('.ide-palette-overlay')) closeCommandPalette({ returnFocus: false });
       handleStudentText(cmd);
     });
-
-    // Command palette open/close wiring.
     const openPaletteBtn = $('openPaletteBtn');
     if (openPaletteBtn) openPaletteBtn.addEventListener('click', openCommandPalette);
     const closePaletteBtn = $('closePaletteBtn');
@@ -5587,6 +5707,9 @@ else:
       getCss,
       getJs,
       getPython,
+      editorValue,
+      setEditorValue,
+      upgradeEditorsWithMonaco,
       loadGeneratedFiles,
       combineDocument,
       splitDocument,
@@ -5671,6 +5794,7 @@ else:
     await loadMemory();
     restoreVersions();
     setupUi();
+    upgradeEditorsWithMonaco();
     state.pages.home = getHtml();
     await ensureProject();
     restoreLocalFeatureState();

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="CodeUp is a simple accessible coding workspace for HTML, CSS, JavaScript, and Python practice.">
+  <meta name="description" content="CodeUp Web is a voice-first accessible website builder for HTML, CSS, JavaScript, and Python learning.">
   <title>CodeUp</title>
   <link rel="stylesheet" href="/static/style/fonts.css">
   <link rel="stylesheet" href="/static/style/core.css">
@@ -16,13 +16,16 @@
   <a href="#editor" class="skip-link">Skip to code editor</a>
   <div id="srAnnouncer" role="status" aria-live="assertive" aria-atomic="true" class="sr-only"></div>
 
-  <header class="ide-header">
+  <header class="ide-header" aria-label="CodeUp workspace header">
     <div class="ide-header-row">
-      <h1 class="cu-title">CodeUp</h1>
+      <div class="ide-brand">
+        <p class="ide-product-mark">CODEUP WEB</p>
+        <h1 class="cu-title">CodeUp</h1>
+      </div>
       <span id="voiceStatus" class="ide-voice-status" role="status" aria-live="polite">Voice off</span>
     </div>
     <p class="cu-subtitle ide-tagline">
-      Write and test small websites or Python programs. Use the buttons, keyboard, or voice commands.
+      Blind-first website builder for learning HTML, CSS, and JavaScript. Build with buttons, keyboard, or voice commands.
     </p>
     <div class="ide-settings" role="group" aria-label="Accessibility settings">
       <label class="ide-field">
@@ -45,6 +48,7 @@
       <button id="dyslexiaToggle" class="theme-toggle" type="button" aria-pressed="false">Dyslexia Mode</button>
       <button id="motionToggle" class="theme-toggle" type="button" aria-pressed="false">Reduce Motion</button>
       <button id="nightToggle" class="theme-toggle" type="button" aria-pressed="false">Night Mode</button>
+      <button id="demoModeBtn" class="theme-toggle" type="button" aria-pressed="false">Demo Mode</button>
     </div>
   </header>
 
@@ -201,7 +205,70 @@
   </div>
 
   <main class="ide-main">
+    <aside class="ide-left" aria-label="Workspace navigation and guided learning">
+      <section class="ide-rail-block ide-status-rail" aria-labelledby="workspaceStatusTitle">
+        <p class="ide-kicker">Workspace</p>
+        <h2 id="workspaceStatusTitle" class="ide-rail-title">Build By Ear</h2>
+        <dl class="ide-status-grid">
+          <div>
+            <dt>Editor</dt>
+            <dd id="monacoStatusText">starting</dd>
+          </div>
+          <div>
+            <dt>Preview</dt>
+            <dd id="previewStatusText">waiting</dd>
+          </div>
+          <div>
+            <dt>Voice</dt>
+            <dd id="voiceRailStatus">off</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="ide-rail-block" aria-labelledby="fileRailTitle">
+        <h2 id="fileRailTitle" class="ide-rail-title">Files</h2>
+        <div class="ide-file-rail" role="group" aria-label="Switch code files">
+          <button type="button" class="ide-file-btn" data-file="html" data-cmd="show HTML file">index.html</button>
+          <button type="button" class="ide-file-btn" data-file="css" data-cmd="show CSS file">style.css</button>
+          <button type="button" class="ide-file-btn" data-file="js" data-cmd="show JavaScript file">script.js</button>
+          <button type="button" class="ide-file-btn" data-file="python" data-cmd="python editor">python.py</button>
+        </div>
+      </section>
+
+      <section class="ide-rail-block" aria-labelledby="generationRailTitle">
+        <h2 id="generationRailTitle" class="ide-rail-title">Staged Build</h2>
+        <ol class="ide-stage-list" aria-label="Guided website generation stages">
+          <li>Goal</li>
+          <li>Audience</li>
+          <li>Sections</li>
+          <li>Style</li>
+          <li>Interactions</li>
+        </ol>
+        <div class="ide-rail-actions" role="group" aria-label="Guided generation commands">
+          <button type="button" class="cu-button cu-button-primary" data-cmd="start guided website generation">Start Flow</button>
+          <button type="button" class="cu-button" data-cmd="try a different layout but preserve content">Remix</button>
+        </div>
+      </section>
+
+      <section class="ide-rail-block" aria-labelledby="curriculumRailTitle">
+        <h2 id="curriculumRailTitle" class="ide-rail-title">Curriculum</h2>
+        <div class="ide-track-buttons" role="group" aria-label="Learning tracks">
+          <button type="button" class="ide-track-btn" data-cmd="start HTML tutorial">HTML</button>
+          <button type="button" class="ide-track-btn" data-cmd="start CSS tutorial">CSS</button>
+          <button type="button" class="ide-track-btn" data-cmd="start JavaScript tutorial">JavaScript</button>
+          <button type="button" class="ide-track-btn" data-cmd="build my first website">First Website</button>
+        </div>
+      </section>
+    </aside>
+
     <section class="ide-editors cu-panel" aria-label="Code editors">
+      <div class="ide-workbench-head">
+        <div>
+          <p class="ide-kicker">Workbench</p>
+          <h2 class="ide-workbench-title">Code files</h2>
+        </div>
+        <span id="editorModeStatus" class="ide-editor-status" role="status">Preparing Monaco</span>
+      </div>
       <div class="ide-tabs" role="tablist" aria-label="Editor files">
         <button class="ide-tab" id="tabHtml" type="button" role="tab" aria-controls="panelHtml" aria-selected="true">index.html</button>
         <button class="ide-tab" id="tabCss" type="button" role="tab" aria-controls="panelCss" aria-selected="false" tabindex="-1">style.css</button>
@@ -357,7 +424,9 @@
     </aside>
   </main>
 
+  <script src="/static/vendor/monaco/vs/loader.js?v=0.56.0"></script>
+  <script src="/static/monaco-loader.js?v=1"></script>
   <script src="/static/voice-memory-engine.js?v=1"></script>
-  <script src="/static/codeup-html.js?v=ide-5"></script>
+  <script src="/static/codeup-html.js?v=ide-6"></script>
 </body>
 </html>
