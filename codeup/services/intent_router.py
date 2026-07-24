@@ -810,7 +810,7 @@ RULES: tuple[IntentRule, ...] = (
         70,
         (
             r"\bpreview\b",
-            r"\bshow\s+website\b",
+            r"\bshow\s+(?:me\s+)?(?:the\s+)?website\b",
             r"\brun\s+website\b",
             r"\bdikhao\b",
             r"\bpage\s+preview\s+karo\b",

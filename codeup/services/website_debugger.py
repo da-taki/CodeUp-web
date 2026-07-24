@@ -59,8 +59,6 @@ def collect_issues(html: str, css: str = "", js: str = "") -> list[dict[str, str
 
     present_ids = _ids_in_html(html)
     present_set = set(present_ids)
-
-    # Missing DOM ids referenced by JavaScript.
     for ref in dict.fromkeys(_ids_referenced_by_js(js)):
         if ref not in present_set:
             issues.append(
@@ -71,8 +69,6 @@ def collect_issues(html: str, css: str = "", js: str = "") -> list[dict[str, str
                     "fix": f'Either add id="{ref}" to the matching element, or change the JavaScript to use an id that exists.',
                 }
             )
-
-    # Duplicate ids.
     seen: set[str] = set()
     for current in present_ids:
         if current in seen:
@@ -86,8 +82,6 @@ def collect_issues(html: str, css: str = "", js: str = "") -> list[dict[str, str
             )
             break
         seen.add(current)
-
-    # Unsafe JavaScript patterns.
     if UNSAFE_JS.search(js):
         issues.append(
             {
@@ -97,8 +91,6 @@ def collect_issues(html: str, css: str = "", js: str = "") -> list[dict[str, str
                 "fix": "Replace eval/new Function with normal functions, and update the DOM with textContent or elements instead of document.write.",
             }
         )
-
-    # Likely infinite loop.
     if re.search(r"\bwhile\s*\(\s*true\s*\)", js) and "break" not in js:
         issues.append(
             {
@@ -117,8 +109,6 @@ def collect_issues(html: str, css: str = "", js: str = "") -> list[dict[str, str
                 "fix": "Add a stop condition to the for loop.",
             }
         )
-
-    # JavaScript bracket / syntax balance.
     balanced, line = _balanced(js)
     if not balanced:
         issues.append(
@@ -129,8 +119,6 @@ def collect_issues(html: str, css: str = "", js: str = "") -> list[dict[str, str
                 "fix": "Check that every opening bracket has a matching closing bracket near that line.",
             }
         )
-
-    # Interactivity expected but no handlers.
     has_button = bool(re.search(r"<button\b", html, re.IGNORECASE))
     has_form = bool(re.search(r"<form\b", html, re.IGNORECASE))
     has_listener = "addeventlistener" in js.lower() or re.search(r"\bon[a-z]+\s*=", html, re.IGNORECASE)
@@ -143,8 +131,6 @@ def collect_issues(html: str, css: str = "", js: str = "") -> list[dict[str, str
                 "fix": "Add an addEventListener for the button or form in script.js.",
             }
         )
-
-    # Form submit that reloads the page.
     if has_form and "addeventlistener" in js.lower() and "preventdefault" not in js.lower():
         issues.append(
             {
@@ -154,8 +140,6 @@ def collect_issues(html: str, css: str = "", js: str = "") -> list[dict[str, str
                 "fix": "Call event.preventDefault() at the start of the submit handler.",
             }
         )
-
-    # Dynamic output without an aria-live region.
     updates_dom = bool(re.search(r"\.(?:textContent|innerHTML)\s*=", js))
     if updates_dom and "aria-live" not in html.lower():
         issues.append(
@@ -275,8 +259,6 @@ def build_debug_teacher(html: str, css: str = "", js: str = "") -> dict[str, Any
     js_map = analyze_javascript(js)
     issues: list[dict[str, Any]] = []
     selector_listener = _selector_to_listener_vars(js)
-
-    # 1. JS DOM queries that match no HTML element (the classic broken connection).
     seen_query: set[tuple[str, int]] = set()
     for query in js_map["queries"]:
         selector = query["selector"]
@@ -303,8 +285,6 @@ def build_debug_teacher(html: str, css: str = "", js: str = "") -> dict[str, Any
             )
             spoken = f"script.js asks for {selector}, but nothing in your HTML matches it."
         issues.append(_teacher_issue("high", "script.js", query["line"], problem, why, fix, spoken))
-
-    # 2. Duplicate ids.
     id_lines: dict[str, list[int]] = {}
     for record in records:
         current = record.attrs.get("id")
@@ -323,12 +303,8 @@ def build_debug_teacher(html: str, css: str = "", js: str = "") -> dict[str, Any
                     f"The id {current} is repeated. Make each id unique.",
                 )
             )
-
-    # 3. Buttons / forms that look intended to be interactive but have no handler.
     buttons = [record for record in records if record.tag == "button"]
     forms = [record for record in records if record.tag == "form"]
-    # Use a regex fallback so single-char variables (b.addEventListener) still count
-    # as "a click listener exists" — we only warn when none is present at all.
     has_click_js = bool(re.search(r"addEventListener\(\s*['\"]click['\"]", js, re.IGNORECASE))
     has_submit_js = bool(re.search(r"addEventListener\(\s*['\"]submit['\"]", js, re.IGNORECASE))
     has_click = bool([item for item in js_map["listeners"] if item["event"] == "click"]) or has_click_js
@@ -357,8 +333,6 @@ def build_debug_teacher(html: str, css: str = "", js: str = "") -> dict[str, Any
                 "Your form has no submit listener, so it just reloads the page.",
             )
         )
-
-    # 4. Empty buttons / unnamed controls.
     for record in records:
         if record.tag == "button" and not (record.name or "").strip():
             issues.append(
@@ -372,8 +346,6 @@ def build_debug_teacher(html: str, css: str = "", js: str = "") -> dict[str, Any
                     "One button has no label. Give it clear text.",
                 )
             )
-
-    # 5. Buttons inside a form with no type (default submit can surprise beginners).
     form_ranges = [(form.line, form.depth) for form in forms]
     if form_ranges:
         for record in buttons:
@@ -391,8 +363,6 @@ def build_debug_teacher(html: str, css: str = "", js: str = "") -> dict[str, Any
                     )
                 )
                 break
-
-    # 6. Links with href="#" and no click handler.
     onclick_in_html = bool(re.search(r"\bonclick\s*=", html, re.IGNORECASE))
     for record in records:
         if record.tag == "a" and record.attrs.get("href", "").strip() == "#" and not has_click and not onclick_in_html:
@@ -408,8 +378,6 @@ def build_debug_teacher(html: str, css: str = "", js: str = "") -> dict[str, Any
                 )
             )
             break
-
-    # 7. CSS selectors that match nothing.
     for rule in parse_css_rules(css):
         selector = rule["selector"]
         if matches(selector, records):
@@ -459,8 +427,6 @@ def build_debug_teacher(html: str, css: str = "", js: str = "") -> dict[str, Any
             ]
         )
     blocks.append('Say "fix website error" to apply the safe fixes I can make automatically.')
-
-    # Short spoken summary: the count plus the most important issue.
     top = issues[0]
     plural = "issue" if len(issues) == 1 else "issues"
     more = "" if len(issues) == 1 else f" The other {len(issues) - 1} are on screen."
@@ -475,9 +441,6 @@ def apply_safe_js_fixes(html: str, css: str = "", js: str = "") -> dict[str, Any
 
     present = set(_ids_in_html(fixed_html))
     referenced = [ref for ref in dict.fromkeys(_ids_referenced_by_js(js)) if ref not in present]
-
-    # Safe fix: when JS references a single missing id and exactly one obvious target
-    # element has no id, attach the referenced id to that element.
     for ref in referenced:
         candidates = list(
             re.finditer(r"<(button|form|input|textarea|select)\b(?![^>]*\bid=)[^>]*>", fixed_html, re.IGNORECASE)
@@ -489,8 +452,6 @@ def apply_safe_js_fixes(html: str, css: str = "", js: str = "") -> dict[str, Any
             fixed_html = fixed_html[: match.start()] + replacement + fixed_html[match.end() :]
             present.add(ref)
             changes.append(f'Added id="{ref}" to the <{tag}> element so the JavaScript can find it.')
-
-    # Never let a "fix" introduce unsafe patterns.
     if UNSAFE_JS.search(fixed_html):
         fixed_html = html or ""
         changes = []

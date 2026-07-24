@@ -20,14 +20,14 @@ def fallback_chat(message: str, html: str, language: str) -> str:
             )
         if is_intro:
             return (
-                "CodeUp HTML mein aapka swagat hai! Aap yahan real HTML websites bana sakte hain — voice ya keyboard se. "
+                "CodeUp Web mein aapka swagat hai! Aap yahan real HTML websites bana sakte hain — voice ya keyboard se. "
                 "Try karein: 'Build a website for my robotics club', phir 'Preview website' bolein ya type karein. "
                 "CodeUp aapko batayega website kaisi dikhti hai aur kya missing hai. "
                 "'Add that' bolein toh suggestions apply ho jayenge. "
                 "Aur features: Audit website, Export website, Outline, Sonify, Polish HTML, pause voice, resume voice."
             )
         return (
-            "Yeh CodeUp HTML hai. Aap bol ya type kar sakte hain: build a website for school fair, preview website, "
+            "Yeh CodeUp Web hai. Aap bol ya type kar sakte hain: build a website for school fair, preview website, "
             "explain website, sonify website, polish HTML, pause voice, resume voice. "
             f"Abhi {'ek website editor mein hai' if has_site else 'aap nayi website bana sakte hain'}."
         )
@@ -38,7 +38,7 @@ def fallback_chat(message: str, html: str, language: str) -> str:
         )
     if is_intro:
         return (
-            "Welcome to CodeUp HTML! This is a blind-first website builder. You can build real HTML websites "
+            "Welcome to CodeUp Web! This is a blind-first website builder. You can build real HTML websites "
             "using voice or keyboard commands. Here is what you can try:\n\n"
             "1. Build a website — say or type: Build a website for my robotics club\n"
             "2. Preview website — hosts your site locally so you can see it\n"
@@ -50,7 +50,7 @@ def fallback_chat(message: str, html: str, language: str) -> str:
             "restore versions, and use Hindi or English voice commands."
         )
     return (
-        "This is CodeUp HTML. You can ask questions, build a website, preview it locally, hear an explanation, "
+        "This is CodeUp Web. You can ask questions, build a website, preview it locally, hear an explanation, "
         "sonify the HTML structure, polish accessibility, and pause or resume voice commands. "
         f"{'There is already a site in the editor.' if has_site else 'Start with: Build a website for my school project.'}"
     )

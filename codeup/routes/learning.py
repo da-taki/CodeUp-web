@@ -20,7 +20,7 @@ from codeup.services.project_explainer import (
     build_trainer_notes,
 )
 from codeup.services.selector_explainer import build_selector_explainer
-from codeup.services.tutorial_modules import tutorial_tracks
+from codeup.services.tutorial_modules import guided_project_inventory, tutorial_tracks
 from codeup.services.version_history import build_version_history_report
 from codeup.services.web_learning import (
     build_code_map,
@@ -427,6 +427,11 @@ def pilot_report_route():
         speech = NO_PROJECT_MESSAGE
     return jsonify({"success": True, "text": text, "speech": speech, "pilot_report": text})
 
+
+
+@learning_bp.route("/guided-projects", methods=["GET"])
+def guided_projects_route():
+    return jsonify({"success": True, "projects": guided_project_inventory()})
 
 @learning_bp.route("/guided-build/steps", methods=["GET"])
 def guided_build_steps_route():

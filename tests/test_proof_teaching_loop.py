@@ -33,8 +33,6 @@ def client(monkeypatch, tmp_path):
 
 ROBOTICS = generate_site_files("make a website for my school robotics club")
 QUIZ = generate_site_files("make a quiz app about Python basics")
-
-# A small site with a deliberate id typo: JS asks for #joinBtn, HTML has #joinButton.
 TYPO_JS = "var b = document.getElementById('joinBtn'); b.addEventListener('click', function(){});"
 TYPO_HTML = "<main><h1>Robotics Club</h1><button id='joinButton'>Join Team</button></main>"
 
@@ -49,46 +47,34 @@ def _payload(files, **extra):
     }
     body.update(extra)
     return body
-
-
-# --------------------------------------------------------------------------- #
-# Command routing
-# --------------------------------------------------------------------------- #
 @pytest.mark.parametrize(
     ("command", "action"),
     [
-        # Runtime teacher (new phrases). "run website" stays run_summary by design.
         ("run website", "run_summary"),
         ("what happens when this runs", "runtime_teacher"),
         ("runtime teacher", "runtime_teacher"),
         ("teach me how this website runs", "runtime_teacher"),
-        # Debug teacher.
         ("debug website", "debug_website"),
         ("debug this like a teacher", "debug_website"),
         ("why is my button not working", "debug_website"),
         ("check javascript connections", "debug_website"),
         ("explain errors", "debug_website"),
         ("fix website error", "debug_fix"),
-        # Selector explainer.
         ("what CSS affects this button", "selector_explainer"),
         ("explain CSS for hero", "selector_explainer"),
         ("which CSS affects the contact form", "selector_explainer"),
         ("find unused CSS", "selector_explainer"),
         ("which HTML uses this class", "selector_explainer"),
-        # Readiness.
         ("is this ready to share", "readiness_score"),
         ("can I export this", "readiness_score"),
         ("teacher check", "readiness_score"),
         ("NAB readiness check", "readiness_score"),
-        # Pilot report.
         ("make pilot report", "pilot_report"),
         ("make trainer report", "pilot_report"),
         ("summarize this session", "pilot_report"),
         ("what did the student learn", "pilot_report"),
-        # Guided build.
         ("start web tutorial", "guided_build_start"),
         ("build my first website", "guided_build_start"),
-        # Existing behaviour must be preserved.
         ("explain CSS", "file_explanation"),
         ("trainer notes", "trainer_notes"),
         ("what did I learn today", "student_recap"),
@@ -105,11 +91,6 @@ def test_proof_loop_commands_route(client, command, action):
 def test_selector_explainer_query_slot(client):
     routed = client.post("/voice-command", json={"text": "what CSS affects the join button"}).get_json()
     assert routed["slots"]["query"]
-
-
-# --------------------------------------------------------------------------- #
-# Runtime teacher
-# --------------------------------------------------------------------------- #
 def test_runtime_teacher_facts_shape():
     result = build_runtime_teacher(
         ROBOTICS["html"], ROBOTICS["css"], ROBOTICS["js"], project_type=ROBOTICS["project_type"]
@@ -119,7 +100,6 @@ def test_runtime_teacher_facts_shape():
     assert facts["title"]
     assert isinstance(facts["headings"], list) and facts["headings"]
     assert "WEBSITE RUNTIME TEACHER" in result["text"]
-    # It is honest about being a static check.
     assert "did not click" in result["text"].lower()
 
 
@@ -146,11 +126,6 @@ def test_runtime_teacher_without_website_is_honest():
     result = build_runtime_teacher("", "", "")
     assert "make a website" in result["text"].lower()
     assert result["facts"]["headings"] == []
-
-
-# --------------------------------------------------------------------------- #
-# DOM / JS mismatch debugger
-# --------------------------------------------------------------------------- #
 def _issue_schema_ok(issue):
     return {"severity", "file", "line", "problem", "why_it_matters", "suggested_fix", "spoken_summary"} <= set(issue)
 
@@ -215,8 +190,6 @@ def test_debug_teacher_honest_when_clean():
 
 
 def test_debug_teacher_does_not_false_flag_single_char_var_listener():
-    # b.addEventListener('click', ...) — the parser misses single-char vars, but the
-    # debugger must not claim "no click listener" because the JS clearly has one.
     html = "<main><button id='joinButton'>Go</button></main>"
     js = "var b = document.getElementById('joinButton'); b.addEventListener('click', function(){});"
     result = build_debug_teacher(html, "", js)
@@ -225,14 +198,8 @@ def test_debug_teacher_does_not_false_flag_single_char_var_listener():
 
 def test_debug_teacher_handles_missing_html_and_empty_js():
     assert build_debug_teacher("", "", "")["issues"] == []
-    # JS that queries something with no HTML at all -> high mismatch.
     result = build_debug_teacher("", "", "document.getElementById('x').focus();")
     assert any(i["severity"] == "high" for i in result["issues"])
-
-
-# --------------------------------------------------------------------------- #
-# Selector explainer
-# --------------------------------------------------------------------------- #
 def test_selector_explainer_maps_css_to_button():
     html = "<main><h1>Robotics</h1><button class='primary-button'>Join Team</button></main>"
     css = ".primary-button { background: navy; color: white; padding: 8px; border-radius: 6px; }"
@@ -265,11 +232,6 @@ def test_selector_explainer_no_match_is_graceful():
     result = build_selector_explainer("<main><h1>Hi</h1></main>", "", "", "what CSS affects the spaceship")
     assert result["matched_elements"] == []
     assert "could not find" in result["text"].lower()
-
-
-# --------------------------------------------------------------------------- #
-# Readiness score
-# --------------------------------------------------------------------------- #
 def test_readiness_report_shape_and_level():
     result = build_readiness_report(
         ROBOTICS["html"], ROBOTICS["css"], ROBOTICS["js"], project_type=ROBOTICS["project_type"]
@@ -294,11 +256,6 @@ def test_readiness_report_clean_site_has_no_blockers_text():
     result = build_readiness_report(ROBOTICS["html"], ROBOTICS["css"], ROBOTICS["js"])
     if not result["blockers"]:
         assert "did not find any blockers" in result["text"].lower()
-
-
-# --------------------------------------------------------------------------- #
-# Guided build track
-# --------------------------------------------------------------------------- #
 def test_guided_steps_are_complete():
     steps = guided_steps()
     assert len(steps) == 12
@@ -347,11 +304,6 @@ def test_guided_endpoints(client):
         json={"step": "heading", "html": "<main><h1>Welcome</h1></main>", "css": "", "js": ""},
     ).get_json()
     assert validate["success"] and validate["valid"] is True
-
-
-# --------------------------------------------------------------------------- #
-# Pilot report
-# --------------------------------------------------------------------------- #
 def test_pilot_report_includes_required_sections():
     text = build_pilot_report(
         ROBOTICS["html"],
@@ -414,11 +366,6 @@ def test_pilot_report_route(client):
     data = client.post("/pilot-report", json=_payload(ROBOTICS, commands=["run website", "debug website"])).get_json()
     assert data["success"] is True
     assert "PILOT SESSION REPORT" in data["text"]
-
-
-# --------------------------------------------------------------------------- #
-# Export integration
-# --------------------------------------------------------------------------- #
 def _export(client, **extra):
     body = {
         "name": "Robotics",
@@ -462,16 +409,10 @@ def test_export_contains_all_demo_artifacts_and_real_pilot_report(client):
         "PILOT_REPORT.txt",
     } <= names
     pilot = bundle.read("PILOT_REPORT.txt").decode("utf-8")
-    # Not empty and not the generic "no website yet" placeholder.
     assert len(pilot) > 200
     assert "no website yet" not in pilot.lower()
     assert "Readiness score:" in pilot
     assert "debug website" in pilot  # a real recorded command
-
-
-# --------------------------------------------------------------------------- #
-# Endpoints are read-only (never return code/files to mutate the editor)
-# --------------------------------------------------------------------------- #
 def test_new_endpoints_do_not_mutate_files(client):
     for endpoint in (
         "/website-runtime-teacher",
@@ -492,31 +433,18 @@ def test_runtime_and_debug_endpoints_return_expected_keys(client):
     assert "text" in dt and "issues" in dt
     rr = client.post("/accessibility-readiness-score", json=_payload(ROBOTICS)).get_json()
     assert {"score", "level", "blockers", "suggestions", "text"} <= set(rr)
-
-
-# --------------------------------------------------------------------------- #
-# Demo flow (end to end through the deterministic services, no AI key)
-# --------------------------------------------------------------------------- #
 def test_demo_flow(client):
     files = generate_site_files("make a website for my school robotics club")
     payload = _payload(files)
-
-    # 2. run website
     assert client.post("/website-runtime-teacher", json=payload).get_json()["success"]
-    # 3. what CSS affects the join button
     se = client.post("/selector-explainer", json=_payload(files, query="what CSS affects the join button")).get_json()
     assert se["success"]
-    # 4. debug website
     assert client.post("/website-debug-teacher", json=payload).get_json()["success"]
-    # 5. check accessibility
     assert client.post("/html-audit", json={"html": files["html"]}).get_json()["success"]
-    # 6. is this ready to share
     rr = client.post("/accessibility-readiness-score", json=payload).get_json()
     assert rr["success"] and 0 <= rr["score"] <= 100
-    # 9. make pilot report
     pr = client.post("/pilot-report", json=_payload(files, commands=["make a website", "run website"])).get_json()
     assert pr["success"] and "PILOT SESSION REPORT" in pr["text"]
-    # 10. export website (with session data -> includes the pilot report)
     response = client.post(
         "/export-site.zip",
         json={
@@ -529,11 +457,6 @@ def test_demo_flow(client):
     assert response.status_code == 200
     names = set(zipfile.ZipFile(io.BytesIO(response.data)).namelist())
     assert {"index.html", "PILOT_REPORT.txt", "READINESS_SCORE.txt", "RUN_SUMMARY.txt"} <= names
-
-
-# --------------------------------------------------------------------------- #
-# Hardening: empty-project behaviour (no crash, no confusing "success")
-# --------------------------------------------------------------------------- #
 def test_empty_project_runtime_is_clear():
     result = build_runtime_teacher("", "", "")
     assert "make a website" in result["text"].lower()
@@ -576,14 +499,8 @@ def test_empty_project_endpoints_do_not_crash(client):
 
 
 def test_css_only_project_is_not_treated_as_blank():
-    # A project with only CSS is not blank; the debugger should still inspect it.
     result = build_debug_teacher("", ".ghost{color:red}", "")
     assert "nothing to debug" not in result["text"].lower()
-
-
-# --------------------------------------------------------------------------- #
-# Hardening: short spoken summaries (speech field)
-# --------------------------------------------------------------------------- #
 def _short(text, limit=320):
     return bool(text) and len(text) <= limit
 
@@ -597,7 +514,6 @@ def test_endpoints_return_short_speech(client):
     pr = client.post("/pilot-report", json=_payload(ROBOTICS, commands=["run website"])).get_json()
     for label, data in (("runtime", rt), ("debug", dt), ("readiness", rr), ("selector", se), ("pilot", pr)):
         assert data.get("speech"), label
-        # The spoken summary must be much shorter than the full on-screen report.
         assert _short(data["speech"]), f"{label} speech too long: {len(data['speech'])}"
         assert len(data["speech"]) < len(data["text"]), label
 
@@ -616,16 +532,10 @@ def test_guided_recap_has_short_speech():
 
 
 def test_no_speech_does_not_contain_code_blocks(client):
-    # Spoken summaries must not dump raw code/markup.
     payload = _payload(ROBOTICS)
     for endpoint in ("/website-runtime-teacher", "/website-debug-teacher", "/accessibility-readiness-score"):
         speech = client.post(endpoint, json=payload).get_json().get("speech", "")
         assert "<" not in speech and "{" not in speech and "```" not in speech
-
-
-# --------------------------------------------------------------------------- #
-# Hardening: readiness demo (#4) never says "ready" with real blockers
-# --------------------------------------------------------------------------- #
 def test_readiness_demo_lists_blockers_and_is_not_ready():
     html = "<main><h1>Contact</h1><form><input type='text'></form><button></button></main>"
     css = "body{color:#bbb;background:#ccc}"

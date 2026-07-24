@@ -27,9 +27,10 @@ def test_root_is_html_builder(client):
     response = client.get("/")
     body = response.get_data(as_text=True)
     assert response.status_code == 200
-    assert "CODEUP HTML" in body
-    assert "Ask / Build" in body
+    assert "CODEUP WEB" in body
+    assert "Run Command" in body
     assert "Demo Mode" in body
+    assert "Build By Ear" in body
     assert "Audit" in body
     assert "Export" in body
     assert "Reset" in body
@@ -431,7 +432,7 @@ def test_chat_uses_memory_and_has_local_fallback_without_ai(client):
     data = response.get_json()
     assert response.status_code == 200
     assert data["success"] is True
-    assert "CodeUp HTML" in data["reply"]
+    assert "CodeUp Web" in data["reply"]
     assert "build" in data["reply"].lower()
     assert data["memory"]["history"][-1]["note"] == "chat"
 
@@ -795,6 +796,105 @@ def test_review_changes_handles_no_previous_version():
     subprocess.run([node, "-e", harness], check=True, cwd=".")
 
 
+
+def test_frontend_monaco_adapter_syncs_with_fallback_textarea():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is required for the JS Monaco adapter check")
+
+    harness = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function assert(condition, message) {
+          if (!condition) throw new Error(message);
+        }
+
+        const storage = new Map();
+        const elements = {};
+        function makeElement(id) {
+          return {
+            id,
+            value: '',
+            dataset: {},
+            classList: { add() {} },
+            setAttribute() {},
+            appendChild(child) { child.parent = this; },
+            addEventListener() {},
+            focus() {},
+          };
+        }
+        elements.editor = makeElement('editor');
+        elements.htmlEditor = makeElement('htmlEditor');
+        elements.output = { textContent: '' };
+        elements.srAnnouncer = { textContent: '' };
+        elements.languageSelector = { value: 'en', addEventListener() {} };
+
+        const monacoEditors = [];
+        const context = {
+          console,
+          Date,
+          setTimeout(callback) { callback(); },
+          sessionStorage: {
+            getItem(key) { return storage.has(key) ? storage.get(key) : null; },
+            setItem(key, value) { storage.set(key, String(value)); },
+            removeItem(key) { storage.delete(key); },
+          },
+          localStorage: { getItem() { return null; }, setItem() {} },
+          SpeechSynthesisUtterance: function SpeechSynthesisUtterance(text) { this.text = text; },
+          document: {
+            createElement(tag) { return makeElement(tag); },
+            getElementById(id) { return elements[id] || null; },
+            addEventListener() {},
+            body: { dataset: {}, classList: { toggle() {}, contains() { return false; } } },
+          },
+          window: {
+            __codeupEnableTestHooks: true,
+            speechSynthesis: { cancel() {}, speak() {} },
+            addEventListener() {},
+            monaco: {
+              editor: {
+                createModel(value, language) {
+                  return { value, language };
+                },
+                create(host, options) {
+                  const editor = {
+                    value: options.model.value,
+                    getValue() { return this.value; },
+                    setValue(value) { this.value = value; if (this.listener) this.listener(); },
+                    getSelection() { return { startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 1 }; },
+                    executeEdits(_source, edits) { this.value += edits[0].text; if (this.listener) this.listener(); },
+                    onDidChangeModelContent(listener) { this.listener = listener; },
+                    focus() {},
+                  };
+                  monacoEditors.push(editor);
+                  return editor;
+                },
+              },
+            },
+          },
+        };
+        context.window.window = context.window;
+        context.window.document = context.document;
+        context.window.sessionStorage = context.sessionStorage;
+        context.window.localStorage = context.localStorage;
+        context.window.monaco = context.window.monaco;
+
+        vm.runInNewContext(fs.readFileSync('static/codeup-html.js', 'utf8'), context);
+        const api = context.window.__codeupVoiceTest;
+
+        assert(api.upgradeEditorsWithMonaco(), 'Monaco upgrade should activate when monaco is present');
+        assert(context.document.body.dataset.monacoEnabled === 'true', 'body should record Monaco availability');
+        api.setEditorValue(elements.htmlEditor, '<h1>Synced</h1>');
+        assert(api.editorValue(elements.htmlEditor).includes('Synced'), 'adapter should read Monaco value');
+        monacoEditors[0].setValue('<main>Changed in Monaco</main>');
+        assert(elements.htmlEditor.value.includes('Changed in Monaco'), 'Monaco edits should sync back to textarea');
+        assert(storage.get('codeup_html_draft').includes('Changed in Monaco'), 'Monaco edits should persist drafts');
+        """
+    )
+
+    subprocess.run([node, "-e", harness], check=True, cwd=".")
 def test_frontend_voice_css_edits_are_single_block_and_wrap_fragments():
     node = shutil.which("node")
     if not node:

@@ -39,7 +39,7 @@ BLOCKED_PATTERNS = re.compile(
 MAX_HTML_OUTPUT = 8000
 MAX_SNIPPET_NAME = 60
 
-SYSTEM_PROMPT = """You are a structured intent mapper for CodeUp HTML, a blind-first web editor.
+SYSTEM_PROMPT = """You are a structured intent mapper for CodeUp Web, a blind-first web editor.
 Given a learner's voice command and the current HTML context, return ONLY valid JSON (no markdown fences, no prose).
 
 Allowed actions: {actions}
