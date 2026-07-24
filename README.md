@@ -1,4 +1,4 @@
-﻿# CodeUp Web
+# CodeUp Web
 
 A voice-first, accessibility-focused website builder for beginners.
 
@@ -216,7 +216,7 @@ CodeUp-web/
 |   |-- storage.py            JSON-backed local storage
 |   |-- models.py             Domain models
 |   |-- routes/               Flask blueprints
-|   |-- runtime/              Python runner sandbox
+|   |-- runtime/              Constrained Python runner
 |   `-- services/             Generation, routing, audit, explainers, export
 |-- static/
 |   |-- codeup-html.js        Browser IDE controller
@@ -236,6 +236,7 @@ Generated projects are starter sites for learning. CodeUp Web validates generate
 
 ## Known Limitations
 
+- Python mode is a constrained educational runner intended for beginner programs; it is not a security boundary for hostile untrusted code.
 - Voice input and speech output depend on browser support; Chrome or Edge is recommended.
 - Without cloud AI keys, generation uses deterministic templates with limited variation.
 - Guided projects are starter flows and are not full milestone-validated courses.

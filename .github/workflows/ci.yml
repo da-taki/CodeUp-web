@@ -49,4 +49,5 @@ jobs:
       - name: Check JS syntax
         run: |
           node --check static/voice-memory-engine.js
+          node --check static/monaco-loader.js
           node --check static/codeup-html.js
