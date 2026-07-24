@@ -929,10 +929,64 @@ RULES: tuple[IntentRule, ...] = (
 )
 
 
+def _route_python_intent(command: str) -> IntentResult | None:
+    lower = command.lower().strip()
+    if "website" in lower or "site" in lower:
+        return None
+    state_patterns: tuple[tuple[str, str], ...] = (
+        (r"^next\s+step$", "next"),
+        (r"^previous\s+step$", "previous"),
+        (r"^go\s+back\s+one\s+step$", "previous"),
+        (r"^explain\s+this\s+step$", "current"),
+        (r"^what\s+changed\s+in\s+python$", "what_changed"),
+        (r"^where\s+am\s+i\s+in\s+python$", "where"),
+        (r"^repeat\s+that$", "repeat"),
+        (r"^why\s+did\s+[a-zA-Z_]\w*\s+change$", "why_variable_change"),
+        (r"^why\s+did\s+the\s+condition\s+pass$", "condition_pass"),
+        (r"^why\s+did\s+the\s+condition\s+fail$", "condition_fail"),
+        (r"^explain\s+the\s+loop$", "loop"),
+        (r"^step\s+into(?:\s+function)?$", "step_into"),
+        (r"^step\s+out$", "step_out"),
+        (r"^leave\s+function$", "step_out"),
+        (r"^what\s+function\s+am\s+i\s+in$", "where_function"),
+        (r"^what\s+arguments\s+were\s+passed$", "arguments"),
+        (r"^what\s+are\s+the\s+parameters$", "parameters"),
+        (r"^what\s+did\s+it\s+return$", "return"),
+        (r"^where\s+does\s+it\s+go\s+back$", "go_back"),
+        (r"^explain\s+this\s+function(?:\s+call)?$", "function"),
+        (r"^why\s+did\s+this\s+function\s+return\s+this$", "why_function_return"),
+    )
+    for pattern, action in state_patterns:
+        if re.search(pattern, lower):
+            slots: dict[str, Any] = {"state_action": action}
+            match = re.search(r"^why\s+did\s+([a-zA-Z_]\w*)\s+change$", lower)
+            if match:
+                slots["variable"] = match.group(1)
+            return IntentResult("python_state_watch", 0.98, command, slots)
+    if re.search(r"\b(run|execute)\s+(?:this\s+)?(?:python\s+)?code\b", lower):
+        return IntentResult("python_run", 0.98, command)
+    if re.search(r"\bteach\s+me\s+(?:this\s+)?code\b", lower):
+        return IntentResult("python_teach", 0.98, command)
+    if re.search(r"\baudio\s+code\s+map\b", lower):
+        return IntentResult("python_audio_code_map", 0.98, command)
+    match = re.search(r"\bwatch\s+variable\s+([a-zA-Z_]\w*)\b", lower)
+    if match:
+        return IntentResult("python_watch_variable", 0.98, command, {"variable": match.group(1)})
+    match = re.search(r"\bbreak\s+when\s+(.+)$", command, re.IGNORECASE)
+    if match:
+        return IntentResult("python_conditional_breakpoint", 0.98, command, {"condition": match.group(1).strip()})
+    if re.search(r"\bconditional\s+breakpoint\b", lower):
+        return IntentResult("python_conditional_breakpoint", 0.98, command, {"condition": command})
+    return None
+
+
 def route_intent(text: str) -> IntentResult:
     command = repair_command((text or "").strip())
     if not command:
         return IntentResult("unknown", 0.0, command, needs_clarification=True, message="No command heard")
+    python_intent = _route_python_intent(command)
+    if python_intent is not None:
+        return python_intent
 
     candidates: list[IntentResult] = []
     for rule in RULES:

@@ -796,7 +796,6 @@ def test_review_changes_handles_no_previous_version():
     subprocess.run([node, "-e", harness], check=True, cwd=".")
 
 
-
 def test_frontend_monaco_adapter_syncs_with_fallback_textarea():
     node = shutil.which("node")
     if not node:
@@ -895,6 +894,8 @@ def test_frontend_monaco_adapter_syncs_with_fallback_textarea():
     )
 
     subprocess.run([node, "-e", harness], check=True, cwd=".")
+
+
 def test_frontend_voice_css_edits_are_single_block_and_wrap_fragments():
     node = shutil.which("node")
     if not node:

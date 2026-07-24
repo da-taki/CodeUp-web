@@ -428,10 +428,10 @@ def pilot_report_route():
     return jsonify({"success": True, "text": text, "speech": speech, "pilot_report": text})
 
 
-
 @learning_bp.route("/guided-projects", methods=["GET"])
 def guided_projects_route():
     return jsonify({"success": True, "projects": guided_project_inventory()})
+
 
 @learning_bp.route("/guided-build/steps", methods=["GET"])
 def guided_build_steps_route():

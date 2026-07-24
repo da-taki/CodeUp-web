@@ -460,7 +460,9 @@ if (quizScoreStatus) {
             changes.append("Added a score tracking status area.")
 
     if "add comments" in lower or "add comment" in lower or "comment the code" in lower:
-        changes.append("Kept the source files clean. Use code map, step narration, or learning notes for explanations instead of inserted comments.")
+        changes.append(
+            "Kept the source files clean. Use code map, step narration, or learning notes for explanations instead of inserted comments."
+        )
 
     if "use a function" in lower or "use function" in lower or "use functions" in lower:
         js, message = _function_based_js(js)
