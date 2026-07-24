@@ -1,4 +1,4 @@
-# CodeUp Web
+﻿# CodeUp Web
 
 A voice-first, accessibility-focused website builder for beginners.
 
@@ -118,7 +118,7 @@ ALLOWED_ORIGINS=
 
 Do not commit a real `.env` file or provider key.
 
-## Demo Flow
+## Demo flow
 
 Use the command box if microphone support is unavailable. The same router handles typed and spoken commands.
 

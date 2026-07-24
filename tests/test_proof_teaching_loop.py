@@ -47,6 +47,8 @@ def _payload(files, **extra):
     }
     body.update(extra)
     return body
+
+
 @pytest.mark.parametrize(
     ("command", "action"),
     [
@@ -91,6 +93,8 @@ def test_proof_loop_commands_route(client, command, action):
 def test_selector_explainer_query_slot(client):
     routed = client.post("/voice-command", json={"text": "what CSS affects the join button"}).get_json()
     assert routed["slots"]["query"]
+
+
 def test_runtime_teacher_facts_shape():
     result = build_runtime_teacher(
         ROBOTICS["html"], ROBOTICS["css"], ROBOTICS["js"], project_type=ROBOTICS["project_type"]
@@ -126,6 +130,8 @@ def test_runtime_teacher_without_website_is_honest():
     result = build_runtime_teacher("", "", "")
     assert "make a website" in result["text"].lower()
     assert result["facts"]["headings"] == []
+
+
 def _issue_schema_ok(issue):
     return {"severity", "file", "line", "problem", "why_it_matters", "suggested_fix", "spoken_summary"} <= set(issue)
 
@@ -200,6 +206,8 @@ def test_debug_teacher_handles_missing_html_and_empty_js():
     assert build_debug_teacher("", "", "")["issues"] == []
     result = build_debug_teacher("", "", "document.getElementById('x').focus();")
     assert any(i["severity"] == "high" for i in result["issues"])
+
+
 def test_selector_explainer_maps_css_to_button():
     html = "<main><h1>Robotics</h1><button class='primary-button'>Join Team</button></main>"
     css = ".primary-button { background: navy; color: white; padding: 8px; border-radius: 6px; }"
@@ -232,6 +240,8 @@ def test_selector_explainer_no_match_is_graceful():
     result = build_selector_explainer("<main><h1>Hi</h1></main>", "", "", "what CSS affects the spaceship")
     assert result["matched_elements"] == []
     assert "could not find" in result["text"].lower()
+
+
 def test_readiness_report_shape_and_level():
     result = build_readiness_report(
         ROBOTICS["html"], ROBOTICS["css"], ROBOTICS["js"], project_type=ROBOTICS["project_type"]
@@ -256,6 +266,8 @@ def test_readiness_report_clean_site_has_no_blockers_text():
     result = build_readiness_report(ROBOTICS["html"], ROBOTICS["css"], ROBOTICS["js"])
     if not result["blockers"]:
         assert "did not find any blockers" in result["text"].lower()
+
+
 def test_guided_steps_are_complete():
     steps = guided_steps()
     assert len(steps) == 12
@@ -304,6 +316,8 @@ def test_guided_endpoints(client):
         json={"step": "heading", "html": "<main><h1>Welcome</h1></main>", "css": "", "js": ""},
     ).get_json()
     assert validate["success"] and validate["valid"] is True
+
+
 def test_pilot_report_includes_required_sections():
     text = build_pilot_report(
         ROBOTICS["html"],
@@ -366,6 +380,8 @@ def test_pilot_report_route(client):
     data = client.post("/pilot-report", json=_payload(ROBOTICS, commands=["run website", "debug website"])).get_json()
     assert data["success"] is True
     assert "PILOT SESSION REPORT" in data["text"]
+
+
 def _export(client, **extra):
     body = {
         "name": "Robotics",
@@ -413,6 +429,8 @@ def test_export_contains_all_demo_artifacts_and_real_pilot_report(client):
     assert "no website yet" not in pilot.lower()
     assert "Readiness score:" in pilot
     assert "debug website" in pilot  # a real recorded command
+
+
 def test_new_endpoints_do_not_mutate_files(client):
     for endpoint in (
         "/website-runtime-teacher",
@@ -433,6 +451,8 @@ def test_runtime_and_debug_endpoints_return_expected_keys(client):
     assert "text" in dt and "issues" in dt
     rr = client.post("/accessibility-readiness-score", json=_payload(ROBOTICS)).get_json()
     assert {"score", "level", "blockers", "suggestions", "text"} <= set(rr)
+
+
 def test_demo_flow(client):
     files = generate_site_files("make a website for my school robotics club")
     payload = _payload(files)
@@ -457,6 +477,8 @@ def test_demo_flow(client):
     assert response.status_code == 200
     names = set(zipfile.ZipFile(io.BytesIO(response.data)).namelist())
     assert {"index.html", "PILOT_REPORT.txt", "READINESS_SCORE.txt", "RUN_SUMMARY.txt"} <= names
+
+
 def test_empty_project_runtime_is_clear():
     result = build_runtime_teacher("", "", "")
     assert "make a website" in result["text"].lower()
@@ -501,6 +523,8 @@ def test_empty_project_endpoints_do_not_crash(client):
 def test_css_only_project_is_not_treated_as_blank():
     result = build_debug_teacher("", ".ghost{color:red}", "")
     assert "nothing to debug" not in result["text"].lower()
+
+
 def _short(text, limit=320):
     return bool(text) and len(text) <= limit
 
@@ -536,6 +560,8 @@ def test_no_speech_does_not_contain_code_blocks(client):
     for endpoint in ("/website-runtime-teacher", "/website-debug-teacher", "/accessibility-readiness-score"):
         speech = client.post(endpoint, json=payload).get_json().get("speech", "")
         assert "<" not in speech and "{" not in speech and "```" not in speech
+
+
 def test_readiness_demo_lists_blockers_and_is_not_ready():
     html = "<main><h1>Contact</h1><form><input type='text'></form><button></button></main>"
     css = "body{color:#bbb;background:#ccc}"

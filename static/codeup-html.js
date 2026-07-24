@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 (function () {
   const starterHtml = `<!doctype html>
@@ -447,6 +447,23 @@ else:
     if (css || js) html = ensureManagedRefs(html, !!css, !!js);
     return { html, css, js };
   }
+  function editorValue(editor) {
+    if (!editor) return '';
+    if (editor.__codeupMonacoEditor && typeof editor.__codeupMonacoEditor.getValue === 'function') {
+      return editor.__codeupMonacoEditor.getValue();
+    }
+    return editor.value || '';
+  }
+
+  function setEditorValue(editor, value) {
+    if (!editor) return;
+    const nextValue = String(value || '');
+    editor.value = nextValue;
+    if (editor.__codeupMonacoEditor && typeof editor.__codeupMonacoEditor.setValue === 'function') {
+      editor.__codeupMonacoEditor.setValue(nextValue);
+    }
+  }
+
   function getHtml() {
     const html = getHtmlSource();
     const css = getCss();
@@ -2631,7 +2648,7 @@ else:
     state.tutorial.current = tutorialOrder[state.tutorial.index];
     const module = currentTutorialModule();
     const tour = 'Guided tutorial. We will build a website, ask for a code map, edit it, check accessibility, then export it. Say "next" to move on, "repeat" to hear the step again, or "exit tutorial" to stop.';
-    const msg = `${tour}\n\nStep 1 — ${module.title}. ${module.explanation} Say or type exactly: ${module.command}. Then I will check your work.`;
+    const msg = `${tour}\n\nStep 1 â€” ${module.title}. ${module.explanation} Say or type exactly: ${module.command}. Then I will check your work.`;
     updateTutorialPanel(msg);
     writeOutput(msg, true);
   }
@@ -3846,7 +3863,7 @@ else:
     const recent = versions.slice(-10);
     const lines = ['VERSION HISTORY', '', `You have ${recent.length} saved version(s) (most recent last):`];
     recent.forEach((version, index) => {
-      const command = version.command ? ` — command: "${version.command}"` : '';
+      const command = version.command ? ` â€” command: "${version.command}"` : '';
       const summary = (version.summary && version.summary.length) ? ` (${version.summary.join('; ')})` : '';
       lines.push(`${index + 1}. ${version.note || version.label || 'Saved version'}${command}${summary}`);
     });
@@ -3878,7 +3895,7 @@ else:
     const step = track.steps[track.index];
     if (!step) return `Tutorial complete. You finished the ${track.title}. Say "exit tutorial" or keep building.`;
     return (
-      `${track.title} — step ${track.index + 1} of ${track.steps.length}: ${step.title}. ${step.say} ` +
+      `${track.title} â€” step ${track.index + 1} of ${track.steps.length}: ${step.title}. ${step.say} ` +
       `Try: "${step.command}". Say "next", "repeat", or "exit tutorial".`
     );
   }
@@ -4093,7 +4110,7 @@ else:
         .map((item) => `${item.severity.toUpperCase()} - ${item.id}: ${item.description}\n  Fix: ${item.suggested_fix}`)
         .join('\n');
       const jsNote = analyzeJsSyntax();
-      const detail = `Analysis — accessibility score ${audit.score}/100\n\n${checks}\n\n` +
+      const detail = `Analysis â€” accessibility score ${audit.score}/100\n\n${checks}\n\n` +
         `Issues:\n${issueLines || 'No structured issues found.'}\n\n` +
         `JavaScript: ${jsNote.message}\n\n` +
         `Suggestions:\n${audit.suggestions.map((s) => '- ' + s).join('\n')}`;
@@ -4218,7 +4235,7 @@ else:
     }
     const placeholder = document.createElement('option');
     placeholder.value = '';
-    placeholder.textContent = t('Choose a snippet…', 'Snippet chuniye…');
+    placeholder.textContent = t('Choose a snippetâ€¦', 'Snippet chuniyeâ€¦');
     select.appendChild(placeholder);
     names.forEach((name) => {
       const opt = document.createElement('option');
@@ -4805,8 +4822,8 @@ else:
       const VME = window.VoiceMemoryEngine;
       if (VME) {
         let mode = 'auto';
-        if (lower.includes('hindi') || lower.includes('हिंदी')) mode = 'hi';
-        else if (lower.includes('english') || lower.includes('अंग्रेज़ी')) mode = 'en';
+        if (lower.includes('hindi') || lower.includes('à¤¹à¤¿à¤‚à¤¦à¥€')) mode = 'hi';
+        else if (lower.includes('english') || lower.includes('à¤…à¤‚à¤—à¥à¤°à¥‡à¤œà¤¼à¥€')) mode = 'en';
         VME.setVoiceLangMode(mode);
         localStorage.setItem('codeup_voice_lang_mode', mode);
         const labels = { auto: 'Auto-detect', en: 'English', hi: 'Hindi' };
@@ -5299,7 +5316,7 @@ else:
     const railStatus = $('voiceRailStatus');
     if (railStatus) railStatus.textContent = state.paused ? 'paused' : state.activeVoice ? 'on' : 'off';
     if (statusEl) {
-      statusEl.textContent = state.paused ? 'Voice paused' : activelyListening ? 'Voice on — listening' : 'Voice off';
+      statusEl.textContent = state.paused ? 'Voice paused' : activelyListening ? 'Voice on â€” listening' : 'Voice off';
       statusEl.setAttribute('data-voice', state.paused ? 'paused' : activelyListening ? 'on' : 'off');
     }
   }

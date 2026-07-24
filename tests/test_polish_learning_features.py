@@ -37,6 +37,8 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setattr(config_module, "DATA_DIR", str(tmp_path))
     app_module.app.config.update(TESTING=True)
     return app_module.app.test_client()
+
+
 def test_readme_includes_merged_demo_and_app_demo():
     text = README.read_text(encoding="utf-8")
     assert "make a website for my school robotics club" in text
@@ -104,6 +106,8 @@ def test_security_policy_exists_and_is_strong():
     assert "Content Security Policy" in text
     for guarantee in ("eval", "credential", "phishing", "tracking"):
         assert guarantee in text.lower(), guarantee
+
+
 @pytest.mark.parametrize(
     ("command", "action"),
     [
@@ -171,6 +175,8 @@ def test_repair_command_fixes_known_typos():
     assert repair_command("step naration") == "step narration"
     assert repair_command("add cantact form") == "add contact form"
     assert repair_command("make profeshnal") == "make professional"
+
+
 def test_learning_endpoints_return_artifacts(client):
     files = generate_site_files("make a website for my school robotics club")
     payload = {
@@ -193,6 +199,8 @@ def test_learning_endpoints_return_artifacts(client):
 
     landmarks = client.post("/project-landmarks", json=payload).get_json()["text"]
     assert "This website has" in landmarks
+
+
 def _export(client, **extra):
     files = generate_site_files("make a website for my school robotics club")
     body = {
@@ -253,6 +261,8 @@ def test_change_replay_artifact_describes_the_edit(client):
         replay = archive.read("CHANGE_REPLAY.txt").decode("utf-8")
     assert "add a history section" in replay
     assert "section" in replay.lower()
+
+
 def _looks_like_code(text: str) -> bool:
     lowered = text.lower()
     return "<script" in lowered or "<style" in lowered or "<!doctype" in lowered or "function(" in lowered
@@ -297,6 +307,8 @@ def test_command_repair_does_not_alter_generated_code():
         assert repair_command(files["html"]) == files["html"], prompt
         assert repair_command(files["css"]) == files["css"], prompt
         assert repair_command(files["js"]) == files["js"], prompt
+
+
 def test_big_help_panel_removed(client):
     html = client.get("/ide").get_data(as_text=True)
     assert "What CodeUp Web Does" not in html

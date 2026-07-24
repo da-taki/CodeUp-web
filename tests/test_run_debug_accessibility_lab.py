@@ -46,6 +46,8 @@ def _payload(files, **extra):
     }
     body.update(extra)
     return body
+
+
 @pytest.mark.parametrize(
     ("command", "action"),
     [
@@ -101,6 +103,8 @@ def test_lab_commands_route(client, command, action):
 def test_tutorial_track_slot(client):
     routed = client.post("/voice-command", json={"text": "start accessibility tutorial"}).get_json()
     assert routed["slots"]["track"] == "accessibility"
+
+
 def test_run_summary_without_website_clarifies():
     assert build_run_summary("", "", "") == NO_WEBSITE_MESSAGE
     assert build_run_summary("<p>   </p>", "", "").startswith("I can test a website")
@@ -117,6 +121,8 @@ def test_run_summary_reports_structure(client):
 def test_run_summary_detects_interactivity():
     text = build_run_summary(QUIZ["html"], QUIZ["css"], QUIZ["js"], project_type=QUIZ["project_type"])
     assert "JavaScript is present" in text
+
+
 def test_debugger_detects_missing_dom_id():
     js = "var b = document.getElementById('submitBtn'); b.addEventListener('click', function(){});"
     ids = [issue["id"] for issue in collect_issues("<button>Send</button>", "", js)]
@@ -160,6 +166,8 @@ def test_safe_fix_never_introduces_eval(client):
         json={"html": "<button>Go</button>", "css": "", "js": "eval('x'); document.getElementById('goBtn')"},
     ).get_json()
     assert "eval(" not in result["html"] or result["html"] == "<button>Go</button>"
+
+
 def test_screen_reader_tour_includes_structure():
     tour = build_screen_reader_tour(
         ROBOTICS["html"], ROBOTICS["css"], ROBOTICS["js"], project_type=ROBOTICS["project_type"]
@@ -175,6 +183,8 @@ def test_screen_reader_tour_warns_on_vague_link():
     html = '<main><h1>Demo</h1><a href="#">click here</a></main>'
     tour = build_screen_reader_tour(html, "", "")
     assert "vague" in tour.lower()
+
+
 def test_keyboard_test_lists_focusable_and_tab_order():
     html = '<nav><a href="#a">Home</a></nav><main><button>Join</button><form><input id="n"></form></main>'
     report = build_keyboard_test(html, "a:focus { outline: 2px; }", "")
@@ -190,6 +200,8 @@ def test_keyboard_test_warns_missing_focus_empty_button_and_clickable_div():
     assert "Add a visible :focus" in report
     assert "empty" in report.lower()
     assert "not a button or link" in report
+
+
 def test_visual_description_describes_layout_colors_sections():
     desc = build_visual_description(
         ROBOTICS["html"], ROBOTICS["css"], ROBOTICS["js"], project_type=ROBOTICS["project_type"]
@@ -202,6 +214,8 @@ def test_visual_description_describes_layout_colors_sections():
 def test_visual_description_detects_named_colors():
     desc = build_visual_description("<main><h1>Hi</h1></main>", "body { background: navy; color: white; }", "")
     assert "navy" in desc.lower() or "white" in desc.lower()
+
+
 def test_readiness_score_has_number_breakdown_and_recommendation():
     score = build_readiness_score(
         ROBOTICS["html"], ROBOTICS["css"], ROBOTICS["js"], project_type=ROBOTICS["project_type"]
@@ -219,6 +233,8 @@ def test_readiness_reacts_to_keyboard_signal():
     good_score = int(re.search(r"(\d+)/100", good).group(1))
     bad_score = int(re.search(r"(\d+)/100", bad).group(1))
     assert good_score > bad_score
+
+
 def test_version_history_report_lists_versions(client):
     versions = [
         {"label": "Generated website", "command": "make a quiz app", "summary": ["Built quiz"]},
@@ -239,6 +255,8 @@ def test_version_history_is_bounded():
 
 def test_version_history_empty_message():
     assert "No saved versions yet" in build_version_history_report([])
+
+
 def test_tutorial_tracks_cover_all_paths(client):
     tracks = client.get("/tutorial/tracks").get_json()["tracks"]
     assert set(tracks) == {"html", "css", "javascript", "accessibility", "forms", "export"}
@@ -258,13 +276,14 @@ def test_tutorial_tracks_steps_are_web_relevant():
     assert resolve_track("start forms tutorial") == "forms"
 
 
-
 def test_guided_projects_inventory_route(client):
     data = client.get("/guided-projects").get_json()
     assert data["success"] is True
     assert len(data["projects"]) >= 8
     assert {"slug", "title", "goal", "skills", "starter_prompt"} <= set(data["projects"][0])
     assert any("quiz" in project["slug"] for project in data["projects"])
+
+
 def test_export_includes_new_reports(client):
     response = client.post(
         "/export-site.zip",
@@ -301,6 +320,8 @@ def test_export_version_history_conditional(client):
     )
     names = set(zipfile.ZipFile(io.BytesIO(response.data)).namelist())
     assert "VERSION_HISTORY.txt" not in names
+
+
 def test_lab_endpoints_do_not_mutate_files(client):
     for endpoint in (
         "/run-summary",

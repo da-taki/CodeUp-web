@@ -429,6 +429,63 @@ def _deepest_nesting(code: str) -> int:
     return walk(tree, 0)
 
 
+def _src_line(code: str, line_no: int | None) -> str:
+    lines = (code or "").splitlines()
+    return lines[line_no - 1].strip() if line_no and 1 <= line_no <= len(lines) else ""
+
+
+def _friendly_source(source: str) -> str:
+    text = (source or "").strip()
+    return "print " + text[6:-1] if text.startswith("print(") and text.endswith(")") else text
+
+
+def _literal_source(node: ast.AST) -> str:
+    try:
+        return ast.unparse(node)
+    except Exception:
+        return "value"
+
+
+def _node_source(code: str, node: ast.AST) -> str:
+    return _src_line(code, getattr(node, "lineno", None))
+
+
+def analyze_python_code(code: str, mode: str = "analyze", last_error: str = "") -> dict[str, Any]:
+    ok, error = validate_python_code(code)
+    if not ok:
+        return {"success": False, "error": error, "analysis": error, "speech": error}
+    if not code.strip():
+        msg = "The Python editor is empty. Add Python code first."
+        return {"success": False, "error": msg, "analysis": msg, "speech": msg}
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as exc:
+        msg = explain_error(f"SyntaxError: {exc.msg}", code)
+        return {"success": False, "error": msg, "analysis": msg, "speech": msg}
+    functions = [node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)]
+    loops = [node for node in ast.walk(tree) if isinstance(node, (ast.For, ast.While))]
+    conditions = [node for node in ast.walk(tree) if isinstance(node, ast.If)]
+    assignments = []
+    prints = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            assignments.extend(_assignment_names(node))
+        elif isinstance(node, ast.Call) and getattr(node.func, "id", "") == "print":
+            prints.append(node)
+    parts = [f"Your Python code has {len((code or '').splitlines())} lines."]
+    parts.append(f"It uses {len(loops)} loops, {len(conditions)} conditions, and {len(set(assignments))} variables.")
+    if functions:
+        parts.append("Functions: " + ", ".join(functions) + ".")
+    if assignments:
+        parts.append("Variables include " + ", ".join(sorted(set(assignments))[:8]) + ".")
+    if prints:
+        parts.append(f"It prints output on {len(prints)} line(s).")
+    if last_error:
+        parts.append(explain_error(last_error, code))
+    analysis = " ".join(parts)
+    return {"success": True, "analysis": analysis, "speech": analysis, "mode": mode}
+
+
 def build_audio_code_map(code: str, query: str = "") -> dict[str, Any]:
     ok, error = validate_python_code(code) if (code or "").strip() else (True, "")
     if not ok:
@@ -438,15 +495,11 @@ def build_audio_code_map(code: str, query: str = "") -> dict[str, Any]:
     if not non_empty:
         msg = "Your Python editor is empty."
         return {"success": True, "reply": msg, "speech": msg, "map": {"line_count": 0}}
-
-    query_lower = (query or "").lower()
-    if "nest" in query_lower or "depth" in query_lower or "indent" in query_lower:
+    if any(word in (query or "").lower() for word in ("nest", "depth", "indent")):
         depth = _deepest_nesting(code)
         msg = f"Your deepest Python nesting level is {depth}."
         return {"success": True, "reply": msg, "speech": msg, "map": {"nesting_depth": depth}}
-
-    parts = [f"Your Python code has {len(lines)} lines, with {len(non_empty)} non-empty lines."]
-    map_data: dict[str, Any] = {
+    map_data = {
         "line_count": len(lines),
         "non_empty": len(non_empty),
         "functions": [],
@@ -460,61 +513,514 @@ def build_audio_code_map(code: str, query: str = "") -> dict[str, Any]:
     try:
         tree = ast.parse(code)
     except SyntaxError as exc:
-        msg = (
-            f"Your Python code has a syntax problem near line {exc.lineno or '?'}. "
-            "I can still describe the indentation map."
+        bits = [f"line {line_no} has {_indent_width(line)} leading spaces" for line_no, line in non_empty[:8]]
+        msg = f"Your Python code has a syntax problem near line {exc.lineno or '?'}. " + "; ".join(bits) + "."
+        return {"success": True, "reply": msg, "speech": msg, "map": {**map_data, "syntax_error": exc.msg}}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef):
+            map_data["functions"].append(
+                {"name": node.name, "line": node.lineno, "parameters": [arg.arg for arg in node.args.args]}
+            )
+        elif isinstance(node, ast.For):
+            map_data["loops"].append({"kind": "for loop", "line": node.lineno, "source": _node_source(code, node)})
+        elif isinstance(node, ast.While):
+            map_data["loops"].append({"kind": "while loop", "line": node.lineno, "source": _node_source(code, node)})
+        elif isinstance(node, ast.If):
+            map_data["conditions"].append({"line": node.lineno, "expression": _literal_source(node.test)})
+        elif isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            for name in _assignment_names(node):
+                map_data["assignments"].append({"name": name, "line": getattr(node, "lineno", 0)})
+        elif isinstance(node, ast.Call) and getattr(node.func, "id", "") == "print":
+            map_data["prints"].append({"line": getattr(node, "lineno", 0), "source": _node_source(code, node)})
+    parts = [f"Your Python code has {len(lines)} lines, with {len(non_empty)} non-empty lines."]
+    if map_data["loops"]:
+        parts.append(
+            "It has " + ", ".join(f"a {item['kind']} on line {item['line']}" for item in map_data["loops"][:4]) + "."
         )
-        indent_bits = []
-        for line_no, line in non_e…10213 tokens truncated…             "index": len(steps),
-                "line": line,
+    if map_data["assignments"]:
+        parts.append(
+            "Variables include " + ", ".join(sorted({item["name"] for item in map_data["assignments"]})[:8]) + "."
+        )
+    if map_data["functions"]:
+        parts.append("Functions include " + ", ".join(item["name"] for item in map_data["functions"][:5]) + ".")
+    if map_data["prints"]:
+        parts.append(f"It prints on {len(map_data['prints'])} line(s).")
+    reply = " ".join(parts)
+    return {"success": True, "reply": reply, "speech": reply, "map": map_data}
+
+
+def build_step_narration(code: str, watched: set[str] | None = None, inputs: list[str] | None = None) -> dict[str, Any]:
+    result = run_python_code(code, inputs=inputs)
+    if not result.get("success"):
+        return result
+    output_lines = (result.get("output") or "").splitlines()
+    out_cursor = 0
+    narration, indent_depths = [], []
+    source_lines = (code or "").splitlines()
+    for event in result.get("trace") or []:
+        if event.get("type") != "line_exec":
+            continue
+        line_no = int(event.get("line") or 0)
+        source = _src_line(code, line_no)
+        if not source:
+            continue
+        if _is_print_line(code, line_no) and out_cursor < len(output_lines):
+            narration.append(f"The program prints {output_lines[out_cursor]}.")
+            out_cursor += 1
+        elif source.startswith(("for ", "while ")):
+            narration.append(f"Line {line_no} starts a loop: {source}.")
+        elif source.startswith("if "):
+            narration.append(f"Line {line_no} checks a condition: {source}.")
+        elif "=" in source:
+            narration.append(f"Line {line_no} updates a value: {source}.")
+        else:
+            narration.append(f"Line {line_no} runs: {_friendly_source(source)}.")
+        indent_depths.append(
+            (_indent_width(source_lines[line_no - 1]) // 4) if line_no and line_no <= len(source_lines) else 0
+        )
+    return {
+        **result,
+        "success": True,
+        "narration": narration,
+        "indent_depths": indent_depths,
+        "speech": f"I narrated {len(narration)} Python step(s).",
+    }
+
+
+def parse_conditional_breakpoint(text: str) -> dict[str, Any]:
+    raw = (text or "").strip()
+    if not raw:
+        raise ValueError("Tell me a condition, like total > 10.")
+    lowered = raw.lower().strip()
+    for prefix in ("conditional breakpoint", "breakpoint", "break when", "stop when", "pause when", "when"):
+        if lowered.startswith(prefix):
+            raw = raw[len(prefix) :].strip()
+            lowered = raw.lower().strip()
+            break
+    expression = f" {raw} "
+    lower_expr = expression.lower()
+    replacements = [
+        (" is greater than or equal to ", " >= "),
+        (" greater than or equal to ", " >= "),
+        (" is less than or equal to ", " <= "),
+        (" less than or equal to ", " <= "),
+        (" is greater than ", " > "),
+        (" greater than ", " > "),
+        (" is less than ", " < "),
+        (" less than ", " < "),
+        (" is not equal to ", " != "),
+        (" not equal to ", " != "),
+        (" equals ", " == "),
+        (" is ", " == "),
+    ]
+    for before, after in replacements:
+        if before in lower_expr:
+            start = lower_expr.index(before)
+            expression = expression[:start] + after + expression[start + len(before) :]
+            break
+    expression = expression.strip()
+    try:
+        tree = ast.parse(expression, mode="eval")
+    except SyntaxError as exc:
+        raise ValueError("That breakpoint condition needs a simple comparison, like total > 10.") from exc
+    if not _condition_ast_is_safe(tree.body):
+        raise ValueError("Conditional audio breakpoints only support simple variable comparisons.")
+    return {"expression": ast.unparse(tree.body), "source": raw}
+
+
+def _condition_ast_is_safe(node: ast.AST) -> bool:
+    if not isinstance(node, ast.Compare) or len(node.ops) != 1 or len(node.comparators) != 1:
+        return False
+    if not isinstance(node.left, ast.Name) or node.left.id.startswith("_"):
+        return False
+    if not isinstance(node.ops[0], (ast.Eq, ast.NotEq, ast.Gt, ast.GtE, ast.Lt, ast.LtE)):
+        return False
+    return isinstance(node.comparators[0], ast.Constant) and isinstance(
+        node.comparators[0].value, (int, float, str, bool)
+    )
+
+
+def _coerce_trace_value(value: str) -> Any:
+    try:
+        return ast.literal_eval(str(value))
+    except Exception:
+        text = str(value)
+        if text in {"True", "False"}:
+            return text == "True"
+        for caster in (int, float):
+            try:
+                return caster(text)
+            except ValueError:
+                pass
+        return text
+
+
+def _eval_condition_expression(expression: str, state: dict[str, str]) -> bool:
+    tree = ast.parse(expression, mode="eval")
+    if not _condition_ast_is_safe(tree.body):
+        return False
+    compare = tree.body
+    assert isinstance(compare, ast.Compare)
+    left = _coerce_trace_value(state.get(compare.left.id, ""))
+    right = compare.comparators[0].value
+    try:
+        if isinstance(compare.ops[0], ast.Eq):
+            return left == right
+        if isinstance(compare.ops[0], ast.NotEq):
+            return left != right
+        if isinstance(compare.ops[0], ast.Gt):
+            return left > right
+        if isinstance(compare.ops[0], ast.GtE):
+            return left >= right
+        if isinstance(compare.ops[0], ast.Lt):
+            return left < right
+        if isinstance(compare.ops[0], ast.LtE):
+            return left <= right
+    except TypeError:
+        return False
+    return False
+
+
+def _parse_trace_change(change: str) -> dict[str, str] | None:
+    text = str(change or "")
+    match = _INIT_RE.match(text)
+    if match:
+        return {"variable": match.group(1), "old_display": "", "new_display": match.group(2)}
+    match = _CHANGE_RE.match(text)
+    if match:
+        return {"variable": match.group(1), "old_display": match.group(2), "new_display": match.group(3)}
+    if text.endswith(" went out of scope"):
+        return {"variable": text[: -len(" went out of scope")], "old_display": "", "new_display": "out of scope"}
+    return None
+
+
+def parse_state(trace: list[dict[str, Any]], watched: set[str] | None = None) -> dict[str, dict[str, Any]]:
+    state: dict[str, dict[str, Any]] = {}
+    watched = watched or set()
+    for event in trace or []:
+        if event.get("type") != "state_change":
+            continue
+        line = int(event.get("line") or 0)
+        for change in event.get("changes") or []:
+            parsed = _parse_trace_change(change)
+            if not parsed:
+                continue
+            name = parsed["variable"]
+            if watched and name not in watched:
+                continue
+            if parsed["new_display"] == "out of scope":
+                state.pop(name, None)
+            else:
+                state[name] = {"value": parsed["new_display"], "line": line, "change": change}
+    return state
+
+
+def evaluate_conditional_breakpoints(
+    trace: list[dict[str, Any]], breakpoints: list[dict[str, Any]], code: str = ""
+) -> dict[str, Any]:
+    state: dict[str, str] = {}
+    pending_line_by_frame: dict[int, int] = {}
+    cause_line_by_frame: dict[int, int] = {}
+    for event in trace or []:
+        event_type = event.get("type")
+        frame = event.get("frame") if isinstance(event.get("frame"), int) else 0
+        if event_type == "line_exec":
+            line_no = int(event.get("line") or 0)
+            cause_line_by_frame[frame] = pending_line_by_frame.get(frame, line_no)
+            pending_line_by_frame[frame] = line_no
+            continue
+        if event_type != "state_change":
+            continue
+        causing_line = cause_line_by_frame.get(frame, int(event.get("line") or 0))
+        for change in event.get("changes") or []:
+            parsed = _parse_trace_change(change)
+            if parsed and parsed["new_display"] != "out of scope":
+                state[parsed["variable"]] = parsed["new_display"]
+        for breakpoint in breakpoints or []:
+            expression = str(breakpoint.get("expression") or "")
+            if expression and _eval_condition_expression(expression, state):
+                context = ", ".join(f"{name} is {value}" for name, value in sorted(state.items())[:6])
+                speech = f"Conditional audio breakpoint hit on line {causing_line}: {expression}. {context}."
+                return {
+                    "success": True,
+                    "triggered": True,
+                    "line": causing_line,
+                    "condition": breakpoint,
+                    "context": context,
+                    "speech": speech,
+                    "source": _src_line(code, causing_line),
+                }
+    return {"success": True, "triggered": False, "speech": "No conditional audio breakpoint was hit."}
+
+
+def check_conditional_breakpoints(
+    code: str, breakpoints: list[dict[str, Any]], inputs: list[str] | None = None
+) -> dict[str, Any]:
+    result = run_python_code(code, inputs=inputs)
+    if not result.get("success"):
+        return result
+    return {**result, **evaluate_conditional_breakpoints(result.get("trace") or [], breakpoints, code=code)}
+
+
+def _function_definitions(code: str) -> dict[str, dict[str, Any]]:
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return {}
+    out = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef):
+            out[node.name] = {
+                "function": node.name,
+                "definition_line": node.lineno,
+                "parameters": [arg.arg for arg in node.args.args],
+                "end_line": getattr(node, "end_lineno", node.lineno),
+            }
+    return out
+
+
+def _call_arguments_by_line(code: str, definitions: dict[str, dict[str, Any]]) -> dict[int, list[dict[str, Any]]]:
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return {}
+    calls: dict[int, list[dict[str, Any]]] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        name = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", "")
+        if name in definitions:
+            calls.setdefault(getattr(node, "lineno", 0), []).append(
+                {"function": name, "arguments": [_literal_source(arg) for arg in node.args]}
+            )
+    return calls
+
+
+def _line_in_ranges(line_no: int | None, ranges: list[tuple[int, int]]) -> bool:
+    return bool(line_no) and any(start <= int(line_no) <= end for start, end in ranges)
+
+
+def _loop_infos(code: str) -> list[dict[str, Any]]:
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return []
+    loops = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.For, ast.While)):
+            continue
+        body_ranges = [
+            (child.lineno, getattr(child, "end_lineno", child.lineno))
+            for child in node.body
+            if hasattr(child, "lineno")
+        ]
+        target = _literal_source(node.target) if isinstance(node, ast.For) else ""
+        loops.append(
+            {
+                "line": node.lineno,
+                "kind": "for" if isinstance(node, ast.For) else "while",
+                "target": target if re.fullmatch(r"[A-Za-z_]\w*", target or "") else "",
+                "body_start": node.body[0].lineno if node.body else node.lineno,
+                "body_ranges": body_ranges,
+                "source": _src_line(code, node.lineno),
+            }
+        )
+    return sorted(loops, key=lambda item: item["line"])
+
+
+def _condition_infos(code: str) -> dict[int, dict[str, Any]]:
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return {}
+    out = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.If):
+            out[node.lineno] = {
+                "line": node.lineno,
+                "expression": _literal_source(node.test),
+                "body_ranges": [(child.lineno, getattr(child, "end_lineno", child.lineno)) for child in node.body],
+            }
+    return out
+
+
+def _active_loop_context(
+    loops: list[dict[str, Any]], line_no: int, counts: dict[tuple[int, int], int], state: dict[str, str], frame: int = 0
+) -> dict[str, Any] | None:
+    active = [loop for loop in loops if _line_in_ranges(line_no, loop.get("body_ranges", []))]
+    if not active:
+        return None
+    loop = active[-1]
+    key = (loop["line"], frame)
+    if line_no == loop.get("body_start"):
+        counts[key] = counts.get(key, 0) + 1
+    context = {
+        "line": loop["line"],
+        "kind": loop["kind"],
+        "source": loop["source"],
+        "iteration": counts.get(key, 1),
+        "target": loop.get("target", ""),
+    }
+    if context["target"] and context["target"] in state:
+        context["target_value"] = state[context["target"]]
+    return context
+
+
+def _is_print_line(code: str, line_no: int) -> bool:
+    return _src_line(code, line_no).lstrip().startswith("print(")
+
+
+def _condition_reason(condition: dict[str, Any], state: dict[str, str], result: bool) -> str:
+    expression = condition.get("expression") or "condition"
+    truth = "true" if result else "false"
+    variable = ""
+    try:
+        tree = ast.parse(str(expression), mode="eval")
+        if isinstance(tree.body, ast.Compare) and isinstance(tree.body.left, ast.Name):
+            variable = tree.body.left.id
+    except Exception:
+        pass
+    value_text = f" because {variable} is currently {state.get(variable)}" if variable and variable in state else ""
+    return f"{expression} is {truth}{value_text}."
+
+
+def _function_public_info(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "function": item.get("function"),
+        "definition_line": item.get("definition_line"),
+        "call_line": item.get("call_line"),
+        "caller": item.get("caller", ""),
+        "parameters": list(item.get("parameters") or []),
+    }
+
+
+def build_state_watch_steps(code: str, trace: list[dict[str, Any]], output: str = "") -> list[dict[str, Any]]:
+    definitions = _function_definitions(code)
+    calls_by_line = _call_arguments_by_line(code, definitions)
+    loops = _loop_infos(code)
+    conditions = _condition_infos(code)
+    out_lines = [line for line in (output or "").splitlines() if line.strip()]
+    out_cursor = 0
+    steps: list[dict[str, Any]] = []
+    state: dict[str, str] = {}
+    pending: dict[int, int] = {}
+    cause_by_frame: dict[int, int] = {}
+    last_by_line: dict[int, dict[str, Any]] = {}
+    last_by_line_frame: dict[tuple[int, int], dict[str, Any]] = {}
+    loop_counts: dict[tuple[int, int], int] = {}
+    active_calls: list[dict[str, Any]] = []
+    for event in trace or []:
+        event_type = event.get("type")
+        frame = event.get("frame") if isinstance(event.get("frame"), int) else 0
+        if event_type == "call":
+            function = str(event.get("function") or "")
+            if function == "<module>":
+                continue
+            definition = definitions.get(function, {})
+            caller_line = event.get("caller_line") if isinstance(event.get("caller_line"), int) else None
+            call_source = (calls_by_line.get(caller_line or 0) or [{"function": function, "arguments": []}])[0]
+            locals_now = dict(event.get("locals") or {})
+            params = []
+            args = call_source.get("arguments") or []
+            for index, name in enumerate(definition.get("parameters") or []):
+                params.append(
+                    {
+                        "name": name,
+                        "value": locals_now.get(name, ""),
+                        "argument": args[index] if index < len(args) else "",
+                    }
+                )
+            info = {
+                "function": function,
+                "definition_line": definition.get("definition_line", event.get("line")),
+                "call_line": caller_line,
+                "caller": active_calls[-1]["function"] if active_calls else "",
+                "parameters": params,
+                "arguments": args,
+                "local_variables": locals_now,
+                "frame": frame,
+            }
+            if caller_line and caller_line in last_by_line:
+                last_by_line[caller_line]["function_call"] = _function_public_info(info)
+            active_calls.append(info)
+            continue
+        if event_type == "return":
+            function = str(event.get("function") or "")
+            if function == "<module>":
+                continue
+            line_no = int(event.get("line") or 0)
+            step = last_by_line_frame.get((line_no, frame)) or last_by_line.get(line_no)
+            call_info = next((item for item in reversed(active_calls) if item.get("frame") == frame), None)
+            if step:
+                step["function_return"] = {
+                    "function": function,
+                    "return_value": str(event.get("value", "")),
+                    "line": line_no,
+                    "call_line": (call_info or {}).get("call_line") or event.get("caller_line"),
+                    "caller_line": event.get("caller_line"),
+                    "local_variables": dict(event.get("locals") or {}),
+                    "parameters": (call_info or {}).get("parameters") or [],
+                }
+                step["function_event"] = "return"
+            active_calls = [item for item in active_calls if item.get("frame") != frame]
+            continue
+        if event_type == "line_exec":
+            line_no = int(event.get("line") or 0)
+            source = _src_line(code, line_no)
+            if not source:
+                continue
+            cause_by_frame[frame] = pending.get(frame, line_no)
+            pending[frame] = line_no
+            function = str(event.get("function") or "")
+            function = "" if function == "<module>" else function
+            step = {
+                "index": len(steps),
+                "line": line_no,
                 "source": source,
                 "spoken_source": _friendly_source(source),
                 "variables_before": dict(state),
                 "variables_after": dict(state),
                 "changed_variables": [],
                 "output": "",
-                "loop_context": _active_loop_context(loops, line, loop_counts, state),
-                "function_context": function_name,
-                "function_call_stack": stack_public,
+                "loop_context": _active_loop_context(loops, line_no, loop_counts, state, frame),
+                "function_context": function,
+                "function_call_stack": [_function_public_info(item) for item in active_calls],
                 "function_locals": dict(active_calls[-1].get("local_variables") or {}) if active_calls else {},
                 "function_call": None,
                 "function_return": None,
                 "function_event": "",
                 "condition": None,
             }
-            if per_print_mode and _is_print_line(code, line) and out_cursor < len(out_lines):
+            if _is_print_line(code, line_no) and out_cursor < len(out_lines):
                 step["output"] = out_lines[out_cursor][:200]
                 out_cursor += 1
             steps.append(step)
-            last_step_by_line[line] = step
+            last_by_line[line_no] = step
+            last_by_line_frame[(line_no, frame)] = step
             continue
         if event_type != "state_change":
             continue
-
-        frame = event.get("frame")
-        frame_key = frame if isinstance(frame, int) else 0
-        causing = pending_cause_by_frame.get(frame_key)
-        if causing is None:
-            causing = event.get("line")
-        step = last_step_by_line.get(causing) if isinstance(causing, int) else None
+        causing = cause_by_frame.get(frame, event.get("line"))
+        step = last_by_line_frame.get((causing, frame)) if isinstance(causing, int) else None
         changed = []
-        for change in event.get("changes", []) or []:
+        for change in event.get("changes") or []:
             parsed = _parse_trace_change(change)
             if not parsed:
                 continue
-            name = parsed["variable"]
-            old_display = parsed["old_display"]
-            new_display = parsed["new_display"]
+            name, old, new = parsed["variable"], parsed["old_display"], parsed["new_display"]
             if (
-                new_display.startswith("<function ")
+                new.startswith("<function ")
                 and isinstance(causing, int)
-                and _src_line(code, causing).lstrip().startswith("def ")
+                and _src_line(code, causing).startswith("def ")
             ):
                 continue
-            state[name] = new_display
-            changed.append({"name": name, "old": old_display, "new": new_display, "raw": change})
+            if new == "out of scope":
+                state.pop(name, None)
+            else:
+                state[name] = new
+            changed.append({"name": name, "old": old, "new": new, "raw": change})
             if active_calls:
-                active_calls[-1].setdefault("local_variables", {})[name] = new_display
+                active_calls[-1].setdefault("local_variables", {})[name] = new
         if step and changed:
             step["changed_variables"].extend(changed)
             step["variables_after"] = dict(state)
@@ -526,41 +1032,115 @@ def build_audio_code_map(code: str, query: str = "") -> dict[str, Any]:
             if target and target in state:
                 loop["target_value"] = state[target]
                 step["loop_context"] = loop
-
-    for step in steps:
-        if not step.get("variables_after"):
-            step["variables_after"] = dict(step.get("variables_before") or {})
+        current_line = event.get("line") if isinstance(event.get("line"), int) else None
+        current_step = last_by_line_frame.get((current_line, frame)) if current_line else None
+        if current_step and current_step is not step:
+            loop = current_step.get("loop_context") or {}
+            target = loop.get("target")
+            if target and target in state:
+                loop["target_value"] = state[target]
+                current_step["loop_context"] = loop
+                current_step["variables_before"] = {**current_step.get("variables_before", {}), **state}
+                current_step["variables_after"] = {**current_step.get("variables_after", {}), **state}
     latest_state: dict[str, str] = {}
     for index, step in enumerate(steps):
+        if not step.get("variables_after"):
+            step["variables_after"] = dict(step.get("variables_before") or latest_state)
         condition = conditions.get(step["line"])
         if condition:
             next_line = next((later["line"] for later in steps[index + 1 :] if later["line"] != step["line"]), None)
             result = _line_in_ranges(next_line, condition.get("body_ranges", []))
-            condition_state = step.get("variables_before") or latest_state
+            state_for_condition = step.get("variables_before") or latest_state
             step["condition"] = {
                 "expression": condition["expression"],
                 "result": result,
-                "reason": _condition_reason(condition, condition_state, result),
+                "reason": _condition_reason(condition, state_for_condition, result),
             }
         after = step.get("variables_after") or step.get("variables_before") or {}
         if after:
             latest_state = dict(after)
-    total = len(steps)
     for index, step in enumerate(steps):
-        return_info = step.get("function_return")
-        if not return_info:
+        info = step.get("function_return")
+        if not info:
             continue
-        function_name = return_info.get("function")
-        next_step = next(
-            (later for later in steps[index + 1 :] if later.get("function_context") != function_name),
-            None,
-        )
+        function = info.get("function")
+        next_step = next((later for later in steps[index + 1 :] if later.get("function_context") != function), None)
         if next_step:
-            return_info["next_line"] = next_step.get("line")
-            step["function_return"] = return_info
-    for step in steps:
-        step["total_steps"] = total
+            info["next_line"] = next_step.get("line")
+    for index, step in enumerate(steps):
+        step["index"] = index
+        step["total_steps"] = len(steps)
     return steps
+
+
+def _ordinal(number: int) -> str:
+    suffix = "th" if 10 <= number % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(number % 10, "th")
+    return f"{number}{suffix}"
+
+
+def _changed_variable_sentence(change: dict[str, Any]) -> str:
+    name, old, new = change.get("name") or "value", change.get("old"), change.get("new")
+    return f"{name} was set to {new}." if old in {"", None} else f"{name} changed from {old} to {new}."
+
+
+def _step_loop_sentence(step: dict[str, Any]) -> str:
+    loop = step.get("loop_context") or {}
+    if not loop:
+        return ""
+    text = (
+        f"You are on the {_ordinal(int(loop.get('iteration') or 1))} time through the loop on line {loop.get('line')}"
+    )
+    if loop.get("target") and loop.get("target_value") is not None:
+        text += f"; {loop.get('target')} is {loop.get('target_value')}"
+    return text + "."
+
+
+def _format_name_values(items: list[dict[str, Any]]) -> str:
+    return ", ".join(f"{item.get('name')} gets {item.get('value')}" for item in items if item.get("name"))
+
+
+def _function_call_sentence(call: dict[str, Any]) -> str:
+    function = call.get("function") or "the function"
+    values = _format_name_values(call.get("parameters") or [])
+    return f"You are entering the function {function}." + (f" {values}." if values else "")
+
+
+def _local_variables_sentence(locals_map: dict[str, Any], parameters: list[dict[str, Any]] | None = None) -> str:
+    if not locals_map:
+        return ""
+    param_names = {item.get("name") for item in parameters or []}
+    items = [(name, value) for name, value in locals_map.items() if name not in param_names] or list(locals_map.items())
+    return "Local values: " + ", ".join(f"{name} is {value}" for name, value in items[:6]) + "."
+
+
+def _call_stack_sentence(step: dict[str, Any]) -> str:
+    stack = step.get("function_call_stack") or []
+    function = step.get("function_context") or (stack[-1].get("function") if stack else "")
+    if not function:
+        return ""
+    caller = stack[-2].get("function") if len(stack) >= 2 else (stack[-1].get("caller") if stack else "")
+    return f"You are inside {function}" + (f", called by {caller}." if caller else ".")
+
+
+def _function_return_sentence(return_info: dict[str, Any]) -> str:
+    sentence = f"Function {return_info.get('function') or 'the function'} returned {return_info.get('return_value')}"
+    if return_info.get("call_line"):
+        sentence += f" to line {return_info.get('call_line')}"
+    if return_info.get("next_line"):
+        sentence += f", then Python continues at line {return_info.get('next_line')}"
+    return sentence + "."
+
+
+def _nearest_function_step(steps: list[dict[str, Any]], cursor: int, kind: str = "any") -> dict[str, Any] | None:
+    checks = {
+        "call": lambda s: s.get("function_call"),
+        "context": lambda s: s.get("function_context"),
+        "return": lambda s: s.get("function_return"),
+        "any": lambda s: s.get("function_call") or s.get("function_context") or s.get("function_return"),
+    }
+    check = checks.get(kind, checks["any"])
+    candidates = list(steps[max(0, cursor) :]) + list(reversed(steps[: max(0, cursor)]))
+    return next((step for step in candidates if check(step)), None)
 
 
 def build_state_watch_model(code: str, inputs: list[str] | None = None) -> dict[str, Any]:
@@ -724,6 +1304,8 @@ def explain_state_watch_step(
         parts.append(
             f"Step {cursor + 1} of {len(steps)}. You are on line {step['line']}: {step.get('spoken_source') or step.get('source')}."
         )
+        if str(step.get("source") or "").lstrip().startswith(("for ", "while ")):
+            parts.append(f"This is the loop on line {step['line']}.")
         if step.get("function_call"):
             parts.append(_function_call_sentence(step["function_call"]))
         if step.get("changed_variables"):
