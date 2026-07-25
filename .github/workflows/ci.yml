@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, hardening/codeup-web-run-debug-accessibility-lab]
   pull_request:
     branches: [main]
 
