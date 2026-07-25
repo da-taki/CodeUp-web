@@ -1,11 +1,3 @@
-"""Beginner-friendly, honest static debugging for generated websites.
-
-Inspects HTML/CSS/JS for likely problems and explains them like a teacher. Findings
-are grounded in the source — it never invents runtime errors. The architecture keeps
-a single ``collect_issues`` pass so real preview-console capture can be layered on
-later by merging extra issue dicts into the same shape.
-"""
-
 from __future__ import annotations
 
 import re
@@ -208,11 +200,6 @@ def _teacher_issue(
 
 
 def _selector_to_listener_vars(js: str) -> dict[str, bool]:
-    """Map each query selector to whether its variable is later used in addEventListener.
-
-    Detects the common ``const btn = document.getElementById('x'); btn.addEventListener(...)``
-    shape so the debugger can explain why a listener silently never fires.
-    """
     var_to_selector: dict[str, str] = {}
     for match in _VAR_FROM_QUERY.finditer(js or ""):
         var = match.group(1)
@@ -224,13 +211,6 @@ def _selector_to_listener_vars(js: str) -> dict[str, bool]:
 
 
 def build_debug_teacher(html: str, css: str = "", js: str = "") -> dict[str, Any]:
-    """Beginner-friendly debugger for broken HTML/CSS/JS connections.
-
-    Returns ``{"text": ..., "issues": [...]}`` where each issue has
-    ``severity``, ``file``, ``line``, ``problem``, ``why_it_matters``,
-    ``suggested_fix`` and ``spoken_summary``. Pure static analysis grounded in
-    the source; it never invents runtime errors and never mutates files.
-    """
     from codeup.services.selector_tools import did_you_mean, matches
     from codeup.services.web_learning import (
         _selector_should_warn_when_unmatched,
@@ -435,7 +415,6 @@ def build_debug_teacher(html: str, css: str = "", js: str = "") -> dict[str, Any
 
 
 def apply_safe_js_fixes(html: str, css: str = "", js: str = "") -> dict[str, Any]:
-    """Apply only safe, deterministic fixes. Never introduces unsafe code."""
     fixed_html = html or ""
     changes: list[str] = []
 

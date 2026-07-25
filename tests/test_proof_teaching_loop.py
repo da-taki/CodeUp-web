@@ -1,9 +1,3 @@
-"""Tests for the proof-based teaching loop: runtime teacher, DOM/JS debugger,
-selector explainer, readiness score, guided build track, and pilot report.
-
-Run → observe → explain by facts → help fix → replay. Deterministic, no AI key.
-"""
-
 import io
 import zipfile
 
@@ -225,7 +219,7 @@ def test_selector_explainer_finds_unused_css():
     assert result["unused"] is True
     selectors = [rule["selector"] for rule in result["css_selectors"]]
     assert ".ghost" in selectors
-    assert "h1" not in selectors  # h1 matches, so it is not unused
+    assert "h1" not in selectors
 
 
 def test_selector_explainer_which_html_uses_class():
@@ -257,8 +251,8 @@ def test_readiness_report_blocks_on_unlabeled_form_and_js_mismatch():
     js = "document.getElementById('sendBtn').addEventListener('click', function(){});"
     result = build_readiness_report(html, "", js)
     blockers_text = " ".join(result["blockers"]).lower()
-    assert "label" in blockers_text  # form input without a label
-    assert "#sendbtn" in blockers_text or "sendbtn" in blockers_text  # broken JS selector
+    assert "label" in blockers_text
+    assert "#sendbtn" in blockers_text or "sendbtn" in blockers_text
     assert result["level"] in {"needs work", "almost ready"}
 
 
@@ -273,7 +267,7 @@ def test_guided_steps_are_complete():
     assert len(steps) == 12
     for step in steps:
         assert step["id"] and step["title"] and step["say"] and step["command"] and step["hint"] and step["success"]
-        assert "check" not in step  # callables are not serialized
+        assert "check" not in step
 
 
 def test_guided_step_validation_pass_and_fail():
@@ -304,7 +298,7 @@ def test_guided_recap_counts_progress():
     html = "<title>Hi</title><main><h1>Hi</h1><p>Text</p></main>"
     recap = guided_recap(html, "", "")
     assert recap["total"] == 12
-    assert recap["completed"] >= 3  # title, heading, paragraph
+    assert recap["completed"] >= 3
     assert "GUIDED BUILD RECAP" in recap["text"]
 
 
@@ -428,7 +422,7 @@ def test_export_contains_all_demo_artifacts_and_real_pilot_report(client):
     assert len(pilot) > 200
     assert "no website yet" not in pilot.lower()
     assert "Readiness score:" in pilot
-    assert "debug website" in pilot  # a real recorded command
+    assert "debug website" in pilot
 
 
 def test_new_endpoints_do_not_mutate_files(client):
@@ -505,7 +499,7 @@ def test_empty_project_readiness_is_not_ready():
 def test_empty_project_pilot_is_short_and_clear():
     text = build_pilot_report("", "", "")
     assert "no website yet" in text.lower()
-    assert "Accessibility score" not in text  # no generic filled-in report
+    assert "Accessibility score" not in text
 
 
 def test_empty_project_endpoints_do_not_crash(client):
@@ -570,5 +564,5 @@ def test_readiness_demo_lists_blockers_and_is_not_ready():
     assert result["level"] != "ready"
     assert result["blockers"]
     blockers_text = " ".join(result["blockers"]).lower()
-    assert "label" in blockers_text  # unlabeled form input
-    assert "#sendbtn" in blockers_text or "sendbtn" in blockers_text  # JS mismatch
+    assert "label" in blockers_text
+    assert "#sendbtn" in blockers_text or "sendbtn" in blockers_text

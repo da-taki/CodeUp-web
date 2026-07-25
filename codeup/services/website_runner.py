@@ -1,10 +1,3 @@
-"""Run / test website summaries and teacher-style reviews.
-
-Deterministic, beginner-friendly reports built from the current HTML/CSS/JS using
-the same parsing and audit helpers that power the rest of CodeUp Web. Nothing here
-mutates project files.
-"""
-
 from __future__ import annotations
 
 import re
@@ -33,7 +26,6 @@ def title_from_html(html: str, fallback: str = "this website") -> str:
 
 
 def has_real_website(html: str) -> bool:
-    """True when the HTML looks like a generated site, not an empty editor."""
     records = parse_records(html)
     has_landmark = any(record.tag in LANDMARK_TAGS for record in records)
     has_heading = any(re.fullmatch(r"h[1-6]", record.tag) for record in records)
@@ -42,13 +34,6 @@ def has_real_website(html: str) -> bool:
 
 
 def is_blank_project(html: str = "", css: str = "", js: str = "") -> bool:
-    """True when there is no project at all (empty/whitespace HTML, CSS, and JS).
-
-    Used by the teaching tools to give a clear "build or load a website first"
-    message instead of a confusing empty report. Distinct from
-    ``has_real_website`` (which also rejects fragments without landmarks): a bare
-    ``<button>`` plus a script is *not* blank, so the debugger can still inspect it.
-    """
     return not ((html or "").strip() or (css or "").strip() or (js or "").strip())
 
 
@@ -142,7 +127,6 @@ def build_teacher_review(
     project_type: str = "",
     audit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Return teacher-style feedback. Suggestions are advice only — nothing is changed."""
     records = parse_records(html)
     headings = [record for record in records if re.fullmatch(r"h[1-6]", record.tag)]
     sections = [record for record in records if record.tag in {"section", "article"}]

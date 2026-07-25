@@ -1,17 +1,3 @@
-"""Deterministic, offline-capable generator for complete 3-file websites.
-
-This module powers CodeUp-Web's website generation when no cloud AI key is
-configured (the default demo mode) and also provides the parseable FILE-format
-parser used to split AI responses into separate HTML, CSS, and JavaScript
-editors.
-
-The generated sites are intentionally rich: every site ships a hero, an about /
-mission section, a filterable projects/features grid, animated achievement
-stats, a team section, a facilities/equipment grid, an upcoming-events list, and
-an accessible join/contact form. All visuals use gradients, CSS shapes, and
-emoji so there are never broken external assets.
-"""
-
 from __future__ import annotations
 
 import re
@@ -87,7 +73,6 @@ def _slugify(value: str) -> str:
 
 
 def _blueprint(kind: str, title: str, topic: str) -> dict:
-    """Return a content blueprint. ``title`` and ``topic`` are plain text."""
 
     base = {
         "tagline": f"A modern, accessible home for {topic} — built for everyone, on every device.",
@@ -1755,7 +1740,6 @@ def _render_interactive_project(project_type: str, title: str, topic: str) -> tu
 
 
 def generate_site_files(prompt: str) -> dict[str, str]:
-    """Build a complete, polished 3-file website from a natural-language prompt."""
 
     project_type_result = classify_project_type(prompt)
     project_type = project_type_result.project_type
@@ -1804,10 +1788,6 @@ def _strip_fences(text: str) -> str:
 
 
 def parse_file_blocks(text: str) -> dict[str, str]:
-    """Parse the ``FILE: name`` block format into {html, css, js}.
-
-    Returns only the keys that were found. Unknown file types are ignored.
-    """
 
     result: dict[str, str] = {}
     if not text:
@@ -1827,11 +1807,6 @@ def parse_file_blocks(text: str) -> dict[str, str]:
 
 
 def combine_site_files(html: str, css: str = "", js: str = "", **_ignored: object) -> str:
-    """Merge separate HTML/CSS/JS into a single, self-contained document.
-
-    External references to ``style.css`` / ``script.js`` are replaced with the
-    inline content so the page works without any sibling files.
-    """
 
     doc = (html or "").strip()
     lowered = doc.lower()
@@ -1862,6 +1837,5 @@ def combine_site_files(html: str, css: str = "", js: str = "", **_ignored: objec
 
 
 def generate_combined_site(prompt: str) -> str:
-    """Convenience: build the 3 files and return one combined document."""
     files = generate_site_files(prompt)
     return combine_site_files(files["html"], files["css"], files["js"])

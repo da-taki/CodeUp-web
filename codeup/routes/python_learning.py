@@ -94,10 +94,6 @@ def python_run_route():
     status = 200
     error_text = str(result.get("error", "")).lower()
     if not result.get("success"):
-        # A timeout is an execution outcome (the program ran but did not finish in time),
-        # not a payload-size problem, so it stays 200 like syntax and runtime errors. Its
-        # message contains "too long" ("ran for too long"), so it is excluded before the
-        # size-limit check below, which is reserved for oversized source or output.
         if "timed out" in error_text:
             status = 200
         elif "too large" in error_text or "too long" in error_text:

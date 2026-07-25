@@ -1,7 +1,7 @@
 'use strict';
 (function () {
   var basePath = '/static/vendor/monaco/vs';
-  // Use same-origin worker files so Monaco works under the app CSP.
+
   var workers = {
     json: basePath + '/json.worker-BizpAl9O.js',
     css: basePath + '/css.worker-CyhWkhHo.js',

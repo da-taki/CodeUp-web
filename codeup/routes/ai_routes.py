@@ -27,7 +27,7 @@ from codeup.storage import append_memory, create_project_version, load_html_memo
 
 ai_bp = Blueprint("ai", __name__)
 
-# Reusable, high-quality generation prompt shared by the 3-file generator.
+
 SITE_SYSTEM_PROMPT = (
     "You are the website generator inside CodeUp-Web, an accessibility-first web IDE for blind and "
     "low-vision students. Generate a COMPLETE, polished website as THREE separate files: HTML, CSS, "
@@ -197,12 +197,6 @@ def generate_code():
 
 @ai_bp.route("/generate-site", methods=["POST"])
 def generate_site():
-    """Generate (or edit) a complete website as three separate files.
-
-    Returns separate ``html``, ``css`` and ``js`` strings plus a ``combined``
-    single-file document for preview, parsed from the AI's FILE: format and
-    falling back to the deterministic offline generator.
-    """
     body = safejson()
     prompt = str(body.get("prompt") or body.get("task") or "").strip()
     current_html = str(body.get("html") or body.get("current_html") or "")
@@ -282,7 +276,6 @@ def generate_site():
     generated: dict[str, str] = {}
 
     if not files.get("html"):
-        # AI unavailable or unparseable: use the deterministic offline generator.
         generated = generate_site_files(prompt)
         files = {"html": generated["html"], "css": generated["css"], "js": generated["js"]}
         project_type = generated.get("project_type", project_type)

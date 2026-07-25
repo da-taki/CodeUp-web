@@ -1,9 +1,3 @@
-"""Accessibility lab: screen-reader tour, keyboard test, visual description, readiness.
-
-All reports are deterministic and read-only — they describe the current HTML/CSS/JS
-and never modify project files.
-"""
-
 from __future__ import annotations
 
 import re
@@ -303,11 +297,6 @@ def build_visual_description(
 
 
 def _readiness_metrics(html: str, css: str = "", js: str = "", audit: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Compute the readiness subscores, total, and the strong/needs/blocker lists.
-
-    Shared by ``build_readiness_score`` (category breakdown text) and
-    ``build_readiness_report`` (structured score/level/blockers/suggestions).
-    """
     records = parse_records(html)
     headings = [r for r in records if re.fullmatch(r"h[1-6]", r.tag)]
     landmarks = [r for r in records if r.tag in {"header", "nav", "main", "section", "article", "footer", "form"}]
@@ -323,13 +312,12 @@ def _readiness_metrics(html: str, css: str = "", js: str = "", audit: dict[str, 
     audit_score = int(audit_data.get("score") or 0)
     audit_issues = audit_data.get("issues") if isinstance(audit_data.get("issues"), list) else []
     debug_issues = collect_issues(html, css, js)
-    # Richer, teacher-style findings (JS selector mismatches, duplicate ids, ...).
+
     from codeup.services.website_debugger import build_debug_teacher
 
     teacher_issues = build_debug_teacher(html, css, js)["issues"]
     has_files = bool((html or "").strip()) and bool((css or "").strip())
 
-    # Subscores (weights sum to 100).
     structure = 15 if (len(headings) >= 2 and len(landmarks) >= 3) else 9 if headings else 3
     accessibility = round(audit_score / 100 * 25)
     visual = 12 if (rules and has_focus) else 8 if rules else 3
@@ -372,7 +360,6 @@ def _readiness_metrics(html: str, css: str = "", js: str = "", audit: dict[str, 
     if not needs:
         needs.append("Add a clearer footer and more specific button text")
 
-    # Blockers: must-fix problems (high-severity accessibility + broken JS connections).
     blockers: list[str] = []
     for issue in audit_issues:
         if isinstance(issue, dict) and issue.get("severity") == "high":
@@ -469,11 +456,6 @@ def build_readiness_report(
     project_type: str = "",
     audit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Structured "ready to share?" check: score, level, blockers, suggestions.
-
-    Combines the accessibility audit, structure/landmarks, keyboard risks, and
-    JavaScript selector mismatches into one spoken-friendly readiness report.
-    """
     if is_blank_project(html, css, js):
         text = "WEBSITE READINESS\n\n" + NO_PROJECT_MESSAGE + "\n"
         return {
@@ -515,7 +497,6 @@ def build_readiness_report(
     lines.append("")
     lines.append(m["recommendation"])
 
-    # Short spoken summary: score, level, and the first blocker (if any).
     if blockers:
         extra = "" if len(blockers) == 1 else f", and {len(blockers) - 1} more"
         speech = f"Readiness score {total} out of 100, {level}. Fix first: {blockers[0]}{extra}."

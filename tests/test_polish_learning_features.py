@@ -1,9 +1,3 @@
-"""Tests for the README/docs consolidation and the ported CodeUp learning features.
-
-Covers command routing for the new features, fuzzy command repair, export
-additions, safety (no code generation / no file mutation), and a few UI checks.
-"""
-
 import io
 import zipfile
 from pathlib import Path
@@ -39,53 +33,64 @@ def client(monkeypatch, tmp_path):
     return app_module.app.test_client()
 
 
-def test_readme_includes_website_and_python_demo_flows():
+def test_readme_starts_with_project_name_without_bom():
+    data = README.read_bytes()
+    assert not data.startswith(b"\xef\xbb\xbf")
+    assert data.decode("utf-8").startswith("# CodeUp Web")
+
+
+def test_readme_describes_project_purpose_and_workflows():
     text = README.read_text(encoding="utf-8")
-    assert "## Demo Flow" in text
-    # Website demo commands.
+    lower = text.lower()
+    assert "accessibility-first learning IDE" in text
+    assert "typed or spoken commands" in lower
+    assert "HTML, CSS, and JavaScript" in text
+    assert "Python workspace" in text
     assert "make a website for my school robotics club" in text
-    assert "check accessibility" in text
-    assert "export website" in text
-    # Python demo commands.
-    assert "run this Python code" in text
-    assert "watch variable total" in text
-    assert "break when total > 10" in text
+    assert 'print("Hello, CodeUp")' in text
 
 
-def test_readme_lists_supported_project_types():
-    text = README.read_text(encoding="utf-8").lower()
-    for project_type in (
-        "portfolios",
-        "school clubs",
-        "project showcases",
-        "quizzes",
-        "calculators",
-        "habit trackers",
-        "blogs",
-    ):
-        assert project_type in text, project_type
-
-
-def test_readme_documents_export_report_categories():
-    text = README.read_text(encoding="utf-8").lower()
-    assert "## export" in text
-    for category in (
-        "code maps",
-        "step narration",
-        "accessibility findings",
-        "runtime and debugging reports",
-        "project summaries",
-        "learning notes",
-        "version history",
-        "change replay",
-    ):
-        assert category in text, category
-
-
-def test_readme_links_to_security_policy():
+def test_readme_documents_local_setup_and_checks():
     text = README.read_text(encoding="utf-8")
-    assert "SECURITY.md" in text
+    for command in (
+        "py -m venv .venv",
+        "pip install -r requirements.txt",
+        "py app.py",
+        "py -m ruff check .",
+        "py -m ruff format --check codeup app.py tests",
+        "py -m compileall -q app.py codeup tests",
+        "node --check static/monaco-loader.js",
+        "py -m pytest tests --ignore=tests/test_e2e_browser.py -q",
+        "py -m pytest tests/test_e2e_browser.py -q",
+    ):
+        assert command in text, command
+    for setting in ("FLASK_TESTING=true", "GEMINI_ENABLED=0", "AI_CLOUD_ENABLED=0"):
+        assert setting in text, setting
+
+
+def test_readme_documents_safety_boundary_and_security_policy():
+    text = README.read_text(encoding="utf-8")
+    lower = text.lower()
+    assert "learning starters, not production applications" in lower
+    for risk in ("remote scripts", "credential", "fake login", "unsafe javascript"):
+        assert risk in lower, risk
+    assert "[SECURITY.md](SECURITY.md)" in text
     assert "Reporting a Vulnerability" not in text
+
+
+def test_readme_removes_old_publication_noise():
+    text = README.read_text(encoding="utf-8")
+    forbidden = (
+        "pull request",
+        "commit hash",
+        "DEMO.md",
+        "DEMO_SCRIPT.md",
+        "C:" + "\\" + "Users",
+        "origin/",
+        "recovery/",
+    )
+    for phrase in forbidden:
+        assert phrase not in text, phrase
 
 
 def test_redundant_markdown_files_removed():

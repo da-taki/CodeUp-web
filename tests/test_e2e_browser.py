@@ -267,8 +267,6 @@ class TestKeyboardFlow:
 
 
 class TestProofTeachingLoop:
-    """The new run -> debug -> explain -> readiness loop, driven from the UI."""
-
     def _command(self, page, text, marker):
         page.locator("#commandInput").fill(text)
         page.locator("#sendCommandBtn").click()

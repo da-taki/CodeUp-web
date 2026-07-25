@@ -1,15 +1,3 @@
-"""Website Runtime Teacher: a deterministic, spoken-friendly "what happens when
-this page loads" explanation.
-
-This is a *static* analysis. It never executes the page or simulates clicks. It
-inspects the current HTML/CSS/JS with the same parsers that power the rest of
-CodeUp Web and reports what it found: the title, landmarks, headings, controls,
-JavaScript queries/listeners, and any selector that does not match the HTML.
-
-Wording is intentionally honest: it says "I found" and "this likely means",
-never "I clicked". Nothing here mutates project files.
-"""
-
 from __future__ import annotations
 
 import re
@@ -79,11 +67,6 @@ def build_runtime_teacher(
     project_type: str = "",
     audit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Return ``{"text": ..., "facts": {...}}`` describing what happens on load.
-
-    ``facts`` keys: ``title``, ``headings``, ``controls``, ``queries``,
-    ``listeners``, ``mismatches``. Pure static analysis; never executes code.
-    """
     if not has_real_website(html):
         return {
             "text": NO_WEBSITE_MESSAGE,
@@ -115,7 +98,6 @@ def build_runtime_teacher(
         for record in headings
     ]
 
-    # Resolve each JS query against the HTML and collect mismatches.
     query_facts: list[dict[str, Any]] = []
     mismatches: list[dict[str, Any]] = []
     for query in js_map["queries"]:
@@ -143,7 +125,6 @@ def build_runtime_teacher(
         "mismatches": mismatches,
     }
 
-    # ----- Spoken-friendly text -----
     type_label = display_project_type(project_type or "generic_website")
     buttons = [control for control in controls if control["type"] == "button"]
     links = [control for control in controls if control["type"] == "link"]
@@ -183,7 +164,6 @@ def build_runtime_teacher(
     else:
         lines.append("I found no JavaScript event listeners.")
 
-    # The selector connection check — the heart of the runtime teacher.
     if query_facts:
         for query in query_facts[:6]:
             if query["matched"]:
@@ -210,7 +190,6 @@ def build_runtime_teacher(
     else:
         lines.append('Next, try "debug website" or "is this ready to share".')
 
-    # Short, spoken-friendly summary (the full report stays on screen).
     connection_count = len(query_facts)
     if mismatches:
         speech = (

@@ -168,7 +168,7 @@ def _provided_artifacts_from_body(body: dict) -> dict[str, str]:
         "instruction",
     )
     provided = {key: str(body.get(key) or "") for key in keys if str(body.get(key) or "").strip()}
-    # change_replay may arrive as a precomputed string from the editor session.
+
     replay = body.get("change_replay")
     if isinstance(replay, str) and replay.strip():
         provided["change_replay"] = replay

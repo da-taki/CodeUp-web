@@ -1,16 +1,3 @@
-"""Guided "build your first website by ear" track.
-
-A 12-step, voice-first lesson modeled on CodeUp's Python tutorial. Each step has
-a spoken explanation, the exact command to say or type, a deterministic
-validator, a hint, and a success message. The validators inspect the current
-HTML/CSS/JS so the learner gets honest, grounded feedback ("not yet, here's why")
-instead of a checkbox.
-
-Control words (next / repeat / hint / recap / exit) are handled by the caller;
-this module only provides the step data and the per-step validators. It never
-mutates project files.
-"""
-
 from __future__ import annotations
 
 import re
@@ -224,7 +211,6 @@ _STEP_INDEX = {step["id"]: index for index, step in enumerate(GUIDED_STEPS)}
 
 
 def guided_steps() -> list[dict[str, Any]]:
-    """Public, JSON-safe step list (without validator callables)."""
     return [
         {key: value for key, value in step.items() if key != "check"} | {"number": index + 1}
         for index, step in enumerate(GUIDED_STEPS)
@@ -262,7 +248,6 @@ def validate_guided_step(step_id: str, html: str = "", css: str = "", js: str = 
 
 
 def guided_recap(html: str = "", css: str = "", js: str = "") -> dict[str, Any]:
-    """Summarize which guided steps are done and what is next, from current state."""
     done: list[str] = []
     todo: list[str] = []
     for step in GUIDED_STEPS:

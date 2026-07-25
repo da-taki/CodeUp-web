@@ -3033,7 +3033,7 @@ else:
       };
       updateTutorialPanel(trackStepMessage());
     }    const saved = loadJsonStore('codeup_last_work', null);
-    if (saved && saved.previewUrl && /^\/student-site\//.test(saved.previewUrl)) {
+    if (saved && saved.previewUrl && new RegExp('^/student-site/').test(saved.previewUrl)) {
       state.lastUrl = saved.previewUrl;
       const frame = ensurePreviewFrame();
       if (frame && !frame.getAttribute('src')) frame.src = saved.previewUrl;

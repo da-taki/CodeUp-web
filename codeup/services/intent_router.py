@@ -141,12 +141,11 @@ def _tutorial_slots(command: str) -> dict[str, Any]:
 
 
 def _selector_query_slots(command: str) -> dict[str, Any]:
-    """Pass the whole command through as the query; the explainer cleans it."""
     return {"query": command.strip()}
 
 
 def _bookmark_slots(command: str) -> dict[str, Any]:
-    # Prefer the name after "as", e.g. "bookmark the contact form as contact area".
+
     match = re.search(r"\bas\s+(.+)$", command, re.IGNORECASE)
     if match:
         return {"name": match.group(1).strip(" .:-")}
@@ -156,9 +155,6 @@ def _bookmark_slots(command: str) -> dict[str, Any]:
     return {}
 
 
-# Command repair maps gentle spelling slips to the intended web command. It only
-# rewrites whole command tokens (and a couple of known phrases) so it never
-# touches the contents of generated HTML, CSS, or JavaScript.
 _COMMAND_PHRASE_REPAIRS: tuple[tuple[str, str], ...] = (
     (r"\bexport\s+side\b", "export site"),
     (r"\bmake\s+webside\b", "make website"),
@@ -192,7 +188,6 @@ _TOKEN_REPAIR_PATTERN = re.compile(
 
 
 def repair_command(text: str) -> str:
-    """Fix common web-command typos without altering generated code content."""
     if not text:
         return text
     repaired = text
