@@ -1,5 +1,3 @@
-"""Tests for the run / debug / accessibility lab feature pass."""
-
 import io
 import re
 import zipfile

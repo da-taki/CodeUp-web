@@ -1,10 +1,3 @@
-"""Shared, deterministic helpers for matching CSS/JS selectors against HTML.
-
-Used by the runtime teacher, the DOM/JS debugger, and the selector explainer so
-all three agree on what "this selector matches that element" means. Pure
-read-only analysis built on the existing ``web_learning`` parsers.
-"""
-
 from __future__ import annotations
 
 import difflib
@@ -13,7 +6,6 @@ from codeup.services.web_learning import TagRecord, _selector_matches
 
 
 def matches(selector: str, records: list[TagRecord]) -> list[TagRecord]:
-    """Return the HTML records a CSS/JS selector matches (best-effort, static)."""
     return [record for record in records if _selector_matches(selector, record)]
 
 
@@ -29,11 +21,6 @@ def html_classes(records: list[TagRecord]) -> list[str]:
 
 
 def did_you_mean(selector: str, records: list[TagRecord]) -> str:
-    """Return the closest existing id/class for a selector that matched nothing.
-
-    Returns ``""`` when there is no close match or the selector is not a simple
-    ``#id`` / ``.class`` selector.
-    """
     if selector.startswith("#"):
         pool = html_ids(records)
         prefix = "#"

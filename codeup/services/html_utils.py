@@ -835,12 +835,6 @@ def apply_audit_fixes(
 
 
 def fallback_site(prompt: str) -> str:
-    """Return a complete, polished single-file website for the prompt.
-
-    Delegates to the rich 3-file generator and inlines the CSS/JS so the result
-    is a self-contained document (used by the non-streaming generate routes and
-    the offline/no-key demo mode).
-    """
     from codeup.services.site_generator import generate_combined_site
 
     return generate_combined_site(prompt)

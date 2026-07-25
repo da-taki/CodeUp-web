@@ -1,4 +1,4 @@
-/* Plain CodeUp IDE layout. Keep this file boring on purpose. */
+
 
 :root {
   --art-coral: #2563eb;
@@ -565,7 +565,7 @@
   }
 }
 
-/* 2026 workspace redesign: editorial coding tool, not SaaS dashboard. */
+
 :root {
   --font-main: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-display: Georgia, "Times New Roman", serif;
@@ -1021,7 +1021,7 @@
   }
 }
 
-/* Keep Monaco panes contributing to the workbench height across responsive layouts. */
+
 .ide-panel:not([hidden]) {
   min-height: calc(100vh - 340px);
 }

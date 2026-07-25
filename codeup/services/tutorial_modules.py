@@ -1,11 +1,3 @@
-"""Structured web-development curriculum for CodeUp Web.
-
-Each track is intentionally practical: every lesson asks the learner to write or
-modify code in the real project, then use CodeUp's deterministic checks, maps,
-or previews for feedback. The front end can speak the short ``say`` text while
-showing the richer lesson fields in the learning panel.
-"""
-
 from __future__ import annotations
 
 from typing import Any

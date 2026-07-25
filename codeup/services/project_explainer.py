@@ -593,12 +593,6 @@ def build_pilot_report(
     commands: list[str] | None = None,
     version_history: Any = None,
 ) -> str:
-    """Exportable trainer / pilot report summarizing a CodeUp Web session.
-
-    Deterministic and grounded in the current project state plus the recorded
-    command history. Includes the audit score, readiness score, mistakes found,
-    fixes made, concepts learned, and a suggested next lesson.
-    """
     if is_blank_project(html, css, js):
         return "PILOT SESSION REPORT\n\n" + NO_PROJECT_MESSAGE + "\n"
 
@@ -686,7 +680,6 @@ def build_screen_reader_summary(
     project_type: str = "",
     audit: dict[str, Any] | None = None,
 ) -> str:
-    """Describe the project for screen-reader testing. Never generates code."""
     ctx = project_context(html, css, js, name=name, project_type=project_type, audit=audit)
     records = ctx["records"]
     reading_order = [
@@ -747,7 +740,6 @@ def build_change_replay(
     instruction: str = "",
     provided: str = "",
 ) -> str:
-    """Explain the most recent edit. Reuses the deterministic mistake-replay diff."""
     if provided.strip():
         body = provided.strip()
     else:
@@ -838,8 +830,6 @@ def build_export_artifacts(
             or build_preview_description(html, css, js, name=name, project_type=project_type)
         ).strip()
         + "\n",
-        # Learner-support artifacts ported from the main CodeUp project. These are
-        # always generated from the current project state at export time.
         "TRAINER_NOTES.txt": (
             provided.get("trainer_notes")
             or build_trainer_notes(html, css, js, name=name, project_type=project_type, audit=audit)
@@ -855,7 +845,6 @@ def build_export_artifacts(
             or build_screen_reader_summary(html, css, js, name=name, project_type=project_type, audit=audit)
         ).strip()
         + "\n",
-        # Run / debug / accessibility-lab reports, generated at export time.
         "RUN_SUMMARY.txt": (
             provided.get("run_summary")
             or build_run_summary(html, css, js, name=name, project_type=project_type, audit=audit)
@@ -889,14 +878,12 @@ def build_export_artifacts(
         + "\n",
     }
 
-    # VERSION_HISTORY only when the session recorded versions.
     history_source = provided.get("version_history") or version_history
     if isinstance(history_source, str) and history_source.strip():
         artifacts["VERSION_HISTORY.txt"] = history_source.strip() + "\n"
     elif isinstance(history_source, list) and history_source:
         artifacts["VERSION_HISTORY.txt"] = build_version_history_report(history_source).strip() + "\n"
 
-    # CHANGE_REPLAY only when an edit actually happened (text provided or before/after given).
     replay_text = ""
     if provided.get("change_replay"):
         replay_text = build_change_replay(
@@ -918,14 +905,12 @@ def build_export_artifacts(
     if replay_text.strip():
         artifacts["CHANGE_REPLAY.txt"] = replay_text.strip() + "\n"
 
-    # BOOKMARKS only when bookmarks exist.
     has_bookmarks = bool(bookmarks) and (
         (isinstance(bookmarks, dict) and len(bookmarks) > 0) or (isinstance(bookmarks, list) and len(bookmarks) > 0)
     )
     if has_bookmarks:
         artifacts["BOOKMARKS.txt"] = build_bookmarks_report(bookmarks).strip() + "\n"
 
-    # PILOT_REPORT only when session data exists (recorded commands or version history).
     has_session = bool(commands) or (isinstance(version_history, list) and bool(version_history))
     if provided.get("pilot_report"):
         artifacts["PILOT_REPORT.txt"] = provided["pilot_report"].strip() + "\n"

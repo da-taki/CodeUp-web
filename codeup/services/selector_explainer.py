@@ -1,11 +1,3 @@
-"""Selector explainer: which CSS affects an element, and which HTML a rule hits.
-
-Answers questions like "what CSS affects the join button", "explain CSS for
-hero", "which HTML uses this class", and "find unused CSS". Deterministic and
-read-only; built on the existing CSS/HTML parsers so it agrees with the code map
-and debugger about what matches what.
-"""
-
 from __future__ import annotations
 
 import re
@@ -21,7 +13,6 @@ from codeup.services.web_learning import (
 )
 from codeup.services.website_runner import clean_text
 
-# Friendly names for common CSS properties, used in the beginner explanation.
 _PROPERTY_PHRASES = {
     "background": "background",
     "background-color": "background color",
@@ -109,13 +100,11 @@ def _label(record: TagRecord) -> str:
 
 
 def _resolve_targets(query: str, records: list[TagRecord]) -> tuple[list[TagRecord], str]:
-    """Return the HTML records the query refers to plus a human label for them."""
     cleaned = _clean_query(query)
     if not cleaned:
         return [], ""
     tokens = cleaned.split()
 
-    # Tag nouns (button, link, form, nav, ...). Combine with any extra keyword.
     tag = next((_NOUN_TAGS[token] for token in tokens if token in _NOUN_TAGS), "")
     keywords = [token for token in tokens if token not in _NOUN_TAGS]
 
@@ -138,9 +127,8 @@ def _resolve_targets(query: str, records: list[TagRecord]) -> tuple[list[TagReco
         if found:
             return found, query.strip()
 
-    # No tag noun: match id/class/text against the keywords.
     found = [record for record in records if keyword_hit(record)] if keywords else []
-    # Prefer the most specific elements (ones whose id/class actually contains the keyword).
+
     specific = [
         record
         for record in found
@@ -194,11 +182,6 @@ def _unused_css(css: str, records: list[TagRecord]) -> dict[str, Any]:
 
 
 def build_selector_explainer(html: str, css: str = "", js: str = "", query: str = "") -> dict[str, Any]:
-    """Explain the CSS that affects an element (or find unused CSS).
-
-    Returns ``text`` plus structured ``matched_elements`` and ``css_selectors``
-    (each with a line number). Never mutates files.
-    """
     records = parse_records(html)
     lowered = (query or "").lower()
     if "unused" in lowered:
@@ -226,7 +209,6 @@ def build_selector_explainer(html: str, css: str = "", js: str = "", query: str 
 
     matched_elements = [{"element": _label(record), "tag": record.tag, "line": record.line} for record in targets[:8]]
 
-    # Find every CSS rule that hits at least one target element.
     affecting: list[dict[str, Any]] = []
     for rule in rules:
         hit = [record for record in targets if _selector_matches(rule["selector"], record)]
@@ -264,7 +246,6 @@ def build_selector_explainer(html: str, css: str = "", js: str = "", query: str 
         lines.append("No CSS rule in style.css matches this element, so it uses the browser's default styling.")
         lines.append("You could add a rule, for example a class selector, to style it.")
 
-    # Short spoken summary: the element and its primary rule (or that it has none).
     if affecting:
         primary = affecting[0]
         speech = (

@@ -13,7 +13,6 @@ import sys
 import time
 import traceback
 
-# Keep the sandbox import surface explicit; do not expose filesystem, network, or process modules.
 SAFE_MODULES = {
     "math": math,
     "random": random,
