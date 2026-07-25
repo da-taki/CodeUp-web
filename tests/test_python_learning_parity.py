@@ -190,9 +190,24 @@ def test_python_runner_blocks_dangerous_code_and_times_out(client, monkeypatch):
     assert "open" in dangerous_open["speech"].lower()
 
     monkeypatch.setattr(python_learning, "PYTHON_RUN_TIMEOUT", 1)
-    timeout = client.post("/python/run", json={"code": "while True:\n    pass\n"}).get_json()
+    timeout_response = client.post("/python/run", json={"code": "while True:\n    pass\n"})
+    timeout = timeout_response.get_json()
     assert timeout["success"] is False
     assert "timed out" in timeout["speech"].lower()
+    # A timeout is an execution outcome, not an oversized payload, so it must not be 413.
+    assert timeout_response.status_code == 200
+
+
+def test_python_run_status_codes_distinguish_timeout_from_size_limit(client, monkeypatch):
+    import codeup.services.python_learning as python_learning
+
+    # Oversized source is a genuine size-limit error and should report 413.
+    monkeypatch.setattr(python_learning, "MAX_PYTHON_CODE_SIZE", 10)
+    oversized = client.post("/python/run", json={"code": "print('this source is definitely too long')\n"})
+    body = oversized.get_json()
+    assert body["success"] is False
+    assert "too long" in body["error"].lower()
+    assert oversized.status_code == 413
 
 
 def test_python_state_watch_navigation_and_change_explanations(client):

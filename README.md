@@ -1,252 +1,314 @@
 # CodeUp Web
 
-A voice-first, accessibility-focused website builder for beginners.
+A voice-first learning IDE for building websites and exploring beginner Python.
 
-[![CI](https://github.com/da-taki/CodeUp-web/actions/workflows/ci.yml/badge.svg)](https://github.com/da-taki/CodeUp-web/actions/workflows/ci.yml)
+CodeUp Web lets beginners create, edit, understand, test, and export websites through typed or spoken commands. It also includes a Python learning workspace with audio code maps, step narration, state tracking, function explanations, and conditional breakpoints.
 
-CodeUp Web helps a beginner describe a website or small web app, edit the generated HTML, CSS, and JavaScript, preview it locally, ask for plain-language explanations, check accessibility, and export a ZIP with study notes. It is designed for typed commands and spoken commands, with a focus on blind and visually impaired learners who need more than a visual canvas.
+I built it for learners who need more than a visual canvas. The interface works with keyboard navigation, screen readers, spoken feedback, and plain-language explanations.
 
-## What Reviewers Should Know
+## What You Can Build
 
-CodeUp Web is a standalone Flask app. It is related to the broader CodeUp idea, but this repository is the web-builder implementation: the Flask routes, deterministic project generator, local Monaco editor integration, browser IDE, accessibility checks, project storage, export pipeline, Python learning lane, and test suite live here.
+Describe a project in everyday language and CodeUp Web generates an editable HTML, CSS, and JavaScript starter.
 
-The strongest completed pieces are:
+Examples include:
 
-- A single-page IDE with HTML, CSS, JavaScript, and Python editor panes.
-- Local Monaco editor loading with a textarea fallback when Monaco is unavailable.
-- Deterministic offline website and app generation, so demos work without cloud AI keys.
-- Website preview publishing under `/student-site/<session>/...` with restrictive preview CSP headers.
-- Project creation, loading, autosave, version history, undo, and ZIP export.
-- Accessibility audit, safe autofixes, screen-reader summaries, keyboard checks, readiness reports, and learner notes.
-- Runtime and debugging teachers that inspect HTML/CSS/JS connections without inventing browser behavior.
-- Python run, input, step narration, audio code maps, variable watches, function watches, and conditional breakpoints.
+- portfolios and resumes
+- school clubs and events
+- project showcases
+- small business pages
+- quizzes and calculators
+- to-do lists and habit trackers
+- blogs, galleries, and dashboards
 
-## Problem And Users
+The generated projects are learning starters. Every file remains visible and editable.
 
-Many beginner website tools assume the learner can inspect a page visually. CodeUp Web tries to make the structure and behavior of a site understandable by ear and by keyboard. The intended users are beginners, teachers, workshop facilitators, and blind or low-vision learners who need accessible explanations, predictable controls, and exportable learning artifacts.
+## Website Workspace
 
-## Core Features
+The website workspace includes:
 
-- Natural-language website generation and editing.
-- Typed command fallback for every voice-oriented workflow.
-- HTML, CSS, JavaScript, and Python editing in one workspace.
-- Live preview with desktop, tablet, and mobile viewport controls.
-- Project save/load, autosave, local persistence, version history, and undo.
-- Design remix with undo support.
-- Accessibility audit with severity, explanations, and deterministic safe fixes.
-- Runtime teacher, debug teacher, selector explainer, screen-reader tour, keyboard test, and readiness score.
-- Guided web tutorials and guided project starters.
-- Python execution with input queues, step narration, code maps, variable/function watches, and conditional breakpoints.
-- ZIP export containing source files plus learning and audit artifacts.
+- HTML, CSS, and JavaScript editors
+- locally hosted Monaco Editor
+- textarea fallback when Monaco is unavailable
+- live desktop, tablet, and mobile previews
+- typed and spoken commands
+- deterministic offline generation
+- natural-language editing
+- autosave and project loading
+- version history and undo
+- design remix with undo
+- ZIP export
 
-## Supported Project Types
+CodeUp Web can explain the structure and behavior of a project through:
 
-The generator routes requests to an allowlisted project type and produces a beginner-safe starter:
+- audio code maps
+- step narration
+- runtime summaries
+- HTML, CSS, and JavaScript explanations
+- selector tracing
+- change replay
+- project reviews
+- learning notes
 
-- portfolio
-- school club
-- robotics club
-- project showcase
-- event or workshop
-- bakery or small business
-- nonprofit
-- accessibility project
-- blog
-- gallery
-- product page
-- quiz app
-- calculator app
-- to-do list app
-- flashcard app
-- poll page
-- contact form
-- dashboard
-- timetable
-- habit tracker
-- resume
-- generic website
+## Python Learning Workspace
 
-These are starter projects, not complete production apps or full courses.
+Python mode supports beginner programs using variables, conditions, loops, functions, collections, and queued input values.
 
-## Local Setup
+Learning tools include:
 
-Requirements: Python 3.10 or newer. Node/npm is recommended for verifying or refreshing the pinned Monaco package, and Chrome or Edge gives the best speech and browser-test support.
+- constrained Python execution
+- plain-language error explanations
+- audio code maps
+- indentation and nesting descriptions
+- step-by-step narration
+- variable state watches
+- function call and return explanations
+- conditional breakpoints
+- output and execution limits
 
-```powershell
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
-# Optional: verifies package metadata for the vendored Monaco editor.
-npm install
-py app.py
+Python programs run in a separate constrained process with a timeout and a restricted import surface. This environment is intended for beginner learning programs.
+
+## Accessibility Tools
+
+CodeUp Web includes deterministic checks and explanations for:
+
+- missing accessible names
+- heading and landmark structure
+- image alternative text
+- keyboard navigation
+- focus visibility
+- form labels
+- screen-reader reading order
+- color and contrast concerns
+- common HTML accessibility problems
+
+The accessibility audit can apply a limited set of safe fixes. Reports explain what changed and why.
+
+Automated checks support learning and review. Exact behavior with NVDA, JAWS, and VoiceOver still requires manual testing.
+
+## Guided Learning
+
+The app includes short web tutorials and guided project starters.
+
+Tutorial progress is saved between reloads. Guided projects provide a structured starting path while leaving the learner in control of the code.
+
+These flows are project starters rather than full courses.
+
+## Quick Start
+
+### Requirements
+
+- Python 3.10 or newer
+- Chrome or Edge recommended for speech features
+- Node.js is optional because Monaco is already vendored in the repository
+
+### Install
+
+```bash
+python -m venv .venv
 ```
 
-Then open:
+Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+macOS or Linux:
+
+```bash
+source .venv/bin/activate
+```
+
+Install dependencies and start the app:
+
+```bash
+python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
+python app.py
+```
+
+Open:
 
 ```text
 http://127.0.0.1:5000/
 ```
 
-The `/ide` route loads the same app shell and is safe to open directly.
+The IDE can also be opened directly at:
 
-## Environment Variables
+```text
+http://127.0.0.1:5000/ide
+```
 
-CodeUp Web works without cloud AI keys. For deterministic local demos, run with cloud AI disabled:
+## Cloud AI Is Optional
+
+CodeUp Web works without provider keys. Deterministic generation and analysis remain available offline.
+
+To force deterministic local behavior:
+
+Windows PowerShell:
 
 ```powershell
 $env:AI_CLOUD_ENABLED="0"
-py app.py
+python app.py
 ```
 
-Supported environment variables are documented in `.env.example`:
+macOS or Linux:
+
+```bash
+AI_CLOUD_ENABLED=0 python app.py
+```
+
+Optional provider settings and other configuration values are documented in `.env.example`.
+
+Never commit a real `.env` file or API key.
+
+## Demo Flow
+
+### Build a Website
+
+Try these commands in the command box:
 
 ```text
-FLASK_SECRET_KEY=change-me-in-production
-CODEUP_ENV=development
-SESSION_COOKIE_SECURE=false
-XAI_API_KEY=your_xai_or_grok_key_here
-GROK_API_KEY=your_xai_or_grok_key_here
-GROQ_API_KEY=your_groq_api_key_here
-AI_CLOUD_ENABLED=1
-AI_MAX_CONCURRENT=3
-AI_TIMEOUT=30
-SESSION_ARTIFACT_MAX_AGE=604800
-DATA_DIR=instance/data
-ALLOWED_ORIGINS=
+make a website for my school robotics club
+code map
+add a section about competitions
+check accessibility
+fix accessibility issues
+what changed
+export website
 ```
 
-Do not commit a real `.env` file or provider key.
+### Explore Python
 
-## Demo flow
+Open the Python workspace and try:
 
-Use the command box if microphone support is unavailable. The same router handles typed and spoken commands.
+```python
+total = 0
 
-1. `what can I do here`
-2. `make a website for my school robotics club`
-3. `code map`
-4. `step narration`
-5. `add a section about competitions`
-6. `check accessibility`
-7. `fix accessibility issues`
-8. `learning notes`
-9. `export website`
+for score in [8, 12, 15]:
+    total += score
 
-Optional app demo:
+print(total)
+```
 
-1. `start over`
-2. `make a quiz app about Python basics`
-3. `add score tracking`
-4. `explain JavaScript`
-5. `describe preview`
-6. `export website`
+Then use:
 
-Proof-oriented demo:
+```text
+run this Python code
+audio code map
+next step
+watch variable total
+why did total change
+break when total > 10
+```
 
-1. `make a website for my school robotics club`
-2. `run website`
-3. `what CSS affects the join button`
-4. `debug website`
-5. `check accessibility`
-6. `is this ready to share`
-7. `what changed`
-8. `make pilot report`
-9. `export website`
+## Export
 
-## Export Contents
+Website export produces a ZIP containing the editable source files and the learning reports available for the current project.
 
-`export website` downloads a ZIP. It always includes source files and core learning artifacts, and includes conditional reports when the current session has enough data.
+Depending on the actions completed during the session, the export may include:
 
-- `index.html`
-- `style.css`
-- `script.js`
-- `README.txt`
-- `manifest.json`
-- `CODE_MAP.txt`
-- `STEP_NARRATION.txt`
-- `LEARNING_NOTES.txt`
-- `PROJECT_SUMMARY.txt`
-- `PROJECT_REVIEW.txt`
-- `PREVIEW_DESCRIPTION.txt`
-- `TRAINER_NOTES.txt`
-- `STUDENT_RECAP.txt`
-- `SCREEN_READER_SUMMARY.txt`
-- `RUN_SUMMARY.txt`
-- `DEBUG_REPORT.txt`
-- `SCREEN_READER_TOUR.txt`
-- `KEYBOARD_TEST.txt`
-- `VISUAL_DESCRIPTION.txt`
-- `READINESS_SCORE.txt`
-- `TEACHER_REVIEW.txt`
-- `ACCESSIBILITY_REPORT.txt` when an audit has run
-- `PILOT_REPORT.txt` when session data exists
-- `VERSION_HISTORY.txt` when versions exist
-- `CHANGE_REPLAY.txt` when an edit has been recorded
-- `BOOKMARKS.txt` when bookmarks exist
+- code maps
+- step narration
+- accessibility findings
+- runtime and debugging reports
+- project summaries
+- learning notes
+- version history
+- change replay
+- teacher and student recaps
 
 ## Testing
 
-```powershell
-py -m pytest -q
-py -m ruff check .
-py -m ruff format --check codeup app.py tests
-py -m compileall -q app.py codeup tests
+Run the complete test suite:
+
+```bash
+python -m pytest -q
+```
+
+Run the checks separately:
+
+```bash
+python -m ruff check .
+python -m ruff format --check codeup app.py tests
+python -m compileall -q app.py codeup tests
 node --check static/codeup-html.js
 node --check static/monaco-loader.js
 node --check static/voice-memory-engine.js
 ```
 
-The browser end-to-end tests are in `tests/test_e2e_browser.py`. They use Playwright and skip only when no Chromium-compatible browser is available.
+Run the browser tests:
 
-## Build And Assets
+```bash
+python -m pytest tests/test_e2e_browser.py -q
+```
 
-There is no separate frontend build step. Static files are served directly by Flask. Monaco is pinned in `package-lock.json` and vendored under `static/vendor/monaco/vs` so the editor loads from same-origin files instead of a CDN.
+The current verified suite contains:
 
-If Monaco needs to be refreshed, run `npm install` and update the vendored files through the repository's normal asset process. Do not hand-edit generated vendor bundles.
+- 441 non-browser tests
+- 16 browser end-to-end tests
+- Python 3.10 and Python 3.12 CI coverage
 
-## Architecture
+## Tech Stack
+
+- Python and Flask
+- Vanilla JavaScript
+- HTML and CSS
+- Monaco Editor 0.56.0
+- Python AST analysis
+- browser speech synthesis and recognition
+- Playwright browser testing
+- JSON-backed local project storage
+
+Monaco is served from `static/vendor/monaco/` so the editor can load from the same origin without a CDN.
+
+## Project Structure
 
 ```text
 CodeUp-web/
-|-- app.py                    Flask entry point
-|-- codeup/
-|   |-- app_factory.py        Flask app factory
-|   |-- config.py             Environment and app constants
-|   |-- security.py           CSP, origin checks, and HTML sanitization
-|   |-- storage.py            JSON-backed local storage
-|   |-- models.py             Domain models
-|   |-- routes/               Flask blueprints
-|   |-- runtime/              Constrained Python runner
-|   `-- services/             Generation, routing, audit, explainers, export
-|-- static/
-|   |-- codeup-html.js        Browser IDE controller
-|   |-- monaco-loader.js      Local Monaco bootstrap
-|   |-- voice-memory-engine.js
-|   `-- style/                CSS modules
-|-- templates/index.html      Single-page app shell
-|-- tests/                    Python and browser tests
-`-- docs/evidence/            Existing screenshots for verification evidence
+├── app.py
+├── codeup/
+│   ├── app_factory.py
+│   ├── config.py
+│   ├── routes/
+│   ├── runtime/
+│   ├── services/
+│   ├── security.py
+│   └── storage.py
+├── static/
+│   ├── codeup-html.js
+│   ├── monaco-loader.js
+│   ├── voice-memory-engine.js
+│   ├── style/
+│   └── vendor/monaco/
+├── templates/
+├── tests/
+└── docs/evidence/
 ```
 
-Runtime data is stored under `instance/data` by default or under `DATA_DIR` when configured. Local data directories and `.env` are ignored by Git.
+## Safety and Limits
 
-## Safety
+- Hosted previews remove external scripts and remote stylesheets.
+- Student previews use restrictive Content Security Policy headers.
+- Generated projects avoid credential-harvesting and hidden submission flows.
+- Python mode restricts imports, reflective access, output size, execution time, and input size.
+- Python mode is a constrained educational runner and should not be used as a security boundary for hostile untrusted code.
+- Voice input and speech output depend on browser support.
+- Offline generation has less variation than cloud-assisted generation.
+- Generated projects are beginner starters rather than production applications.
+- Framework projects and arbitrary application architectures are outside the current scope.
 
-Generated projects are starter sites for learning. CodeUp Web validates generated and edited files, strips external scripts and styles from hosted previews, avoids credential-harvesting templates, and serves student previews with restrictive security headers. See [SECURITY.md](SECURITY.md) for the full policy.
+See [SECURITY.md](SECURITY.md) for the security policy and vulnerability-reporting process.
 
-## Known Limitations
+## Evidence
 
-- Python mode is a constrained educational runner intended for beginner programs; it is not a security boundary for hostile untrusted code.
-- Voice input and speech output depend on browser support; Chrome or Edge is recommended.
-- Without cloud AI keys, generation uses deterministic templates with limited variation.
-- Guided projects are starter flows and are not full milestone-validated courses.
-- Generated websites are beginner projects, not production services.
-- Framework projects and arbitrary multi-page application architectures are outside the current scope.
-- Screen-reader behavior is tested through deterministic structure checks; exact NVDA, JAWS, and VoiceOver hardware testing remains a manual validation step.
+Additional browser evidence is available in `docs/evidence`, including:
 
-## Contributing
-
-1. Install runtime and dev dependencies.
-2. Run the tests and checks listed above.
-3. Keep README and UI claims specific to behavior that is implemented and tested.
-4. Do not commit secrets, local `.env` files, runtime data, caches, or generated test artifacts.
+- Monaco and fallback editors
+- desktop and mobile layouts
+- website preview
+- Python learning mode
+- guided projects
+- version history
+- ZIP export
+- keyboard focus
