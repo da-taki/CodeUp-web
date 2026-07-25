@@ -39,50 +39,47 @@ def client(monkeypatch, tmp_path):
     return app_module.app.test_client()
 
 
-def test_readme_includes_merged_demo_and_app_demo():
+def test_readme_includes_website_and_python_demo_flows():
     text = README.read_text(encoding="utf-8")
+    assert "## Demo Flow" in text
+    # Website demo commands.
     assert "make a website for my school robotics club" in text
-    assert "make a quiz app about Python basics" in text
-    assert "add score tracking" in text
-    assert "Demo flow" in text
-    assert "describe preview" in text
+    assert "check accessibility" in text
+    assert "export website" in text
+    # Python demo commands.
+    assert "run this Python code" in text
+    assert "watch variable total" in text
+    assert "break when total > 10" in text
 
 
 def test_readme_lists_supported_project_types():
     text = README.read_text(encoding="utf-8").lower()
     for project_type in (
-        "robotics club",
-        "quiz app",
-        "calculator app",
-        "flashcard",
-        "timetable",
-        "habit tracker",
-        "resume",
+        "portfolios",
+        "school clubs",
+        "project showcases",
+        "quizzes",
+        "calculators",
+        "habit trackers",
+        "blogs",
     ):
         assert project_type in text, project_type
 
 
-def test_readme_lists_all_export_artifacts():
-    text = README.read_text(encoding="utf-8")
-    for artifact in (
-        "index.html",
-        "style.css",
-        "script.js",
-        "README.txt",
-        "CODE_MAP.txt",
-        "STEP_NARRATION.txt",
-        "LEARNING_NOTES.txt",
-        "PROJECT_SUMMARY.txt",
-        "PROJECT_REVIEW.txt",
-        "PREVIEW_DESCRIPTION.txt",
-        "ACCESSIBILITY_REPORT.txt",
-        "TRAINER_NOTES.txt",
-        "STUDENT_RECAP.txt",
-        "SCREEN_READER_SUMMARY.txt",
-        "CHANGE_REPLAY.txt",
-        "BOOKMARKS.txt",
+def test_readme_documents_export_report_categories():
+    text = README.read_text(encoding="utf-8").lower()
+    assert "## export" in text
+    for category in (
+        "code maps",
+        "step narration",
+        "accessibility findings",
+        "runtime and debugging reports",
+        "project summaries",
+        "learning notes",
+        "version history",
+        "change replay",
     ):
-        assert artifact in text, artifact
+        assert category in text, category
 
 
 def test_readme_links_to_security_policy():

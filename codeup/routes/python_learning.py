@@ -93,12 +93,19 @@ def python_run_route():
     _record_run(session_id, code, result)
     status = 200
     error_text = str(result.get("error", "")).lower()
-    if not result.get("success") and ("too large" in error_text or "too long" in error_text):
-        status = 413
-    elif not result.get("success") and "too many queued inputs" in error_text:
-        status = 400
-    elif not result.get("success") and "cannot be empty" in error_text:
-        status = 400
+    if not result.get("success"):
+        # A timeout is an execution outcome (the program ran but did not finish in time),
+        # not a payload-size problem, so it stays 200 like syntax and runtime errors. Its
+        # message contains "too long" ("ran for too long"), so it is excluded before the
+        # size-limit check below, which is reserved for oversized source or output.
+        if "timed out" in error_text:
+            status = 200
+        elif "too large" in error_text or "too long" in error_text:
+            status = 413
+        elif "too many queued inputs" in error_text:
+            status = 400
+        elif "cannot be empty" in error_text:
+            status = 400
     return jsonify({**result, "auto_speak": True}), status
 
 
