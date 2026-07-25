@@ -183,7 +183,8 @@ def test_edit_site_updates_existing_project_without_replacing_topic(client):
         },
     ).get_json()
     assert polished["success"] is True
-    assert "professional polish" in polished["css"].lower()
+    assert "main section, article, .card" in polished["css"]
+    assert "font-weight: 700" in polished["css"]
     assert "robotics" in polished["html"].lower()
 
 

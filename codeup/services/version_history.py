@@ -1,10 +1,3 @@
-"""Session version-history reporting.
-
-The live version stack is kept in the browser session (bounded). This module turns
-a list of version records into a readable report for display and for the export ZIP.
-It is read-only and never touches files.
-"""
-
 from __future__ import annotations
 
 import re

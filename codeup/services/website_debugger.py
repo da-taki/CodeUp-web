@@ -1,11 +1,3 @@
-"""Beginner-friendly, honest static debugging for generated websites.
-
-Inspects HTML/CSS/JS for likely problems and explains them like a teacher. Findings
-are grounded in the source — it never invents runtime errors. The architecture keeps
-a single ``collect_issues`` pass so real preview-console capture can be layered on
-later by merging extra issue dicts into the same shape.
-"""
-
 from __future__ import annotations
 
 import re
@@ -60,7 +52,6 @@ def collect_issues(html: str, css: str = "", js: str = "") -> list[dict[str, str
     present_ids = _ids_in_html(html)
     present_set = set(present_ids)
 
-    # Missing DOM ids referenced by JavaScript.
     for ref in dict.fromkeys(_ids_referenced_by_js(js)):
         if ref not in present_set:
             issues.append(
@@ -72,7 +63,6 @@ def collect_issues(html: str, css: str = "", js: str = "") -> list[dict[str, str
                 }
             )
 
-    # Duplicate ids.
     seen: set[str] = set()
     for current in present_ids:
         if current in seen:
@@ -87,7 +77,6 @@ def collect_issues(html: str, css: str = "", js: str = "") -> list[dict[str, str
             break
         seen.add(current)
 
-    # Unsafe JavaScript patterns.
     if UNSAFE_JS.search(js):
         issues.append(
             {
@@ -98,7 +87,6 @@ def collect_issues(html: str, css: str = "", js: str = "") -> list[dict[str, str
             }
         )
 
-    # Likely infinite loop.
     if re.search(r"\bwhile\s*\(\s*true\s*\)", js) and "break" not in js:
         issues.append(
             {
@@ -118,7 +106,6 @@ def collect_issues(html: str, css: str = "", js: str = "") -> list[dict[str, str
             }
         )
 
-    # JavaScript bracket / syntax balance.
     balanced, line = _balanced(js)
     if not balanced:
         issues.append(
@@ -130,7 +117,6 @@ def collect_issues(html: str, css: str = "", js: str = "") -> list[dict[str, str
             }
         )
 
-    # Interactivity expected but no handlers.
     has_button = bool(re.search(r"<button\b", html, re.IGNORECASE))
     has_form = bool(re.search(r"<form\b", html, re.IGNORECASE))
     has_listener = "addeventlistener" in js.lower() or re.search(r"\bon[a-z]+\s*=", html, re.IGNORECASE)
@@ -144,7 +130,6 @@ def collect_issues(html: str, css: str = "", js: str = "") -> list[dict[str, str
             }
         )
 
-    # Form submit that reloads the page.
     if has_form and "addeventlistener" in js.lower() and "preventdefault" not in js.lower():
         issues.append(
             {
@@ -155,7 +140,6 @@ def collect_issues(html: str, css: str = "", js: str = "") -> list[dict[str, str
             }
         )
 
-    # Dynamic output without an aria-live region.
     updates_dom = bool(re.search(r"\.(?:textContent|innerHTML)\s*=", js))
     if updates_dom and "aria-live" not in html.lower():
         issues.append(
@@ -196,15 +180,12 @@ def build_debug_report(html: str, css: str = "", js: str = "") -> dict[str, Any]
 
 
 def apply_safe_js_fixes(html: str, css: str = "", js: str = "") -> dict[str, Any]:
-    """Apply only safe, deterministic fixes. Never introduces unsafe code."""
     fixed_html = html or ""
     changes: list[str] = []
 
     present = set(_ids_in_html(fixed_html))
     referenced = [ref for ref in dict.fromkeys(_ids_referenced_by_js(js)) if ref not in present]
 
-    # Safe fix: when JS references a single missing id and exactly one obvious target
-    # element has no id, attach the referenced id to that element.
     for ref in referenced:
         candidates = list(
             re.finditer(r"<(button|form|input|textarea|select)\b(?![^>]*\bid=)[^>]*>", fixed_html, re.IGNORECASE)
@@ -217,7 +198,6 @@ def apply_safe_js_fixes(html: str, css: str = "", js: str = "") -> dict[str, Any
             present.add(ref)
             changes.append(f'Added id="{ref}" to the <{tag}> element so the JavaScript can find it.')
 
-    # Never let a "fix" introduce unsafe patterns.
     if UNSAFE_JS.search(fixed_html):
         fixed_html = html or ""
         changes = []

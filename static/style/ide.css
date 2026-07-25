@@ -1,11 +1,11 @@
-/* CodeUp-Web IDE layout — an artistic notebook / studio workspace.
-   Sits on top of core/accessibility/ui-improvements and reuses the warm paper
-   theme tokens (var(--bg-*), var(--text-*), var(--accent), ...). Decorative
-   accents are kept low-contrast and are softened in high-contrast / reduced
-   motion so they never get in the way of testing or screen readers. */
+
+
+
+
+
 
 :root {
-  /* Colored-pencil / paint accents (decorative + section coding). */
+
   --art-coral:    #d24a2a;
   --art-sun:      #cf8a00;
   --art-green:    #5a7d2a;
@@ -13,7 +13,7 @@
   --art-sky:      #2f6fae;
   --art-lavender: #6f53b5;
 
-  /* Sticky-note tints (pale background, dark ink → high contrast). */
+
   --note-create:    #ffe6d4;
   --note-edit:      #fdedbf;
   --note-understand:#d9efde;
@@ -38,7 +38,7 @@ body.theme-night {
   --paper-shadow: 0 12px 26px -16px rgba(0, 0, 0, 0.72);
 }
 
-/* High-contrast: drop tints + decorative tilt so structure is crisp. */
+
 body.theme-high-contrast,
 body.cvd-high-contrast {
   --note-create: #fff; --note-edit: #fff; --note-understand: #fff;
@@ -53,7 +53,7 @@ body.cvd-high-contrast {
 .ide-main,
 .ide-palette-overlay { position: relative; z-index: 1; }
 
-/* Soft watercolor blobs behind the workspace (decorative, subtle). */
+
 .ide-body::after {
   content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
   background:
@@ -68,7 +68,7 @@ body.theme-high-contrast .ide-body::after,
 body.cvd-high-contrast .ide-body::after,
 body.theme-reduced-motion .ide-body::after { display: none; }
 
-/* ---------- Header ---------- */
+
 .ide-header {
   padding: 16px 4% 14px;
   background: var(--bg-panel);
@@ -124,7 +124,7 @@ body.cvd-high-contrast .ide-logo-mark { transform: none; }
 .ide-field input:focus,
 .ide-field select:focus { outline: 3px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
 
-/* ---------- Command bar (the desk) ---------- */
+
 .ide-command {
   padding: 16px 4%;
   background: var(--bg-soft);
@@ -147,7 +147,7 @@ body.cvd-high-contrast .ide-logo-mark { transform: none; }
 .ide-command-hint { margin-top: 8px; font-size: 0.82rem; color: var(--text-dim); }
 .ide-command-hint em { font-style: normal; font-weight: 700; color: var(--accent); }
 
-/* ---------- "Need an idea?" sticky note ---------- */
+
 .ide-idea-card {
   position: relative;
   margin-top: 14px;
@@ -170,7 +170,7 @@ body.cvd-high-contrast .ide-idea-card { transform: none; }
 .ide-idea-text { margin: 0; font-size: 0.95rem; font-weight: 600; }
 .ide-idea-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
 
-/* ---------- Command palette (modal of sticky notes) ---------- */
+
 .ide-palette-overlay {
   position: fixed; inset: 0; z-index: 90;
   display: flex; align-items: flex-start; justify-content: center;
@@ -202,7 +202,7 @@ body.theme-night .ide-palette-overlay { background: rgba(0, 0, 0, 0.62); }
 }
 .ide-palette-sub { margin: 6px 0 16px; color: var(--text-dim); font-size: 0.88rem; }
 
-/* ---------- Grouped command notes + chips ---------- */
+
 .ide-help-groups {
   display: grid; gap: 14px;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -261,7 +261,7 @@ body.cvd-high-contrast .ide-note::before { background: #000; }
 .ide-chip:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; border-color: var(--accent); }
 .ide-chip-inline { padding: 3px 9px; font-size: 0.8rem; }
 
-/* ---------- Empty states (sketchbook frames) ---------- */
+
 .ide-preview-empty {
   display: flex; flex-direction: column; align-items: center; text-align: center;
   gap: 6px; margin: 10px 0 0; padding: 24px 18px;
@@ -283,7 +283,7 @@ body.cvd-high-contrast .ide-note::before { background: #000; }
 .ide-files-hint { margin: 0; padding: 8px 12px; font-size: 0.8rem; color: var(--text-dim); background: var(--bg-soft); border-bottom: 1px solid var(--border-soft); }
 .ide-files-hint strong { color: var(--text-main); }
 
-/* ---------- Try-this-next chips ---------- */
+
 .ide-trynext {
   display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
   margin-top: 12px; padding: 10px 12px;
@@ -299,7 +299,7 @@ body.cvd-high-contrast .ide-note::before { background: #000; }
 .cu-button-danger:hover:not(:disabled) { background: #6b1404; border-color: #6b1404; color: #fff; }
 body.theme-night .cu-button-danger { color: #2a0a00; }
 
-/* ---------- Toolbar (pen tray) ---------- */
+
 .ide-toolbar {
   display: flex; flex-wrap: wrap; gap: 8px;
   padding: 12px 4%;
@@ -307,7 +307,7 @@ body.theme-night .cu-button-danger { color: #2a0a00; }
   border-bottom: 1px solid var(--border-soft);
 }
 
-/* ---------- Main grid ---------- */
+
 .ide-main {
   flex: 1;
   display: grid;
@@ -317,7 +317,7 @@ body.theme-night .cu-button-danger { color: #2a0a00; }
   align-items: start;
 }
 
-/* Hand-drawn paper panels. */
+
 .ide-main .cu-panel,
 .ide-editors {
   border: 1px solid var(--border-strong);
@@ -325,7 +325,7 @@ body.theme-night .cu-button-danger { color: #2a0a00; }
   box-shadow: var(--paper-shadow);
 }
 
-/* ---------- Editors ---------- */
+
 .ide-editors { display: flex; flex-direction: column; padding: 0; overflow: hidden; min-width: 0; }
 .ide-tabs {
   display: flex; gap: 2px;
@@ -353,14 +353,14 @@ body.theme-night .cu-button-danger { color: #2a0a00; }
 .ide-panel .cu-editor { display: block; height: 100%; }
 .ide-panel .cu-html-editor { min-height: 60vh; border-radius: 0; }
 
-/* ---------- Side column ---------- */
+
 .ide-side { display: flex; flex-direction: column; gap: var(--gap-lg); min-width: 0; }
 .ide-section-title {
   position: relative; display: inline-block;
   font-size: 0.78rem; font-weight: 800; letter-spacing: 0.12em;
   text-transform: uppercase; color: var(--text-main); margin-bottom: 12px;
 }
-/* Brush-stroke highlight behind each section title. */
+
 .ide-section-title::after {
   content: ""; position: absolute; left: -4px; right: -4px; bottom: -2px; height: 7px;
   background: color-mix(in srgb, var(--accent) 38%, transparent);
@@ -383,7 +383,7 @@ body.cvd-high-contrast .ide-section-title::after { display: none; }
 
 .ide-project-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 
-/* ---------- Responsive ---------- */
+
 @media (max-width: 980px) {
   .ide-main { grid-template-columns: 1fr; }
   .ide-voice-status { margin-left: 0; }
@@ -405,7 +405,7 @@ body.cvd-high-contrast .ide-section-title::after { display: none; }
   .ide-idea-actions .cu-button { flex: 1 1 auto; }
 }
 
-/* ---------- Demo mode bump ---------- */
+
 .cu-demo-mode .ide-command-input,
 .cu-demo-mode .ide-tab,
 .cu-demo-mode .ide-section-title { font-size: 1.05em; }

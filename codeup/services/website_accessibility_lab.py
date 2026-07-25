@@ -1,9 +1,3 @@
-"""Accessibility lab: screen-reader tour, keyboard test, visual description, readiness.
-
-All reports are deterministic and read-only — they describe the current HTML/CSS/JS
-and never modify project files.
-"""
-
 from __future__ import annotations
 
 import re
@@ -327,7 +321,6 @@ def build_readiness_score(
     debug_issues = collect_issues(html, css, js)
     has_files = bool((html or "").strip()) and bool((css or "").strip())
 
-    # Subscores (weights sum to 100).
     structure = 15 if (len(headings) >= 2 and len(landmarks) >= 3) else 9 if headings else 3
     accessibility = round(audit_score / 100 * 25)
     visual = 12 if (rules and has_focus) else 8 if rules else 3

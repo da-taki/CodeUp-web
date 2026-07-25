@@ -1,10 +1,3 @@
-"""Run / test website summaries and teacher-style reviews.
-
-Deterministic, beginner-friendly reports built from the current HTML/CSS/JS using
-the same parsing and audit helpers that power the rest of CodeUp Web. Nothing here
-mutates project files.
-"""
-
 from __future__ import annotations
 
 import re
@@ -33,7 +26,6 @@ def title_from_html(html: str, fallback: str = "this website") -> str:
 
 
 def has_real_website(html: str) -> bool:
-    """True when the HTML looks like a generated site, not an empty editor."""
     records = parse_records(html)
     has_landmark = any(record.tag in LANDMARK_TAGS for record in records)
     has_heading = any(re.fullmatch(r"h[1-6]", record.tag) for record in records)
@@ -128,7 +120,6 @@ def build_teacher_review(
     project_type: str = "",
     audit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Return teacher-style feedback. Suggestions are advice only — nothing is changed."""
     records = parse_records(html)
     headings = [record for record in records if re.fullmatch(r"h[1-6]", record.tag)]
     sections = [record for record in records if record.tag in {"section", "article"}]

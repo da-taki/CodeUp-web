@@ -245,7 +245,6 @@ def _shorten_title(html: str) -> str:
 def _professional_css() -> str:
     return """
 
-/* CodeUp Web professional polish */
 :root { --surface: #ffffff; --ink: #17202a; --muted: #526070; --brand: #1f6f8b; --accent: #f59e0b; }
 body { color: var(--ink); background: #f7fafc; line-height: 1.65; }
 header, .hero { background: linear-gradient(135deg, #1f6f8b, #2f855a); color: #ffffff; }
@@ -266,7 +265,6 @@ def _color_css(color: str = "blue") -> str:
     brand, accent = palettes.get(color, ("#1d4ed8", "#0f766e"))
     return f"""
 
-/* CodeUp Web color theme */
 :root {{ --brand: {brand}; --accent: {accent}; }}
 header, .hero {{ background: linear-gradient(135deg, var(--brand), var(--accent)); color: #ffffff; }}
 a, button, .button {{ color: #ffffff; background: var(--brand); }}
@@ -277,7 +275,6 @@ a:focus-visible, button:focus-visible {{ outline: 3px solid #f59e0b; outline-off
 def _simple_css() -> str:
     return """
 
-/* CodeUp Web simpler reading mode */
 body { font-size: 1.05rem; line-height: 1.75; }
 main { max-width: 980px; margin: 0 auto; }
 section, article, .card { padding: 1.25rem; }

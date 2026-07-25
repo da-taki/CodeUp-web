@@ -58,7 +58,7 @@
 </body>
 </html>`;
 
-  // Split starter for the 3-file IDE: HTML structure, CSS in its own pane, JS in its own pane.
+
   const starterBodyHtml = `<!doctype html>
 <html lang="en">
 <head>
@@ -322,14 +322,14 @@ if (cta) {
   function getCss() { const el = getCssEditor(); return el ? el.value : ''; }
   function getJs() { const el = getJsEditor(); return el ? el.value : ''; }
 
-  // Remove only the IDE-managed inline <style>/<script> blocks.
+
   function stripManagedBlocks(html) {
     return String(html || '')
       .replace(new RegExp('\\s*<style\\b[^>]*id=["\\\']?' + CODEUP_CSS_ID + '["\\\']?[^>]*>[\\s\\S]*?<\\/style>', 'gi'), '')
       .replace(new RegExp('\\s*<script\\b[^>]*id=["\\\']?' + CODEUP_JS_ID + '["\\\']?[^>]*>[\\s\\S]*?<\\/script>', 'gi'), '');
   }
 
-  // Remove external references to the sibling files (used only for the inlined preview).
+
   function stripExternalRefs(html) {
     return String(html || '')
       .replace(/\s*<link\b[^>]*href=["']?(?:\.\/)?style\.css["']?[^>]*>/gi, '')
@@ -387,8 +387,8 @@ if (cta) {
     return { html, css, js };
   }
 
-  // getHtml() returns the combined document. When the CSS/JS panes are empty (or
-  // absent, as in the unit-test harness) it returns the raw HTML editor value.
+
+
   function getHtml() {
     const html = getHtmlSource();
     const css = getCss();
@@ -415,7 +415,7 @@ if (cta) {
     } catch (error) {}
   }
 
-  // Load three generated files directly into the three editors.
+
   function loadGeneratedFiles(files) {
     const htmlEl = getEditor();
     const cssEl = getCssEditor();
@@ -489,7 +489,7 @@ if (cta) {
 
   function finishReplay(label) {
     state.replay.after = sourceSnapshot(label || 'After change');
-    // A fresh generation is not an "edit"; everything else counts as a change.
+
     if (!/generation/i.test(label || '')) {
       state.editHappened = true;
       state.lastEditInstruction = state.lastCommand || (state.commandHistory || []).slice(-1)[0] || state.lastEditInstruction || '';
@@ -497,7 +497,7 @@ if (cta) {
     persistDrafts();
   }
 
-  // Snapshot of the most recent edit for export, only when an edit actually happened.
+
   function exportChangeReplay() {
     if (!state.editHappened) return null;
     const before = state.replay && state.replay.before;
@@ -514,12 +514,12 @@ if (cta) {
     };
   }
 
-  // Render small, clickable "Try this next" chips below the output (no walls of text).
+
   function suggestNext(suggestions) {
     const list = (suggestions || []).filter(Boolean);
     const region = $('tryNext');
     if (!region) {
-      // Fallback for environments without the try-next region: append a short line.
+
       const output = $('output');
       if (list.length && output && (output.textContent || '').trim()) {
         output.textContent += `\n\nTry this next: ${list.map((item) => `"${item}"`).join(', ')}.`;
@@ -574,9 +574,9 @@ if (cta) {
     }
   }
 
-  // setHtml() accepts a full document. When the CSS/JS panes exist it splits the
-  // managed style/script blocks back into them; otherwise it behaves like the
-  // original single-editor model (used by the unit-test harness).
+
+
+
   function setHtml(html) {
     const editor = getEditor();
     const cssEl = getCssEditor();
@@ -844,7 +844,7 @@ if (cta) {
     return htmlEl;
   }
 
-  // Backwards-compatible alias (used by the existing setup flow).
+
   function ensureHtmlEditor() { return ensureEditors(); }
 
   function replaceButton(id, label, aria, handler, extraClass) {
@@ -903,7 +903,7 @@ if (cta) {
     return $('sitePreviewFrame');
   }
 
-  // Swap the sketchbook empty-state for the live iframe once a preview exists.
+
   function markPreviewReady() {
     const preview = $('sitePreview');
     if (preview) preview.classList.add('has-preview');
@@ -1655,7 +1655,7 @@ if (cta) {
     }
   }
 
-  // Generate (or edit) a complete website as three separate files via /generate-site.
+
   async function buildWebsite(prompt, shouldSpeak = true, options = {}) {
     cancelSpeech();
     if (!prompt) {
@@ -1894,7 +1894,7 @@ if (cta) {
     }, Math.ceil(capped.length * GAP * 1000) + 200);
   }
 
-  // --- Snippet persistence (localStorage) ---
+
   const SNIPPET_STORAGE_KEY = 'codeup_snippets';
   const MAX_SNIPPETS = 30;
 
@@ -2877,17 +2877,17 @@ if (cta) {
     );
 
     const css = getCss() || (getHtmlSource().match(/<style\b[^>]*>([\s\S]*?)<\/style>/i) || [])[1] || '';
+    const cssCommentPrefix = '/' + '*';
     const selectors = [...new Set((css.match(/[^{}]+(?=\s*\{)/g) || [])
       .map((s) => s.replace(/\s+/g, ' ').trim())
-      .filter((s) => s && !s.startsWith('@') && !s.startsWith('/*')))].slice(0, 14);
+      .filter((s) => s && !s.startsWith('@') && !s.startsWith(cssCommentPrefix)))].slice(0, 14);
 
     const js = getJs() || (getHtmlSource().match(/<script\b(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/i) || [])[1] || '';
     const fns = [...new Set([
       ...(js.match(/function\s+([A-Za-z0-9_]+)/g) || []).map((m) => m.replace(/function\s+/, '') + '()'),
       ...(js.match(/(?:const|let|var)\s+([A-Za-z0-9_]+)\s*=\s*(?:async\s*)?\(/g) || [])
         .map((m) => m.replace(/(?:const|let|var)\s+/, '').replace(/\s*=.*/, '') + '()'),
-    ])].slice(0, 14);
-    const events = [...new Set((js.match(/addEventListener\(\s*['"]([a-z]+)['"]/g) || [])
+    ])].slice(0, 14);    const events = [...new Set((js.match(/addEventListener\(\s*['"]([a-z]+)['"]/g) || [])
       .map((m) => m.replace(/addEventListener\(\s*['"]/, '').replace(/['"]/, '')))].slice(0, 10);
 
     return { sections, headings, selectors, fns, events };

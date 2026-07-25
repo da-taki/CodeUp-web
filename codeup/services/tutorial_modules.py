@@ -1,10 +1,3 @@
-"""Short guided tutorial tracks for CodeUp Web.
-
-Each track is a small ordered list of steps. A step tells the learner what to try
-next with an exact command, plus a one-line "why". These are guidance only; the
-existing module-validation tutorial (web_learning.TUTORIAL_MODULES) is unchanged.
-"""
-
 from __future__ import annotations
 
 from typing import Any
