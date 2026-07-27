@@ -68,7 +68,7 @@ def test_generated_robotics_site_contains_demo_contract_sections():
         "join the lab",
         "data-filter",
         "data-theme-toggle",
-        "data-count",
+        "stat-num",
         "data-nav-toggle",
         "addEventListener",
     ):
@@ -150,6 +150,36 @@ def test_fallback_generation_covers_product_categories_and_reports_fallback(clie
         assert "<main" in combined
         assert "<h1" in combined
         assert expected_text in combined
+
+
+def test_generated_sites_use_restrained_visual_style():
+    prompts = (
+        "make a website for my school robotics club",
+        "make a simple website for a bakery",
+        "make a quiz app about web accessibility basics",
+    )
+    blocked = (
+        "linear-gradient",
+        "radial-gradient",
+        "conic-gradient",
+        "background-clip: text",
+        "color: transparent",
+        "data-count",
+        "requestAnimationFrame",
+        "\\ufffd",
+        "\\u00c2",
+        "\\u00e2",
+        "\\ud83d",
+    )
+    for prompt in prompts:
+        files = generate_site_files(prompt)
+        combined = "\n".join((files["html"], files["css"], files["js"]))
+        lowered = combined.lower()
+        for pattern in blocked:
+            assert pattern.lower() not in lowered, (prompt, pattern)
+        assert all(ord(ch) < 128 for ch in combined), prompt
+        assert "animation: none !important" in files["css"]
+        assert "background: #1f6f8b" in files["css"]
 
 
 def test_edit_site_updates_existing_project_without_replacing_topic(client):

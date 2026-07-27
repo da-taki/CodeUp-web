@@ -281,7 +281,7 @@ def _professional_css() -> str:
 
 :root { --surface: #ffffff; --ink: #17202a; --muted: #526070; --brand: #1f6f8b; --accent: #f59e0b; }
 body { color: var(--ink); background: #f7fafc; line-height: 1.65; }
-header, .hero { background: linear-gradient(135deg, #1f6f8b, #2f855a); color: #ffffff; }
+header, .hero { background: #1f6f8b; color: #ffffff; }
 main section, article, .card { background: var(--surface); border: 1px solid #d8e2ea; border-radius: 8px; }
 a, button, .button { font-weight: 700; }
 a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid #f59e0b; outline-offset: 3px; }
@@ -301,7 +301,7 @@ def _color_css(color: str = "blue") -> str:
 
 
 :root {{ --brand: {brand}; --accent: {accent}; }}
-header, .hero {{ background: linear-gradient(135deg, var(--brand), var(--accent)); color: #ffffff; }}
+header, .hero {{ background: var(--brand); color: #ffffff; }}
 a, button, .button {{ color: #ffffff; background: var(--brand); }}
 a:focus-visible, button:focus-visible {{ outline: 3px solid #f59e0b; outline-offset: 3px; }}
 """

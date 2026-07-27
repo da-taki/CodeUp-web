@@ -44,6 +44,52 @@ def detect_kind(prompt: str) -> str:
     return "generic"
 
 
+def _clean_generated_text(value: object) -> str:
+    text = str(value or "")
+    text = text.encode("ascii", "ignore").decode("ascii")
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _strip_non_ascii(value: object) -> str:
+    return str(value or "").encode("ascii", "ignore").decode("ascii")
+
+
+def _stabilize_css(css: str) -> str:
+    clean = str(css or "")
+    clean = re.sub(r"(?:linear|radial|conic)-gradient\([^;{}]*\)", "var(--brand)", clean, flags=re.IGNORECASE)
+    clean = re.sub(r"background-clip\s*:\s*text\s*;?", "", clean, flags=re.IGNORECASE)
+    clean = re.sub(r"-webkit-background-clip\s*:\s*text\s*;?", "", clean, flags=re.IGNORECASE)
+    clean = re.sub(r"color\s*:\s*transparent\s*;?", "color: var(--brand);", clean, flags=re.IGNORECASE)
+    clean = re.sub(r"animation\s*:[^;{}]+;?", "", clean, flags=re.IGNORECASE)
+    clean = re.sub(r"transition\s*:[^;{}]+;?", "", clean, flags=re.IGNORECASE)
+    guard = """
+
+:root { color-scheme: light; --brand: #1f6f8b; --accent: #0f766e; --bg: #f7f8fb; --surface: #ffffff; --ink: #17202a; --muted: #526070; --line: #d8e2ea; --radius: 8px; }
+* { box-sizing: border-box; }
+html { scroll-behavior: auto; }
+body { margin: 0; color: var(--ink); background: var(--bg); line-height: 1.6; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+img, svg { max-width: 100%; height: auto; }
+h1 { font-size: clamp(2rem, 5vw, 3.4rem); }
+h2 { font-size: clamp(1.45rem, 3vw, 2.2rem); }
+p, li { max-width: 72ch; }
+a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid #f59e0b; outline-offset: 3px; }
+.hero { background: #1f6f8b; color: #ffffff; }
+.card, .panel, article { border-radius: var(--radius); }
+.btn, button, .filter-btn, .theme-toggle, .nav-toggle { border-radius: 8px; }
+* { animation: none !important; transition: none !important; }
+"""
+    return clean.rstrip() + guard
+
+
+def stabilize_site_files(files: dict[str, str]) -> dict[str, str]:
+    return {
+        "html": _strip_non_ascii(files.get("html") or files.get("index.html") or ""),
+        "css": _stabilize_css(str(files.get("css") or files.get("style.css") or "")),
+        "js": _strip_non_ascii(files.get("js") or files.get("script.js") or ""),
+    }
+
+
 _STOPWORDS = {"a", "an", "the", "my", "our", "your", "for", "about", "of", "to", "with", "and"}
 
 
@@ -588,12 +634,20 @@ def _nav_html() -> str:
 
 
 def _render_html(prompt: str, kind: str, title: str, topic: str, bp: dict) -> str:
-    safe_title = escape(title)
-    safe_topic = escape(topic)
-    safe_prompt = escape(prompt or "")
+    safe_title = escape(_clean_generated_text(title))
+    safe_topic_text = _clean_generated_text(topic)
+    safe_prompt = escape(_clean_generated_text(prompt or ""))
+    clean_bp = {key: value for key, value in bp.items()}
+    for key, value in list(clean_bp.items()):
+        if isinstance(value, str):
+            clean_bp[key] = _clean_generated_text(value)
+        elif isinstance(value, list):
+            clean_bp[key] = value
 
-    badges = "".join(f'<span class="badge">{escape(b)}</span>' for b in bp["hero_badges"])
-    about_points = "".join(f"<li>{escape(p)}</li>" for p in bp["about_points"])
+    badges = "".join(
+        f'<span class="badge">{escape(_clean_generated_text(b))}</span>' for b in clean_bp["hero_badges"][:3]
+    )
+    about_points = "".join(f"<li>{escape(_clean_generated_text(p))}</li>" for p in clean_bp["about_points"][:3])
 
     def _filter_button(key: str, label: str, active: bool) -> str:
         pressed = "true" if active else "false"
@@ -603,39 +657,40 @@ def _render_html(prompt: str, kind: str, title: str, topic: str, bp: dict) -> st
             + '" aria-pressed="'
             + pressed
             + '">'
-            + escape(label)
+            + escape(_clean_generated_text(label))
             + "</button>"
         )
 
-    filters = "".join(_filter_button(key, label, i == 0) for i, (key, label) in enumerate(bp["filters"]))
+    filters = "".join(_filter_button(key, label, i == 0) for i, (key, label) in enumerate(clean_bp["filters"]))
+    filter_labels = {key: _clean_generated_text(label) for key, label in clean_bp["filters"]}
     projects = "".join(
         f'<article class="card" data-category="{escape(cat)}" tabindex="0">'
-        f'<div class="card-icon" aria-hidden="true">{icon}</div>'
-        f"<h3>{escape(name)}</h3><p>{escape(desc)}</p>"
-        f'<span class="tag">{escape(dict(bp["filters"]).get(cat, cat).title())}</span>'
+        f'<div class="card-index" aria-hidden="true">{index:02d}</div>'
+        f"<h3>{escape(_clean_generated_text(name))}</h3><p>{escape(_clean_generated_text(desc))}</p>"
+        f'<span class="tag">{escape(filter_labels.get(cat, cat).title())}</span>'
         f"</article>"
-        for name, cat, icon, desc in bp["projects"]
+        for index, (name, cat, _icon, desc) in enumerate(clean_bp["projects"][:6], start=1)
     )
     stats = "".join(
-        f'<div class="stat"><span class="stat-num" data-count data-target="{target}" data-suffix="{escape(suffix)}">0</span>'
-        f'<span class="stat-label">{escape(label)}</span></div>'
-        for target, suffix, label in bp["stats"]
+        f'<div class="stat"><span class="stat-num">{target}{escape(_clean_generated_text(suffix))}</span>'
+        f'<span class="stat-label">{escape(_clean_generated_text(label))}</span></div>'
+        for target, suffix, label in clean_bp["stats"][:4]
     )
     team = "".join(
-        f'<article class="member"><div class="avatar" aria-hidden="true">{escape(initials)}</div>'
-        f"<h3>{escape(name)}</h3><p>{escape(role)}</p></article>"
-        for initials, name, role in bp["team"]
+        f'<article class="member"><div class="avatar" aria-hidden="true">{escape(_clean_generated_text(initials))}</div>'
+        f"<h3>{escape(_clean_generated_text(name))}</h3><p>{escape(_clean_generated_text(role))}</p></article>"
+        for initials, name, role in clean_bp["team"][:4]
     )
     facilities = "".join(
-        f'<article class="facility"><div class="facility-icon" aria-hidden="true">{icon}</div>'
-        f"<div><h3>{escape(ftitle)}</h3><p>{escape(desc)}</p></div></article>"
-        for icon, ftitle, desc in bp["facilities"]
+        f'<article class="facility"><div class="facility-icon" aria-hidden="true">{index:02d}</div>'
+        f"<div><h3>{escape(_clean_generated_text(ftitle))}</h3><p>{escape(_clean_generated_text(desc))}</p></div></article>"
+        for index, (_icon, ftitle, desc) in enumerate(clean_bp["facilities"][:4], start=1)
     )
     events = "".join(
-        f'<li class="event"><div class="event-date" aria-hidden="true">{escape(date)}</div>'
-        f'<div class="event-body"><h3>{escape(name)}</h3><p>{escape(desc)}</p></div>'
+        f'<li class="event"><div class="event-date" aria-hidden="true">{escape(_clean_generated_text(date))}</div>'
+        f'<div class="event-body"><h3>{escape(_clean_generated_text(name))}</h3><p>{escape(_clean_generated_text(desc))}</p></div>'
         f'<button type="button" class="btn btn-small" data-signup>Sign up</button></li>'
-        for date, name, desc in bp["events"]
+        for date, name, desc in clean_bp["events"][:3]
     )
 
     return f"""<!doctype html>
@@ -654,26 +709,26 @@ def _render_html(prompt: str, kind: str, title: str, topic: str, bp: dict) -> st
   <header class="site-header">
     <div class="container nav-wrap">
       <a class="brand" href="#main">
-        <span class="brand-mark" aria-hidden="true">◆</span>
+        <span class="brand-mark" aria-hidden="true">CW</span>
         <span>{safe_title}</span>
       </a>
-      <button class="nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-controls="primary-nav" aria-label="Open menu">☰</button>
+      <button class="nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-controls="primary-nav" aria-label="Open menu">Menu</button>
       <nav id="primary-nav" class="nav" data-nav aria-label="Primary">
         <ul>{_nav_html()}</ul>
       </nav>
-      <button class="theme-toggle" type="button" data-theme-toggle aria-pressed="false" aria-label="Switch to dark mode">🌙 Dark</button>
+      <button class="theme-toggle" type="button" data-theme-toggle aria-pressed="false" aria-label="Switch to dark mode">Dark mode</button>
     </div>
   </header>
 
   <main id="main">
     <section class="hero" aria-labelledby="hero-heading">
       <div class="container hero-inner">
-        <p class="eyebrow">{safe_topic.title() if safe_topic else "Welcome"}</p>
+        <p class="eyebrow">{safe_topic_text.title() if safe_topic_text else "Welcome"}</p>
         <h1 id="hero-heading">{safe_title}</h1>
-        <p class="hero-tagline">{escape(bp["tagline"])}</p>
+        <p class="hero-tagline">{escape(clean_bp["tagline"])}</p>
         <div class="hero-cta">
-          <a class="btn btn-primary" href="#join">{escape(bp["primary_cta"])}</a>
-          <a class="btn btn-ghost" href="#projects">{escape(bp["secondary_cta"])}</a>
+          <a class="btn btn-primary" href="#join">{escape(clean_bp["primary_cta"])}</a>
+          <a class="btn btn-ghost" href="#projects">{escape(clean_bp["secondary_cta"])}</a>
         </div>
         <div class="badges">{badges}</div>
       </div>
@@ -682,14 +737,14 @@ def _render_html(prompt: str, kind: str, title: str, topic: str, bp: dict) -> st
     <section id="about" class="section" aria-labelledby="about-heading">
       <div class="container two-col">
         <div>
-          <p class="eyebrow">{escape(bp["about_title"])}</p>
-          <h2 id="about-heading">{escape(bp["about_title"])}</h2>
-          <p class="lead">{escape(bp["about_lead"])}</p>
+          <p class="eyebrow">{escape(clean_bp["about_title"])}</p>
+          <h2 id="about-heading">{escape(clean_bp["about_title"])}</h2>
+          <p class="lead">{escape(clean_bp["about_lead"])}</p>
           <ul class="checklist">{about_points}</ul>
         </div>
         <aside class="panel">
-          <h3>{escape(bp["mission_title"])}</h3>
-          <p>{escape(bp["mission_body"])}</p>
+          <h3>{escape(clean_bp["mission_title"])}</h3>
+          <p>{escape(clean_bp["mission_body"])}</p>
         </aside>
       </div>
     </section>
@@ -697,8 +752,8 @@ def _render_html(prompt: str, kind: str, title: str, topic: str, bp: dict) -> st
     <section id="projects" class="section section-alt" aria-labelledby="projects-heading">
       <div class="container">
         <p class="eyebrow">Explore</p>
-        <h2 id="projects-heading">{escape(bp["projects_title"])}</h2>
-        <p class="lead">{escape(bp["projects_intro"])}</p>
+        <h2 id="projects-heading">{escape(clean_bp["projects_title"])}</h2>
+        <p class="lead">{escape(clean_bp["projects_intro"])}</p>
         <div class="filters" role="group" aria-label="Filter projects">{filters}</div>
         <div class="grid cards" data-cards>{projects}</div>
         <p class="sr-only" role="status" data-filter-status aria-live="polite"></p>
@@ -708,7 +763,7 @@ def _render_html(prompt: str, kind: str, title: str, topic: str, bp: dict) -> st
     <section id="achievements" class="section" aria-labelledby="achievements-heading">
       <div class="container">
         <p class="eyebrow">Achievements</p>
-        <h2 id="achievements-heading">{escape(bp["stats_title"])}</h2>
+        <h2 id="achievements-heading">{escape(clean_bp["stats_title"])}</h2>
         <div class="stats">{stats}</div>
       </div>
     </section>
@@ -716,8 +771,8 @@ def _render_html(prompt: str, kind: str, title: str, topic: str, bp: dict) -> st
     <section id="team" class="section section-alt" aria-labelledby="team-heading">
       <div class="container">
         <p class="eyebrow">People</p>
-        <h2 id="team-heading">{escape(bp["team_title"])}</h2>
-        <p class="lead">{escape(bp["team_intro"])}</p>
+        <h2 id="team-heading">{escape(clean_bp["team_title"])}</h2>
+        <p class="lead">{escape(clean_bp["team_intro"])}</p>
         <div class="grid team-grid">{team}</div>
       </div>
     </section>
@@ -725,8 +780,8 @@ def _render_html(prompt: str, kind: str, title: str, topic: str, bp: dict) -> st
     <section id="facilities" class="section" aria-labelledby="facilities-heading">
       <div class="container">
         <p class="eyebrow">Highlights</p>
-        <h2 id="facilities-heading">{escape(bp["facilities_title"])}</h2>
-        <p class="lead">{escape(bp["facilities_intro"])}</p>
+        <h2 id="facilities-heading">{escape(clean_bp["facilities_title"])}</h2>
+        <p class="lead">{escape(clean_bp["facilities_intro"])}</p>
         <div class="grid facilities-grid">{facilities}</div>
       </div>
     </section>
@@ -734,8 +789,8 @@ def _render_html(prompt: str, kind: str, title: str, topic: str, bp: dict) -> st
     <section id="events" class="section section-alt" aria-labelledby="events-heading">
       <div class="container">
         <p class="eyebrow">What's on</p>
-        <h2 id="events-heading">{escape(bp["events_title"])}</h2>
-        <p class="lead">{escape(bp["events_intro"])}</p>
+        <h2 id="events-heading">{escape(clean_bp["events_title"])}</h2>
+        <p class="lead">{escape(clean_bp["events_intro"])}</p>
         <ul class="events">{events}</ul>
         <p class="sr-only" role="status" data-signup-status aria-live="polite"></p>
       </div>
@@ -744,8 +799,8 @@ def _render_html(prompt: str, kind: str, title: str, topic: str, bp: dict) -> st
     <section id="join" class="section" aria-labelledby="join-heading">
       <div class="container narrow">
         <p class="eyebrow">Get involved</p>
-        <h2 id="join-heading">{escape(bp["join_title"])}</h2>
-        <p class="lead">{escape(bp["join_lead"])}</p>
+        <h2 id="join-heading">{escape(clean_bp["join_title"])}</h2>
+        <p class="lead">{escape(clean_bp["join_lead"])}</p>
         <form class="contact-form" data-contact-form novalidate>
           <div class="field">
             <label for="name">Your name</label>
@@ -768,8 +823,8 @@ def _render_html(prompt: str, kind: str, title: str, topic: str, bp: dict) -> st
 
   <footer class="site-footer">
     <div class="container">
-      <p>{escape(bp["footer_note"])}</p>
-      <p class="muted">Built locally with CodeUp-Web · No tracking · Keyboard friendly</p>
+      <p>{escape(clean_bp["footer_note"])}</p>
+      <p class="muted">Built locally with CodeUp Web - no tracking - keyboard friendly</p>
     </div>
   </footer>
 
@@ -779,158 +834,121 @@ def _render_html(prompt: str, kind: str, title: str, topic: str, bp: dict) -> st
 
 
 _SITE_CSS = """:root {
-  color-scheme: light dark;
-  --brand: #4f46e5;
-  --accent: #06b6d4;
-  --hero-end: #7c3aed;
-  --bg: #f7f8fc;
+  color-scheme: light;
+  --brand: #1f6f8b;
+  --accent: #0f766e;
+  --bg: #f7f8fb;
   --surface: #ffffff;
-  --surface-2: #eef1f8;
-  --ink: #14181f;
-  --muted: #51607a;
-  --line: #dde3ef;
-  --ring: #6366f1;
-  --radius: 16px;
-  --shadow: 0 10px 30px rgba(20, 24, 40, 0.08);
+  --surface-2: #eef3f7;
+  --ink: #17202a;
+  --muted: #526070;
+  --line: #d8e2ea;
+  --ring: #f59e0b;
+  --radius: 8px;
+  --shadow: 0 8px 20px rgba(23, 32, 42, 0.08);
   --maxw: 1080px;
 }
 [data-theme="dark"] {
-  --bg: #0b0f1a;
-  --surface: #121829;
-  --surface-2: #0f1524;
-  --ink: #eef2ff;
-  --muted: #a4b1cc;
-  --line: #243049;
-  --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  --bg: #111827;
+  --surface: #172033;
+  --surface-2: #202b3f;
+  --ink: #f8fafc;
+  --muted: #cbd5e1;
+  --line: #334155;
+  --shadow: none;
 }
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
+html { scroll-behavior: auto; }
 body {
   margin: 0;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   color: var(--ink);
   background: var(--bg);
-  line-height: 1.65;
-  -webkit-font-smoothing: antialiased;
+  line-height: 1.6;
 }
 .container { width: min(var(--maxw), 92vw); margin: 0 auto; }
 .narrow { width: min(640px, 92vw); }
-img, svg { max-width: 100%; }
-h1, h2, h3 { line-height: 1.15; letter-spacing: -0.02em; }
-h2 { font-size: clamp(1.6rem, 4vw, 2.5rem); margin: 0 0 0.4rem; }
+img, svg { max-width: 100%; height: auto; }
+h1, h2, h3 { line-height: 1.15; letter-spacing: 0; }
+h2 { font-size: clamp(1.5rem, 3vw, 2.25rem); margin: 0 0 0.4rem; }
 p { margin: 0 0 1rem; }
 a { color: var(--brand); }
-.eyebrow {
-  text-transform: uppercase; letter-spacing: 0.14em; font-size: 0.78rem;
-  font-weight: 700; color: var(--accent); margin: 0 0 0.35rem;
-}
-.lead { font-size: 1.1rem; color: var(--muted); max-width: 60ch; }
+.eyebrow { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.78rem; font-weight: 700; color: var(--accent); margin: 0 0 0.35rem; }
+.lead { font-size: 1.05rem; color: var(--muted); max-width: 64ch; }
 .muted { color: var(--muted); }
-.sr-only {
-  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
-}
-.skip-link {
-  position: absolute; left: 12px; top: -60px; z-index: 100;
-  background: var(--brand); color: #fff; padding: 10px 16px; border-radius: 10px;
-  transition: top 0.2s ease;
-}
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.skip-link { position: absolute; left: 12px; top: -60px; z-index: 100; background: var(--brand); color: #fff; padding: 10px 16px; border-radius: 8px; }
 .skip-link:focus { top: 12px; }
 :focus-visible { outline: 3px solid var(--ring); outline-offset: 3px; border-radius: 6px; }
-.site-header {
-  position: sticky; top: 0; z-index: 50;
-  background: color-mix(in srgb, var(--surface) 86%, transparent);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--line);
-}
+.site-header { position: sticky; top: 0; z-index: 50; background: var(--surface); border-bottom: 1px solid var(--line); }
 .nav-wrap { display: flex; align-items: center; gap: 16px; padding: 12px 0; }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 800; text-decoration: none; color: var(--ink); font-size: 1.1rem; }
-.brand-mark {
-  display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px;
-  color: #fff; background: linear-gradient(135deg, var(--brand), var(--accent));
-}
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 800; text-decoration: none; color: var(--ink); font-size: 1.05rem; }
+.brand-mark { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; color: #fff; background: var(--brand); font-size: 0.78rem; }
 .nav { margin-left: auto; }
 .nav ul { display: flex; gap: 6px; list-style: none; margin: 0; padding: 0; }
-.nav a { text-decoration: none; color: var(--muted); font-weight: 600; padding: 8px 12px; border-radius: 10px; }
+.nav a { text-decoration: none; color: var(--muted); font-weight: 600; padding: 8px 12px; border-radius: 8px; }
 .nav a:hover { color: var(--ink); background: var(--surface-2); }
-.nav-toggle, .theme-toggle {
-  font: inherit; cursor: pointer; border: 1px solid var(--line);
-  background: var(--surface); color: var(--ink); border-radius: 10px; padding: 8px 12px; font-weight: 600;
-}
+.nav-toggle, .theme-toggle { font: inherit; cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 8px; padding: 8px 12px; font-weight: 600; }
 .nav-toggle { display: none; margin-left: auto; }
 .theme-toggle { white-space: nowrap; }
-.btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  font: inherit; font-weight: 700; text-decoration: none; cursor: pointer;
-  padding: 12px 20px; border-radius: 999px; border: 1px solid transparent; transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-.btn:hover { transform: translateY(-2px); }
-.btn-primary { color: #fff; background: linear-gradient(135deg, var(--brand), var(--accent)); box-shadow: var(--shadow); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; padding: 11px 18px; border-radius: 8px; border: 1px solid transparent; }
+.btn-primary { color: #fff; background: var(--brand); box-shadow: var(--shadow); }
 .btn-ghost { color: var(--ink); background: var(--surface); border-color: var(--line); }
 .btn-small { padding: 8px 14px; font-size: 0.9rem; background: var(--surface-2); color: var(--ink); }
-.hero { position: relative; overflow: hidden; color: #fff; padding: clamp(56px, 10vw, 120px) 0; text-align: center;
-  background: radial-gradient(1200px 400px at 10% -10%, var(--accent), transparent 60%),
-              linear-gradient(135deg, var(--brand), var(--hero-end)); }
-.hero-inner { position: relative; }
-.hero .eyebrow { color: rgba(255,255,255,0.85); }
-.hero h1 { font-size: clamp(2.4rem, 7vw, 4.6rem); margin: 0 0 0.4rem; }
-.hero-tagline { font-size: clamp(1.05rem, 2.4vw, 1.4rem); max-width: 62ch; margin: 0 auto 1.6rem; color: rgba(255,255,255,0.92); }
-.hero-cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-.badges { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 1.6rem; }
-.badge { background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.28); padding: 6px 14px; border-radius: 999px; font-size: 0.85rem; font-weight: 600; }
-.section { padding: clamp(48px, 8vw, 92px) 0; }
+.hero { color: #fff; padding: clamp(44px, 8vw, 86px) 0; background: var(--brand); }
+.hero h1 { font-size: clamp(2rem, 5vw, 3.4rem); margin: 0 0 0.55rem; }
+.hero-tagline { font-size: clamp(1rem, 2vw, 1.25rem); max-width: 64ch; margin: 0 0 1.35rem; color: rgba(255, 255, 255, 0.94); }
+.hero-cta { display: flex; gap: 12px; flex-wrap: wrap; }
+.badges { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 1.4rem; }
+.badge { background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.32); padding: 6px 12px; border-radius: 8px; font-size: 0.85rem; font-weight: 600; }
+.section { padding: clamp(42px, 7vw, 78px) 0; }
 .section-alt { background: var(--surface-2); }
-.two-col { display: grid; grid-template-columns: 1.4fr 1fr; gap: 32px; align-items: start; }
-.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow); }
+.two-col { display: grid; grid-template-columns: 1.35fr 1fr; gap: 28px; align-items: start; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; box-shadow: var(--shadow); }
 .checklist { list-style: none; padding: 0; margin: 1rem 0 0; display: grid; gap: 10px; }
-.checklist li { position: relative; padding-left: 30px; }
-.checklist li::before { content: "✓"; position: absolute; left: 0; top: 0; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; background: linear-gradient(135deg, var(--brand), var(--accent)); color: #fff; font-size: 0.75rem; }
-.grid { display: grid; gap: 18px; margin-top: 1.6rem; }
+.checklist li { position: relative; padding-left: 28px; }
+.checklist li::before { content: ""; position: absolute; left: 0; top: 0.45em; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+.grid { display: grid; gap: 16px; margin-top: 1.5rem; }
 .cards { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
-.card {
-  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 22px; box-shadow: var(--shadow); transition: transform 0.18s ease, box-shadow 0.18s ease;
-}
-.card:hover, .card:focus-within { transform: translateY(-4px); box-shadow: 0 18px 40px rgba(20,24,40,0.14); }
-.card-icon { font-size: 2rem; }
-.card h3 { margin: 0.6rem 0 0.3rem; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); }
+.card-index { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 8px; color: #fff; background: var(--brand); font-weight: 800; }
+.card h3 { margin: 0.8rem 0 0.3rem; }
 .card p { color: var(--muted); margin-bottom: 0.8rem; }
-.tag { display: inline-block; font-size: 0.74rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
-  color: var(--brand); background: color-mix(in srgb, var(--brand) 14%, transparent); padding: 4px 10px; border-radius: 999px; }
+.tag { display: inline-block; font-size: 0.74rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--brand); background: var(--surface-2); padding: 4px 10px; border-radius: 8px; }
 .card[hidden] { display: none; }
 .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 1.2rem; }
-.filter-btn { font: inherit; font-weight: 600; cursor: pointer; padding: 8px 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); }
-.filter-btn[aria-pressed="true"] { color: #fff; background: linear-gradient(135deg, var(--brand), var(--accent)); border-color: transparent; }
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 18px; margin-top: 1.6rem; }
-.stat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 26px 18px; text-align: center; box-shadow: var(--shadow); }
-.stat-num { display: block; font-size: clamp(2.2rem, 5vw, 3.2rem); font-weight: 800; background: linear-gradient(135deg, var(--brand), var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.filter-btn { font: inherit; font-weight: 600; cursor: pointer; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); }
+.filter-btn[aria-pressed="true"] { color: #fff; background: var(--brand); border-color: var(--brand); }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-top: 1.5rem; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px 16px; text-align: center; box-shadow: var(--shadow); }
+.stat-num { display: block; font-size: clamp(1.9rem, 4vw, 2.8rem); font-weight: 800; color: var(--brand); }
 .stat-label { color: var(--muted); font-weight: 600; }
 .team-grid { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
-.member { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; text-align: center; box-shadow: var(--shadow); }
-.avatar { width: 72px; height: 72px; margin: 0 auto 12px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 1.4rem; color: #fff; background: linear-gradient(135deg, var(--brand), var(--accent)); }
+.member { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; text-align: center; box-shadow: var(--shadow); }
+.avatar { width: 62px; height: 62px; margin: 0 auto 12px; border-radius: 8px; display: grid; place-items: center; font-weight: 800; font-size: 1.1rem; color: #fff; background: var(--brand); }
 .member h3 { margin: 0 0 0.2rem; }
 .member p { color: var(--muted); margin: 0; }
 .facilities-grid { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
-.facility { display: flex; gap: 16px; align-items: flex-start; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; box-shadow: var(--shadow); }
-.facility-icon { font-size: 1.6rem; width: 48px; height: 48px; flex: none; display: grid; place-items: center; border-radius: 12px; background: var(--surface-2); }
+.facility { display: flex; gap: 16px; align-items: flex-start; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); }
+.facility-icon { font-weight: 800; color: var(--brand); width: 42px; height: 42px; flex: none; display: grid; place-items: center; border-radius: 8px; background: var(--surface-2); }
 .facility h3 { margin: 0 0 0.3rem; }
 .facility p { color: var(--muted); margin: 0; }
-.events { list-style: none; margin: 1.6rem 0 0; padding: 0; display: grid; gap: 12px; }
-.event { display: flex; align-items: center; gap: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 22px; box-shadow: var(--shadow); }
+.events { list-style: none; margin: 1.5rem 0 0; padding: 0; display: grid; gap: 12px; }
+.event { display: flex; align-items: center; gap: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow); }
 .event-date { flex: none; font-weight: 800; color: var(--brand); min-width: 90px; }
 .event-body { flex: 1; }
 .event-body h3 { margin: 0 0 0.2rem; }
 .event-body p { color: var(--muted); margin: 0; }
-.event[data-done] .btn { background: #16a34a; color: #fff; }
-.contact-form { margin-top: 1.6rem; display: grid; gap: 16px; }
+.event[data-done] .btn { background: #0f766e; color: #fff; }
+.contact-form { margin-top: 1.5rem; display: grid; gap: 16px; }
 .field { display: grid; gap: 6px; }
 .field label { font-weight: 600; }
-.field input, .field textarea { font: inherit; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+.field input, .field textarea { font: inherit; padding: 12px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
 .field input:focus, .field textarea:focus { border-color: var(--ring); }
 .form-status { font-weight: 600; min-height: 1.2em; margin: 0; }
-.form-status[data-state="ok"] { color: #16a34a; }
-.form-status[data-state="error"] { color: #dc2626; }
-.site-footer { padding: 40px 0; border-top: 1px solid var(--line); text-align: center; background: var(--surface); }
+.form-status[data-state="ok"] { color: #0f766e; }
+.form-status[data-state="error"] { color: #b91c1c; }
+.site-footer { padding: 36px 0; border-top: 1px solid var(--line); text-align: center; background: var(--surface); }
 .site-footer p { margin: 0.2rem 0; }
 @media (max-width: 760px) {
   .nav-toggle { display: inline-flex; }
@@ -943,7 +961,6 @@ a { color: var(--brand); }
   .event { flex-direction: column; align-items: flex-start; }
 }
 @media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
   * { animation: none !important; transition: none !important; }
 }
 """
@@ -952,7 +969,6 @@ a { color: var(--brand); }
 _SITE_JS = """(function () {
   "use strict";
   var root = document.documentElement;
-  var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   var themeBtn = document.querySelector("[data-theme-toggle]");
   function applyTheme(mode) {
     if (mode === "dark") {
@@ -1009,31 +1025,6 @@ _SITE_JS = """(function () {
       if (filterStatus) filterStatus.textContent = "Showing " + shown + " project" + (shown === 1 ? "" : "s") + ".";
     });
   });
-  var counters = Array.prototype.slice.call(document.querySelectorAll("[data-count]"));
-  function runCounter(el) {
-    var target = parseInt(el.getAttribute("data-target"), 10) || 0;
-    var suffix = el.getAttribute("data-suffix") || "";
-    if (reduceMotion) { el.textContent = target + suffix; return; }
-    var start = null, duration = 1400;
-    function step(ts) {
-      if (start === null) start = ts;
-      var progress = Math.min((ts - start) / duration, 1);
-      var eased = 1 - Math.pow(1 - progress, 3);
-      el.textContent = Math.floor(eased * target) + suffix;
-      if (progress < 1) requestAnimationFrame(step); else el.textContent = target + suffix;
-    }
-    requestAnimationFrame(step);
-  }
-  if ("IntersectionObserver" in window && counters.length) {
-    var io = new IntersectionObserver(function (entries) {
-      entries.forEach(function (entry) {
-        if (entry.isIntersecting) { runCounter(entry.target); io.unobserve(entry.target); }
-      });
-    }, { threshold: 0.4 });
-    counters.forEach(function (c) { io.observe(c); });
-  } else {
-    counters.forEach(runCounter);
-  }
   var signupStatus = document.querySelector("[data-signup-status]");
   document.querySelectorAll("[data-signup]").forEach(function (btn) {
     btn.addEventListener("click", function () {
@@ -1103,7 +1094,7 @@ textarea:focus-visible {
 .hero {
   padding: 54px 20px 34px;
   color: #ffffff;
-  background: linear-gradient(135deg, var(--brand), #2563eb);
+  background: var(--brand);
 }
 .hero-inner,
 main,
@@ -1199,7 +1190,7 @@ label { display: grid; gap: 6px; font-weight: 700; }
   display: block;
   width: 0%;
   height: 100%;
-  background: linear-gradient(90deg, var(--brand), var(--accent));
+  background: var(--accent);
 }
 table { width: 100%; border-collapse: collapse; background: #ffffff; }
 th, td { border: 1px solid var(--line); padding: 10px; text-align: left; }
@@ -1748,10 +1739,11 @@ def generate_site_files(prompt: str) -> dict[str, str]:
 
     if project_type in INTERACTIVE_PROJECT_TYPES:
         html, css, js = _render_interactive_project(project_type, title, topic)
+        stable = stabilize_site_files({"html": html, "css": css, "js": js})
         return {
-            "html": html,
-            "css": css,
-            "js": js,
+            "html": stable["html"],
+            "css": stable["css"],
+            "js": stable["js"],
             "title": title,
             "project_type": project_type,
             "project_type_source": project_type_result.source,
@@ -1765,10 +1757,11 @@ def generate_site_files(prompt: str) -> dict[str, str]:
     html = _render_html(prompt, kind, title, topic, bp)
     css = _SITE_CSS + _palette_override(kind)
     js = _SITE_JS
+    stable = stabilize_site_files({"html": html, "css": css, "js": js})
     return {
-        "html": html,
-        "css": css,
-        "js": js,
+        "html": stable["html"],
+        "css": stable["css"],
+        "js": stable["js"],
         "title": title,
         "project_type": project_type,
         "project_type_source": project_type_result.source,

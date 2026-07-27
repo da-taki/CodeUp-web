@@ -22,6 +22,7 @@ from codeup.services.site_generator import (
     combine_site_files,
     generate_site_files,
     parse_file_blocks,
+    stabilize_site_files,
 )
 from codeup.storage import append_memory, create_project_version, load_html_memory
 
@@ -37,14 +38,13 @@ SITE_SYSTEM_PROMPT = (
     '- index.html must link the CSS with <link rel="stylesheet" href="style.css"> and load the JS with '
     '<script src="script.js" defer></script>.\n'
     "- Use semantic HTML5 (header, nav, main, section, footer) with headings in order and ARIA where useful.\n"
-    "- Make it visually polished and modern, not generic: a hero section plus useful content sections, "
-    "cards, a clear visual hierarchy, and a footer. Keep the output beginner-friendly, not bloated.\n"
+    "- Make it polished but restrained: calm spacing, stable sections, readable typography, modest cards, "
+    "and a footer. Avoid loud dashboard or marketing visuals. Keep the output beginner-friendly, not bloated.\n"
     "- Use meaningful, specific sample content based on the user's request.\n"
     "- Add keyboard support, visible focus styles, strong colour contrast, and full mobile responsiveness.\n"
-    "- Never use external images, fonts, CDNs, or broken links. Use CSS gradients, CSS shapes, and emoji instead.\n"
+    "- Never use external images, fonts, CDNs, or broken links. Do not use emoji, decorative gradients, animated counters, bokeh/orbs, flashing motion, or huge text.\n"
     "- Keep the code clear enough for a beginner student to read and learn from.\n"
-    "- Put meaningful interactivity in script.js (for example: theme/dark-mode toggle, accessible mobile menu, "
-    "project filtering, animated stats, and form handling). Do not add artificial delays.\n\n"
+    "- Put small meaningful interactivity in script.js, such as a theme toggle, accessible mobile menu, project filtering, and form handling. Do not add artificial delays.\n\n"
     "Return ONLY the three files in EXACTLY this parseable format, with no extra prose or markdown fences:\n"
     "FILE: index.html\n<your html here>\n\nFILE: style.css\n<your css here>\n\nFILE: script.js\n<your js here>\n"
 )
@@ -183,6 +183,8 @@ def generate_code():
     )
     user = (
         f"Build request:\n{prompt}\n\n"
+        "Visual direction: restrained classroom-quality site, no gradients, no emoji, no animated counters, "
+        "no decorative blobs, no giant marketing layout.\n\n"
         f"Existing HTML, if this is an edit:\n```html\n{(current_html or memory.last_html)[:MAX_HTML_SIZE]}\n```"
     )
     raw = call_ai(system, user, temperature=0.35, language=language)
@@ -240,9 +242,10 @@ def generate_site():
                     "plan": plan.to_dict(),
                 }
             ), 400
-        html_file = plan.files["index.html"]
-        css_file = plan.files.get("style.css", "")
-        js_file = plan.files.get("script.js", "")
+        stable_files = stabilize_site_files(plan.files)
+        html_file = stable_files["html"]
+        css_file = stable_files.get("css", "")
+        js_file = stable_files.get("js", "")
         combined = combine_site_files(html_file, css_file, js_file)
         summary = [plan.summary]
         append_memory(session_id, prompt=prompt, note=f"Edited 3-file website: {plan.summary}", html=combined)
@@ -268,7 +271,7 @@ def generate_site():
             }
         )
     else:
-        user = f"Build request:\n{prompt}\n\nGenerate a complete, beautiful, accessible website for this request."
+        user = f"Build request:\n{prompt}\n\nGenerate a complete, polished, restrained, accessible website for this request. Avoid gradients, emoji, animated counters, decorative blobs, giant hero text, and noisy dashboards."
 
     raw = call_ai(SITE_SYSTEM_PROMPT, user, temperature=0.35, language=language)
     files = parse_file_blocks(raw) if not is_ai_unavailable(raw) else {}
@@ -285,6 +288,7 @@ def generate_site():
         files.setdefault("css", current_css)
         files.setdefault("js", current_js)
 
+    files = stabilize_site_files(files)
     validation = validate_website_files(
         {"index.html": files["html"], "style.css": files.get("css", ""), "script.js": files.get("js", "")}
     )
@@ -294,6 +298,7 @@ def generate_site():
         project_type = generated.get("project_type", project_type)
         project_type_source = generated.get("project_type_source", project_type_source)
         used_fallback = True
+        files = stabilize_site_files(files)
         validation = validate_website_files(
             {"index.html": files["html"], "style.css": files.get("css", ""), "script.js": files.get("js", "")}
         )
@@ -370,9 +375,10 @@ def edit_site():
         question = f" {plan.clarification_question}" if plan.clarification_question else ""
         return jsonify({"success": False, "error": f"{plan.summary}{question}".strip(), "plan": plan.to_dict()}), 400
 
-    html_file = plan.files["index.html"]
-    css_file = plan.files.get("style.css", "")
-    js_file = plan.files.get("script.js", "")
+    stable_files = stabilize_site_files(plan.files)
+    html_file = stable_files["html"]
+    css_file = stable_files.get("css", "")
+    js_file = stable_files.get("js", "")
     combined = combine_site_files(html_file, css_file, js_file)
     summary = [plan.summary]
     session_id = get_session_id()
@@ -474,6 +480,8 @@ def generate_code_stream():
 
     user = (
         f"Build request:\n{prompt}\n\n"
+        "Visual direction: restrained classroom-quality site, no gradients, no emoji, no animated counters, "
+        "no decorative blobs, no giant marketing layout.\n\n"
         f"Existing HTML, if this is an edit:\n```html\n{(current_html or memory.last_html)[:MAX_HTML_SIZE]}\n```"
     )
 
