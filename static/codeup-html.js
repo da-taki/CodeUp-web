@@ -655,10 +655,22 @@ if (cta) {
     setBusy(false);
   }
 
+  function setVoiceActive(active) {
+    state.voiceActive = active;
+    setBusy(false);
+    const button = $("voiceButton");
+    if (button) button.setAttribute("aria-pressed", active ? "true" : "false");
+  }
+
+  function voiceUnavailable() {
+    setVoiceActive(false);
+    writeOutput("Voice input is not available right now. Type commands instead.", "make a website for my robotics club");
+  }
+
   function toggleVoice() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      writeOutput("Voice input is not available in this browser. Type commands instead.", "make a website for my robotics club");
+      voiceUnavailable();
       return;
     }
     if (state.voiceActive) {
@@ -668,23 +680,20 @@ if (cta) {
     state.recognition = new SpeechRecognition();
     state.recognition.lang = $("languageSelector")?.value === "hi" ? "hi-IN" : "en-US";
     state.recognition.interimResults = false;
-    state.recognition.onstart = () => {
-      state.voiceActive = true;
-      setBusy(false);
-      const button = $("voiceButton");
-      if (button) button.setAttribute("aria-pressed", "true");
-    };
-    state.recognition.onend = () => {
-      state.voiceActive = false;
-      setBusy(false);
-      const button = $("voiceButton");
-      if (button) button.setAttribute("aria-pressed", "false");
-    };
+    state.recognition.onstart = () => setVoiceActive(true);
+    state.recognition.onend = () => setVoiceActive(false);
+    state.recognition.onerror = voiceUnavailable;
     state.recognition.onresult = (event) => {
       const transcript = event.results?.[0]?.[0]?.transcript || "";
       runCommand(transcript);
     };
-    state.recognition.start();
+    setVoiceActive(true);
+    writeOutput("Listening. Speak your command now.", "make a website for my robotics club");
+    try {
+      state.recognition.start();
+    } catch (error) {
+      voiceUnavailable();
+    }
   }
 
   function bindEvents() {
