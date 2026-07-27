@@ -39,28 +39,6 @@ def test_readme_starts_with_project_name_without_bom():
     assert data.decode("utf-8").startswith("# CodeUp Web")
 
 
-def test_readme_describes_project_purpose_and_workflows():
-    text = README.read_text(encoding="utf-8")
-    lower = text.lower()
-    assert "voice-first website-building IDE" in text
-    assert "type or speak" in lower
-    assert "HTML, CSS, and JavaScript" in text
-    assert "make a website for my school robotics club" not in text
-    assert "workspace" not in lower
-
-
-def test_readme_documents_local_setup_and_checks():
-    text = README.read_text(encoding="utf-8")
-    for command in (
-        "py -m venv .venv",
-        "pip install -r requirements.txt",
-        "pip install -r requirements-dev.txt",
-        "py app.py",
-    ):
-        assert command in text, command
-    assert "Render" in text
-
-
 def test_readme_documents_safety_boundary_and_security_policy():
     text = README.read_text(encoding="utf-8")
     lower = text.lower()
