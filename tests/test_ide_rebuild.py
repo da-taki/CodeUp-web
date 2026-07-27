@@ -230,6 +230,7 @@ def test_beginner_followup_edits_are_deterministic(client):
     assert "CodeUp Web note" not in commented["js"]
     assert any("source files clean" in item for item in commented["summary"])
     assert 'id="comments"' not in commented["html"]
+    assert "CodeUp Web note" not in commented["html"] + commented["css"] + commented["js"]
 
     functional = client.post(
         "/edit-site",

@@ -198,8 +198,7 @@ def test_beginner_errors_ignore_generated_comments_and_dynamic_selectors(client)
     <section class="card"></section>
     <p class="form-status" data-state="ok"></p>
     </body></html>"""
-    css = """/* CodeUp-Web generated styles — responsive, accessible, no external assets */
-    [data-theme="dark"] { color: white; }
+    css = """[data-theme="dark"] { color: white; }
     .card[hidden] { display: none; }
     .filter-btn[aria-pressed="true"] { border-color: currentColor; }
     .form-status[data-state="ok"] { color: green; }

@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: codeup-web
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    healthCheckPath: /healthz
+    disk:
+      name: codeup-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12
+      - key: CODEUP_ENV
+        value: production
+      - key: DATA_DIR
+        value: /var/data/codeup
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      - key: AI_CLOUD_ENABLED
+        value: "1"
+      - key: AI_MAX_CONCURRENT
+        value: "3"
+      - key: AI_TIMEOUT
+        value: "30"
+      - key: SESSION_ARTIFACT_MAX_AGE
+        value: "604800"
+      - key: GROQ_API_KEY
+        sync: false
+      - key: XAI_API_KEY
+        sync: false
+      - key: GROK_API_KEY
+        sync: false
