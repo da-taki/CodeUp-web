@@ -2,6 +2,7 @@ import platform
 import socket
 import threading
 from pathlib import Path
+from urllib.parse import urljoin
 
 import pytest
 from werkzeug.serving import make_server
@@ -84,7 +85,7 @@ def live_server(monkeypatch, tmp_path):
 def browser_page(live_server):
     with playwright_api.sync_playwright() as p:
         browser = _launch_browser(p)
-        page = browser.new_page()
+        page = browser.new_page(accept_downloads=True)
         console_errors: list[str] = []
         page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
         page.goto(live_server + "/", wait_until="networkidle")
@@ -93,222 +94,145 @@ def browser_page(live_server):
         browser.close()
 
 
-class TestPageLoad:
-    def test_page_loads_and_ready_flag_set(self, browser_page):
-        page, _, _ = browser_page
-        assert page.locator("body[data-html-mode-ready='true']").count() == 1
+def run_command(page, text: str, marker: str):
+    page.locator("#commandInput").fill(text)
+    page.locator("#sendCommandBtn").click()
+    page.wait_for_function(
+        "marker => document.querySelector('#output').textContent.includes(marker)",
+        arg=marker,
+        timeout=15000,
+    )
 
-    def test_editor_exists(self, browser_page):
-        page, _, _ = browser_page
-        assert page.locator("#htmlEditor").count() == 1
-        assert page.locator("#htmlEditor").input_value().strip() != ""
+
+def click_more_action(page, action: str):
+    page.locator("#moreBtn").click()
+    page.locator(f"#moreMenu [data-action='{action}']").click()
 
 
-class TestPreviewButton:
-    def test_preview_creates_iframe_src(self, browser_page):
+class TestMinimalInterface:
+    def test_initial_screen_is_ready_and_compact(self, browser_page):
         page, _, _ = browser_page
+        assert page.locator("#htmlEditor").input_value().strip()
+        assert page.locator("#cssEditor").input_value().strip()
+        assert page.locator("#jsEditor").input_value().strip()
+        assert page.locator("#stopBtn").is_hidden()
+        assert page.locator("#moreOverlay").is_hidden()
+        assert page.locator("#helpOverlay").is_hidden()
+        assert page.locator("#sendCommandBtn, #runBtn, #voiceButton, #moreBtn, #settingsBtn, #helpBtn").count() == 6
+
+    def test_file_tabs_show_content_immediately(self, browser_page):
+        page, _, _ = browser_page
+        page.locator("#cssEditor").evaluate("element => element.value = 'body { color: rgb(10, 20, 30); }'")
+        page.locator("#jsEditor").evaluate("element => element.value = 'window.loadedNow = true;'")
+        page.locator("#tabCss").click()
+        assert "rgb(10, 20, 30)" in page.locator("#cssEditor").input_value()
+        page.locator("#tabJs").click()
+        assert "loadedNow" in page.locator("#jsEditor").input_value()
+        page.locator("#tabHtml").click()
+        assert "My CodeUp Website" in page.locator("#htmlEditor").input_value()
+
+
+class TestWebsiteWorkflows:
+    def test_generate_and_preview_site_with_source_assets(self, browser_page):
+        page, live_server, _ = browser_page
+        run_command(page, "make a website for my robotics club", "Your website is ready")
+        assert "Robotics" in page.locator("#htmlEditor").input_value()
+        assert page.locator("#cssEditor").input_value().strip()
+        assert page.locator("#jsEditor").input_value().strip()
         page.locator("#runBtn").click()
-        page.wait_for_function(
-            "() => document.querySelector('#sitePreviewFrame') && document.querySelector('#sitePreviewFrame').getAttribute('src')",
-            timeout=10000,
-        )
+        page.wait_for_selector("#sitePreviewFrame[src]", timeout=10000)
         src = page.locator("#sitePreviewFrame").get_attribute("src")
-        assert src and "/student-site/" in src
+        absolute = urljoin(live_server, src)
+        css = page.request.get(urljoin(absolute, "style.css"))
+        script = page.request.get(urljoin(absolute, "script.js"))
+        assert css.ok
+        assert script.ok
+        assert "body" in css.text()
+        assert script.text().strip()
 
-    def test_preview_uses_current_css_and_javascript_panes(self, browser_page):
+    def test_more_menu_audit_fix_and_run_commands(self, browser_page):
         page, _, _ = browser_page
         page.locator("#htmlEditor").fill(
-            "<!doctype html><html lang='en'><head><title>Preview</title></head>"
-            "<body><main class='hero'><h1>Preview</h1></main></body></html>"
+            "<html><head><title></title></head><body><img src='hero.png'><button></button></body></html>"
         )
-        page.locator("#cssEditor").evaluate(
-            """element => {
-                element.value = ".hero { border-top: 9px solid rgb(255, 0, 0); }";
-                element.dispatchEvent(new Event("input", { bubbles: true }));
-            }"""
-        )
-        page.locator("#jsEditor").evaluate(
-            """element => {
-                element.value = "window.previewJsFlag = 'yes';";
-                element.dispatchEvent(new Event("input", { bubbles: true }));
-            }"""
-        )
-
-        with page.expect_response(
-            lambda response: "/student-site/" in response.url and response.request.resource_type == "document",
-            timeout=10000,
-        ) as response_info:
-            page.locator("#runBtn").click()
-
-        hosted_html = response_info.value.text()
-        assert "border-top: 9px" in hosted_html
-        assert "previewJsFlag" in hosted_html
-
-
-class TestGuidedLearning:
-    def test_tutorial_macro_bookmark_breadcrumb_and_replay_commands(self, browser_page):
-        page, _, _ = browser_page
-
-        def command(text: str, marker: str):
-            page.locator("#commandInput").fill(text)
-            page.locator("#sendCommandBtn").click()
-            page.wait_for_function(
-                "marker => document.querySelector('#output').textContent.includes(marker)"
-                " || document.querySelector('#tutorialStatus').textContent.includes(marker)",
-                arg=marker,
-                timeout=15000,
-            )
-
-        command("start tutorial", "HTML basics")
-        command("insert page title Demo", "Success")
-        assert "Demo" in page.locator("#htmlEditor").input_value()
-
-        command("remember this as title demo", "Saved macro")
-        command("bookmark this as tutorial point", "Bookmarked")
-        command("read from bookmark tutorial point", "Bookmark tutorial point")
-        command("where am I", "HTML")
-        command("compare before and after", "Mistake replay")
-
-
-class TestAuditAndFix:
-    def test_audit_button_reports_issues(self, browser_page):
-        page, _, _ = browser_page
-        bad_html = (
-            "<html><head><title></title></head><body><img src='hero.png'><button></button><p>Hello</p></body></html>"
-        )
-        page.locator("#htmlEditor").fill(bad_html)
-        page.locator("#auditBtn").click()
+        click_more_action(page, "check-accessibility")
+        page.wait_for_function("() => document.querySelector('#output').textContent.includes('Accessibility score')")
+        click_more_action(page, "fix-accessibility")
         page.wait_for_function(
-            "() => document.querySelector('#output').textContent.includes('missing_image_alt')",
-            timeout=10000,
+            "() => document.querySelector('#output').textContent.includes('Applied safe accessibility fixes')"
         )
-        output = page.locator("#output").text_content()
-        assert "missing_image_alt" in output
-
-    def test_apply_safe_fixes(self, browser_page):
-        page, _, _ = browser_page
-        bad_html = (
-            "<html><head><title></title></head><body><img src='hero.png'><button></button><p>Hello</p></body></html>"
-        )
-        page.locator("#htmlEditor").fill(bad_html)
-        page.locator("#auditBtn").click()
+        assert "Describe this image" in page.locator("#htmlEditor").input_value()
+        click_more_action(page, "run-website")
         page.wait_for_function(
-            "() => document.querySelector('#output').textContent.includes('missing_image_alt')",
-            timeout=10000,
+            "() => document.querySelector('#output').textContent.includes('WEBSITE RUNTIME TEACHER')"
         )
-        assert page.locator("#auditFixAllBtn").is_enabled()
-        with page.expect_response(
-            lambda response: response.url.endswith("/audit-autofix") and response.ok, timeout=15000
-        ):
-            page.locator("#auditFixAllBtn").evaluate("button => button.click()")
+
+    def test_save_open_and_export_project(self, browser_page):
+        page, _, _ = browser_page
+        page.locator("#htmlEditor").fill(
+            "<!doctype html><html lang='en'><head><title>Saved</title></head><body><h1>Saved Marker</h1></body></html>"
+        )
+        page.locator("#tabCss").click()
+        page.locator("#cssEditor").fill("body { background: rgb(240, 240, 240); }")
+        page.locator("#tabJs").click()
+        page.locator("#jsEditor").fill("window.savedMarker = true;")
+        page.locator("#tabHtml").click()
+        page.locator("#projectNameInput").evaluate("element => element.value = 'E2E Saved Site'")
+        click_more_action(page, "save-project")
+        page.wait_for_function("() => document.querySelector('#output').textContent.includes('Saved E2E Saved Site')")
+        page.locator("#htmlEditor").fill("<h1>Changed</h1>")
+        click_more_action(page, "open-project")
+        page.locator("#projectOpenBtn").click()
+        page.wait_for_function("() => document.querySelector('#htmlEditor').value.includes('Saved Marker')")
+        assert "rgb(240, 240, 240)" in page.locator("#cssEditor").input_value()
+        assert "savedMarker" in page.locator("#jsEditor").input_value()
+        page.keyboard.press("Escape")
+        assert page.locator("#projectOverlay").is_hidden()
+        with page.expect_response(lambda response: response.url.endswith("/export-site.zip") and response.ok):
+            click_more_action(page, "export-zip")
         page.wait_for_function(
-            "() => document.querySelector('#output').textContent.includes('Applied safe audit fixes')",
-            timeout=10000,
+            "() => document.querySelector('#output').textContent.includes('Exported the website ZIP')"
         )
-        assert 'alt="Describe this image"' in page.locator("#htmlEditor").input_value()
 
 
-class TestProjectCreateSaveOpen:
-    def test_create_and_save_project(self, browser_page):
+class TestHelpSettingsKeyboard:
+    @pytest.mark.parametrize("alias", ["help", "what can I do here", "list of commands", "show commands", "commands"])
+    def test_help_aliases_open_same_panel(self, browser_page, alias):
         page, _, _ = browser_page
-        page.locator("#projectNameInput").fill("E2E Robotics")
-        page.locator("#projectSaveBtn").click()
-        page.wait_for_function(
-            "() => document.querySelector('#output').textContent.includes('Saved project') || document.querySelector('#output').textContent.includes('Created project')",
-            timeout=10000,
-        )
-        output = page.locator("#output").text_content()
-        assert "E2E Robotics" in output
+        run_command(page, alias, "Help is open")
+        assert page.locator("#helpOverlay").is_visible()
+        assert page.locator("#helpCommandList").text_content().count("Build") == 1
+        page.keyboard.press("Escape")
+        assert page.locator("#helpOverlay").is_hidden()
 
-    def test_open_project_from_dropdown(self, browser_page):
+    def test_settings_persist_and_escape_closes(self, browser_page):
         page, _, _ = browser_page
-        page.locator("#projectNameInput").fill("Open Test")
-        page.locator("#projectSaveBtn").click()
-        page.wait_for_function(
-            "() => document.querySelector('#output').textContent.includes('project')",
-            timeout=10000,
-        )
-        options = page.locator("#projectSelect option").all()
-        assert len(options) >= 1
+        page.locator("#settingsBtn").click()
+        page.locator("#nightToggle").check()
+        page.locator("#dyslexiaToggle").check()
+        assert page.locator("body.night-mode.dyslexia-mode").count() == 1
+        stored = page.evaluate("() => localStorage.getItem('codeup_settings')")
+        assert "nightToggle" in stored
+        page.keyboard.press("Escape")
+        assert page.locator("#settingsOverlay").is_hidden()
 
-
-class TestExport:
-    def test_export_downloads_file(self, browser_page):
+    def test_enter_ctrl_enter_and_mobile_preview(self, browser_page):
         page, _, _ = browser_page
-        page.locator("#commandInput").fill("create a multi page website for robotics showcase")
-        page.locator("#sendCommandBtn").click()
-        page.wait_for_function(
-            "() => document.querySelector('#output').textContent.includes('homepage')",
-            timeout=15000,
-        )
-        with page.expect_download() as download_info:
-            page.locator("#exportBtn").click()
-        download = download_info.value
-        assert download.suggested_filename.endswith(".zip")
-
-
-class TestKeyboardFlow:
-    def test_tab_navigation(self, browser_page):
-        page, _, _ = browser_page
-        page.keyboard.press("Tab")
-        focused = page.evaluate("() => document.activeElement.id || document.activeElement.tagName")
-        assert focused
-
-    def test_ctrl_enter_triggers_preview(self, browser_page):
-        page, _, _ = browser_page
+        page.locator("#commandInput").fill("check accessibility")
+        page.keyboard.press("Enter")
+        page.wait_for_function("() => document.querySelector('#output').textContent.includes('Accessibility score')")
+        page.locator("#previewMobileBtn").click()
+        assert page.locator("#sitePreview").get_attribute("data-size") == "mobile"
         page.locator("#htmlEditor").focus()
         page.keyboard.press("Control+Enter")
-        page.wait_for_function(
-            "() => document.querySelector('#sitePreviewFrame') && document.querySelector('#sitePreviewFrame').getAttribute('src')",
-            timeout=10000,
-        )
-        src = page.locator("#sitePreviewFrame").get_attribute("src")
-        assert src and "/student-site/" in src
-
-
-class TestProofTeachingLoop:
-    def _command(self, page, text, marker):
-        page.locator("#commandInput").fill(text)
-        page.locator("#sendCommandBtn").click()
-        page.wait_for_function(
-            "marker => document.querySelector('#output').textContent.includes(marker)",
-            arg=marker,
-            timeout=15000,
-        )
-
-    def test_runtime_debug_selector_readiness_commands(self, browser_page):
-        page, _, _ = browser_page
-        self._command(page, "create a multi page website for robotics showcase", "homepage")
-        self._command(page, "run website", "WEBSITE RUNTIME TEACHER")
-        assert "did not click" in page.locator("#output").text_content().lower()
-        self._command(page, "debug website", "WEBSITE DEBUG TEACHER")
-        self._command(page, "what CSS affects the navigation", "SELECTOR EXPLAINER")
-        self._command(page, "is this ready to share", "Readiness score")
-
-    def test_run_website_button(self, browser_page):
-        page, _, _ = browser_page
-        self._command(page, "create a multi page website for robotics showcase", "homepage")
-        page.locator("#runWebsiteBtn").click()
-        page.wait_for_function(
-            "() => document.querySelector('#output').textContent.includes('WEBSITE RUNTIME TEACHER')",
-            timeout=15000,
-        )
-
-    def test_guided_build_track_intercepts_only_control_words(self, browser_page):
-        page, _, _ = browser_page
-        self._command(page, "build my first website", "Guided build")
-        self._command(page, "create a multi page website for robotics showcase", "homepage")
-        self._command(page, "recap", "RECAP")
+        page.wait_for_selector("#sitePreviewFrame[src]", timeout=10000)
 
 
 class TestConsoleErrors:
     def test_no_unexpected_js_errors(self, browser_page):
         page, _, console_errors = browser_page
         page.locator("#runBtn").click()
-        page.wait_for_function(
-            "() => document.querySelector('#sitePreviewFrame') && document.querySelector('#sitePreviewFrame').getAttribute('src')",
-            timeout=10000,
-        )
+        page.wait_for_selector("#sitePreviewFrame[src]", timeout=10000)
         ignored = ("speechSynthesis", "SpeechRecognition", "favicon.ico", "404 (NOT FOUND)")
         unexpected = [e for e in console_errors if not any(s in e for s in ignored)]
         assert unexpected == [], f"Unexpected JS console errors: {unexpected}"

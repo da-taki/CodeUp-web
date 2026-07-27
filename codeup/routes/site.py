@@ -14,6 +14,7 @@ from codeup.services.html_utils import (
     apply_audit_fixes,
     audit_html,
     is_safe_hosted_html_page,
+    is_safe_hosted_source_asset,
     publish_page_plan,
     safe_page_filename,
     summarize_html_changes,
@@ -83,6 +84,18 @@ def _source_files_from_body(body: dict) -> dict[str, str] | None:
 
     html = _ensure_source_refs(html, bool(css.strip()), bool(js.strip()))
     return {"index.html": html, "style.css": css, "script.js": js}
+
+
+def _source_assets_from_body(body: dict) -> dict[str, str]:
+    raw_files = body.get("files") if isinstance(body.get("files"), dict) else {}
+    css = str(raw_files.get("style.css") or raw_files.get("css") or body.get("css") or "")
+    js = str(raw_files.get("script.js") or raw_files.get("js") or body.get("js") or "")
+    assets = {}
+    if css.strip():
+        assets["style.css"] = css
+    if js.strip():
+        assets["script.js"] = js
+    return assets
 
 
 def _audit_from_body_or_project(body: dict, project_id: str | None = None) -> dict | None:
@@ -214,7 +227,10 @@ def _write_export_artifacts(bundle: zipfile.ZipFile, artifacts: dict[str, str]) 
 def publish_site():
     body = safejson()
     pages, project_id = _pages_from_body(body)
-    total_size = sum(len(page_html) for page_html in pages.values())
+    source_assets = _source_assets_from_body(body)
+    total_size = sum(len(page_html) for page_html in pages.values()) + sum(
+        len(value) for value in source_assets.values()
+    )
     if total_size > MAX_HTML_SIZE * 5:
         return jsonify({"success": False, "error": f"Website too large (max {MAX_HTML_SIZE * 5} bytes)"}), 413
     if not pages:
@@ -230,7 +246,7 @@ def publish_site():
             return jsonify({"success": False, "error": f"Page {name} too large (max {MAX_HTML_SIZE} bytes)"}), 413
 
     session_id = get_session_id()
-    intended_filenames = {filename for _, filename, _ in plan}
+    intended_filenames = {filename for _, filename, _ in plan} | set(source_assets)
     delete_stale_hosted_pages(session_id, intended_filenames)
     page_urls = {}
     last_html = ""
@@ -242,6 +258,8 @@ def publish_site():
         page_urls[name] = f"/student-site/{session_id}/{'' if filename == 'index.html' else filename}"
         if filename == "index.html" or not last_html:
             last_html = wrapped
+    for filename, content in source_assets.items():
+        write_student_page(session_id, filename, content)
 
     url = f"/student-site/{session_id}/"
     append_memory(session_id, note=f"Published website preview with {len(pages)} page(s)", html=last_html, url=url)
@@ -271,7 +289,7 @@ def student_site(session_id: str):
 def student_site_page(session_id: str, filename: str):
     from codeup.security import sanitize_id
 
-    if not is_safe_hosted_html_page(filename):
+    if not (is_safe_hosted_html_page(filename) or is_safe_hosted_source_asset(filename)):
         return jsonify({"success": False, "error": "Page not found"}), 404
     return send_from_directory(student_site_path(sanitize_id(session_id)), filename)
 

@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="CodeUp Web is a voice-first accessible website builder for HTML, CSS, JavaScript, and Python learning.">
-  <title>CodeUp</title>
+  <meta name="description" content="CodeUp Web is a voice-first website builder for learning HTML, CSS, and JavaScript.">
+  <title>CodeUp Web</title>
   <link rel="stylesheet" href="/static/style/fonts.css">
   <link rel="stylesheet" href="/static/style/core.css">
   <link rel="stylesheet" href="/static/style/accessibility.css">
@@ -13,421 +13,137 @@
 </head>
 <body class="cu-body ide-body">
   <a href="#commandInput" class="skip-link">Skip to command input</a>
-  <a href="#editor" class="skip-link">Skip to code editor</a>
+  <a href="#htmlEditor" class="skip-link">Skip to code editor</a>
   <div id="srAnnouncer" role="status" aria-live="assertive" aria-atomic="true" class="sr-only"></div>
 
-  <header class="ide-header" aria-label="CodeUp workspace header">
-    <div class="ide-header-row">
-      <div class="ide-brand">
-        <p class="ide-product-mark">CODEUP WEB</p>
-        <h1 class="cu-title">CodeUp</h1>
-      </div>
+  <header class="ide-header" aria-label="CodeUp Web header">
+    <a class="ide-brand" href="/ide" aria-label="CodeUp Web home">CodeUp Web</a>
+    <div class="ide-header-actions">
       <span id="voiceStatus" class="ide-voice-status" role="status" aria-live="polite">Voice off</span>
-    </div>
-    <p class="cu-subtitle ide-tagline">
-      Blind-first website builder for learning HTML, CSS, and JavaScript. Build with buttons, keyboard, or voice commands.
-    </p>
-    <p class="sr-only">Blind-first website builder. Ask / Build. Demo Mode.</p>
-    <div class="ide-settings" role="group" aria-label="Accessibility settings">
-      <label class="ide-field">
-        <span>Color vision</span>
-        <select id="colorVisionMode" class="theme-selector" aria-label="Color vision mode">
-          <option value="default">Standard Colors</option>
-          <option value="protanopia">Protanopia</option>
-          <option value="deuteranopia">Deuteranopia</option>
-          <option value="tritanopia">Tritanopia</option>
-          <option value="high-contrast">High Contrast</option>
-        </select>
-      </label>
-      <label class="ide-field">
-        <span>Spoken language</span>
-        <select id="languageSelector" class="theme-selector" aria-label="Select spoken language">
-          <option value="en">English</option>
-          <option value="hi">Hindi / Hinglish</option>
-        </select>
-      </label>
-      <button id="dyslexiaToggle" class="theme-toggle" type="button" aria-pressed="false">Dyslexia Mode</button>
-      <button id="motionToggle" class="theme-toggle" type="button" aria-pressed="false">Reduce Motion</button>
-      <button id="nightToggle" class="theme-toggle" type="button" aria-pressed="false">Night Mode</button>
-      <button id="demoModeBtn" class="theme-toggle" type="button" aria-pressed="false">Demo Mode</button>
+      <button id="settingsBtn" class="cu-button cu-button-secondary" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="settingsPanel">Settings</button>
+      <button id="helpBtn" class="cu-button cu-button-secondary" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="helpPanel">Help</button>
     </div>
   </header>
 
-  <section class="ide-command" aria-label="Command bar">
-    <label class="ide-command-label" for="commandInput">Type a command</label>
-    <div class="ide-command-row">
-      <input id="commandInput" type="text" class="ide-command-input"
-             placeholder="Type a command, e.g. generate a website for my robotics lab"
-             aria-label="Type a command, for example generate a website for my robotics lab"
-             autocomplete="off">
-      <button id="sendCommandBtn" class="cu-button cu-button-primary" type="button" aria-label="Run the typed command">Run Command</button>
-      <button id="voiceButton" class="cu-button cu-button-voice" type="button" aria-pressed="false" aria-label="Toggle voice control">Voice Off</button>
-      <button id="stopBtn" class="cu-button cu-button-danger" type="button" aria-label="Stop speaking immediately">Stop</button>
-    </div>
-    <p class="ide-command-hint">Type a command and press Enter. You can also say or type <em>stop everything</em>.</p>
-
-    <div class="ide-idea-card" role="note" aria-label="Command ideas">
-      <p class="ide-idea-text">Need an idea? Try
-        <button type="button" class="ide-chip ide-chip-inline" data-cmd="make a website for my school robotics club">make a website for my school robotics club</button>
-      </p>
-      <div class="ide-idea-actions">
-        <button id="openPaletteBtn" class="cu-button cu-button-secondary" type="button"
-                aria-haspopup="dialog" aria-expanded="false" aria-controls="commandPalette">Open command palette</button>
-        <button type="button" class="cu-button ide-chip" data-cmd="what can I do here">What can I do here?</button>
+  <main class="ide-main" aria-label="CodeUp Web workspace">
+    <section class="ide-command" aria-label="Command bar">
+      <label class="sr-only" for="commandInput">Describe a website or ask for help</label>
+      <div class="ide-command-row">
+        <input id="commandInput" class="ide-command-input" type="text" autocomplete="off" placeholder="Describe a website or ask for help" aria-label="Describe a website or ask for help">
+        <button id="sendCommandBtn" class="cu-button cu-button-primary" type="button">Run command</button>
+        <button id="runBtn" class="cu-button" type="button">Preview</button>
+        <button id="voiceButton" class="cu-button" type="button" aria-pressed="false">Voice</button>
+        <button id="stopBtn" class="cu-button cu-button-danger" type="button" hidden>Stop</button>
+        <button id="moreBtn" class="cu-button cu-button-secondary" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="moreMenu">More</button>
       </div>
-    </div>
-  </section>
-
-
-  <div id="paletteOverlay" class="ide-palette-overlay" hidden>
-    <div id="commandPalette" class="ide-palette" role="dialog" aria-modal="true" aria-labelledby="paletteTitle" aria-describedby="paletteSub" tabindex="-1">
-      <div class="ide-palette-head">
-        <h2 id="paletteTitle" class="ide-palette-title">Command palette</h2>
-        <button id="closePaletteBtn" class="cu-button" type="button" aria-label="Close command palette">Close</button>
-      </div>
-      <p id="paletteSub" class="ide-palette-sub">Pick a command or keep typing. Press Escape to close.</p>
-      <div class="ide-help-groups">
-        <div class="ide-help-group ide-note ide-note-create" role="group" aria-label="Create commands">
-          <h3 class="ide-help-group-title">Create</h3>
-          <div class="ide-chips">
-            <button type="button" class="ide-chip" data-cmd="make a website for my school robotics club">make a website for my school robotics club</button>
-            <button type="button" class="ide-chip" data-cmd="make a quiz app about Python basics">make a quiz app about Python basics</button>
-            <button type="button" class="ide-chip" data-cmd="make a calculator app">make a calculator app</button>
-          </div>
-        </div>
-        <div class="ide-help-group ide-note ide-note-edit" role="group" aria-label="Edit commands">
-          <h3 class="ide-help-group-title">Edit</h3>
-          <div class="ide-chips">
-            <button type="button" class="ide-chip" data-cmd="add a section about competitions">add a section about competitions</button>
-            <button type="button" class="ide-chip" data-cmd="make it more professional">make it more professional</button>
-            <button type="button" class="ide-chip" data-cmd="add a contact form">add a contact form</button>
-          </div>
-        </div>
-        <div class="ide-help-group ide-note ide-note-understand" role="group" aria-label="Understand commands">
-          <h3 class="ide-help-group-title">Understand</h3>
-          <div class="ide-chips">
-            <button type="button" class="ide-chip" data-cmd="code map">code map</button>
-            <button type="button" class="ide-chip" data-cmd="step narration">step narration</button>
-            <button type="button" class="ide-chip" data-cmd="landmarks">landmarks</button>
-            <button type="button" class="ide-chip" data-cmd="explain CSS">explain CSS</button>
-            <button type="button" class="ide-chip" data-cmd="learning notes">learning notes</button>
-            <button type="button" class="ide-chip" data-cmd="describe preview">describe preview</button>
-            <button type="button" class="ide-chip" data-cmd="review project">review project</button>
-          </div>
-        </div>
-        <div class="ide-help-group ide-note ide-note-a11y" role="group" aria-label="Accessibility commands">
-          <h3 class="ide-help-group-title">Accessibility</h3>
-          <div class="ide-chips">
-            <button type="button" class="ide-chip" data-cmd="check accessibility">check accessibility</button>
-            <button type="button" class="ide-chip" data-cmd="fix accessibility issues">fix accessibility issues</button>
-            <button type="button" class="ide-chip" data-cmd="accessibility map">accessibility map</button>
-            <button type="button" class="ide-chip" data-cmd="prepare this for NVDA">prepare this for NVDA</button>
-          </div>
-        </div>
-        <div class="ide-help-group ide-note ide-note-understand" role="group" aria-label="Run and test commands">
-          <h3 class="ide-help-group-title">Run &amp; test</h3>
-          <div class="ide-chips">
-            <button type="button" class="ide-chip" data-cmd="run website">run website</button>
-            <button type="button" class="ide-chip" data-cmd="debug this website">debug this website</button>
-            <button type="button" class="ide-chip" data-cmd="screen reader tour">screen reader tour</button>
-            <button type="button" class="ide-chip" data-cmd="test keyboard navigation">test keyboard navigation</button>
-            <button type="button" class="ide-chip" data-cmd="describe the design">describe the design</button>
-            <button type="button" class="ide-chip" data-cmd="is this ready to share">is this ready to share</button>
-          </div>
-        </div>
-        <div class="ide-help-group ide-note ide-note-teach" role="group" aria-label="Teaching and recap commands">
-          <h3 class="ide-help-group-title">Teach &amp; recap</h3>
-          <div class="ide-chips">
-            <button type="button" class="ide-chip" data-cmd="make trainer notes">make trainer notes</button>
-            <button type="button" class="ide-chip" data-cmd="what did I learn today">what did I learn today</button>
-            <button type="button" class="ide-chip" data-cmd="improve like a teacher">improve like a teacher</button>
-            <button type="button" class="ide-chip" data-cmd="show history">show history</button>
-            <button type="button" class="ide-chip" data-cmd="start tutorial">start tutorial</button>
-          </div>
-        </div>
-        <div class="ide-help-group ide-note ide-note-understand" role="group" aria-label="Python learning commands">
-          <h3 class="ide-help-group-title">Python</h3>
-          <div class="ide-chips">
-            <button type="button" class="ide-chip" data-cmd="python editor">python editor</button>
-            <button type="button" class="ide-chip" data-cmd="run this code">run this code</button>
-            <button type="button" class="ide-chip" data-cmd="teach me this code">teach me this code</button>
-            <button type="button" class="ide-chip" data-cmd="audio code map">audio code map</button>
-            <button type="button" class="ide-chip" data-cmd="step through this code">step through this code</button>
-            <button type="button" class="ide-chip" data-cmd="next step">next step</button>
-            <button type="button" class="ide-chip" data-cmd="what changed">what changed</button>
-            <button type="button" class="ide-chip" data-cmd="where am I">where am I</button>
-            <button type="button" class="ide-chip" data-cmd="why did the condition fail">why did the condition fail</button>
-            <button type="button" class="ide-chip" data-cmd="step into function">step into function</button>
-            <button type="button" class="ide-chip" data-cmd="what arguments were passed">what arguments were passed</button>
-            <button type="button" class="ide-chip" data-cmd="what did it return">what did it return</button>
-            <button type="button" class="ide-chip" data-cmd="watch variable total">watch variable total</button>
-            <button type="button" class="ide-chip" data-cmd="break when total is greater than 10">break when total is greater than 10</button>
-            <button type="button" class="ide-chip" data-cmd="run with inputs">run with inputs</button>
-            <button type="button" class="ide-chip" data-cmd="python history">python history</button>
-          </div>
-        </div>
-        <div class="ide-help-group ide-note ide-note-export" role="group" aria-label="Export and control commands">
-          <h3 class="ide-help-group-title">Export &amp; control</h3>
-          <div class="ide-chips">
-            <button type="button" class="ide-chip" data-cmd="export website">export website</button>
-            <button type="button" class="ide-chip" data-cmd="start over">start over</button>
-            <button type="button" class="ide-chip" data-cmd="stop everything">stop everything</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="ide-toolbar" role="toolbar" aria-label="Code actions">
-    <button id="generateBtn" class="cu-button cu-button-primary" type="button" aria-label="Generate a website from the command box">Generate</button>
-    <button id="runBtn" class="cu-button" type="button" aria-label="Run live preview of HTML, CSS, and JavaScript">Run</button>
-    <button id="clearOutputBtn" class="cu-button" type="button" aria-label="Clear the output panel">Clear</button>
-    <button id="readOutputBtn" class="cu-button" type="button" aria-label="Read the current output aloud">Read Output</button>
-    <button id="toolbarTutorialBtn" class="cu-button" type="button" aria-label="Start the guided tutorial">Tutorial</button>
-    <button id="runPythonBtn" class="cu-button" type="button" aria-label="Run the Python program in the Python editor">Run Python</button>
-    <button id="teachPythonBtn" class="cu-button" type="button" aria-label="Teach the Python code in the Python editor">Teach Python</button>
-    <button id="pythonMapBtn" class="cu-button" type="button" aria-label="Hear an audio map of the Python code">Python Map</button>
-    <button id="pythonWatchBtn" class="cu-button" type="button" aria-label="Read Python variable state">Variable Watch</button>
-    <button id="analyzeBtn" class="cu-button" type="button" aria-label="Analyze the code for issues">Analyze</button>
-    <button id="fixBtn" class="cu-button" type="button" aria-label="Fix accessibility and code issues">Fix</button>
-    <button id="readBtn" class="cu-button" type="button" aria-label="Read the current editor aloud">Read Code</button>
-    <button id="codeMapBtn" class="cu-button" type="button" aria-label="Hear a beginner-friendly map of the code">Code Map</button>
-    <button id="auditBtn" class="cu-button" type="button" aria-label="Audit accessibility and page quality">Audit</button>
-    <button id="runWebsiteBtn" class="cu-button" type="button" aria-label="Explain what happens when this website runs">Run Website</button>
-    <button id="debugBtn" class="cu-button" type="button" aria-label="Debug broken HTML, CSS, and JavaScript connections like a teacher">Debug</button>
-    <button id="readinessBtn" class="cu-button" type="button" aria-label="Check if this website is ready to share">Readiness</button>
-    <button id="outlineBtn" class="cu-button" type="button" aria-label="Summarize the website outline">Outline</button>
-    <button id="saveSnippetBtn" class="cu-button" type="button" aria-label="Save the current HTML, CSS, and JavaScript as a named snippet">Save Snippet</button>
-    <button id="loadSnippetBtn" class="cu-button" type="button" aria-label="Load a saved snippet">Load Snippet</button>
-    <button id="exportBtn" class="cu-button" type="button" aria-label="Export website as HTML or project ZIP">Export</button>
-    <button id="walkthroughBtn" class="cu-button" type="button" aria-label="Audio accessibility walkthrough">Walkthrough</button>
-    <button id="resetBtn" class="cu-button" type="button" aria-label="Reset this session">Reset</button>
-    <button id="helpBtn" class="cu-button cu-button-secondary" type="button" aria-label="Hear what CodeUp can do">Help</button>
-  </div>
-
-  <main class="ide-main">
-    <aside class="ide-left" aria-label="Workspace navigation and guided learning">
-      <section class="ide-rail-block ide-status-rail" aria-labelledby="workspaceStatusTitle">
-        <p class="ide-kicker">Workspace</p>
-        <h2 id="workspaceStatusTitle" class="ide-rail-title">Build By Ear</h2>
-        <dl class="ide-status-grid">
-          <div>
-            <dt>Editor</dt>
-            <dd id="monacoStatusText">starting</dd>
-          </div>
-          <div>
-            <dt>Preview</dt>
-            <dd id="previewStatusText">waiting</dd>
-          </div>
-          <div>
-            <dt>Voice</dt>
-            <dd id="voiceRailStatus">off</dd>
-          </div>
-        </dl>
-      </section>
-
-      <section class="ide-rail-block" aria-labelledby="fileRailTitle">
-        <h2 id="fileRailTitle" class="ide-rail-title">Files</h2>
-        <div class="ide-file-rail" role="group" aria-label="Switch code files">
-          <button type="button" class="ide-file-btn" data-file="html" data-cmd="show HTML file">index.html</button>
-          <button type="button" class="ide-file-btn" data-file="css" data-cmd="show CSS file">style.css</button>
-          <button type="button" class="ide-file-btn" data-file="js" data-cmd="show JavaScript file">script.js</button>
-          <button type="button" class="ide-file-btn" data-file="python" data-cmd="python editor">python.py</button>
-        </div>
-      </section>
-
-      <section class="ide-rail-block" aria-labelledby="generationRailTitle">
-        <h2 id="generationRailTitle" class="ide-rail-title">Staged Build</h2>
-        <ol class="ide-stage-list" aria-label="Guided website generation stages">
-          <li>Goal</li>
-          <li>Audience</li>
-          <li>Sections</li>
-          <li>Style</li>
-          <li>Interactions</li>
-        </ol>
-        <div class="ide-rail-actions" role="group" aria-label="Guided generation commands">
-          <button type="button" class="cu-button cu-button-primary" data-cmd="start guided website generation">Start Flow</button>
-          <button type="button" class="cu-button" data-cmd="try a different layout but preserve content">Remix</button>
-        </div>
-      </section>
-
-      <section class="ide-rail-block" aria-labelledby="curriculumRailTitle">
-        <h2 id="curriculumRailTitle" class="ide-rail-title">Curriculum</h2>
-        <div class="ide-track-buttons" role="group" aria-label="Learning tracks">
-          <button type="button" class="ide-track-btn" data-cmd="start HTML tutorial">HTML</button>
-          <button type="button" class="ide-track-btn" data-cmd="start CSS tutorial">CSS</button>
-          <button type="button" class="ide-track-btn" data-cmd="start JavaScript tutorial">JavaScript</button>
-          <button type="button" class="ide-track-btn" data-cmd="build my first website">First Website</button>
-        </div>
-      </section>
-    </aside>
-
-    <section class="ide-editors cu-panel" aria-label="Code editors">
-      <div class="ide-workbench-head">
-        <div>
-          <p class="ide-kicker">Workbench</p>
-          <h2 class="ide-workbench-title">Code files</h2>
-        </div>
-        <span id="editorModeStatus" class="ide-editor-status" role="status">Preparing Monaco</span>
-      </div>
-      <div class="ide-tabs" role="tablist" aria-label="Editor files">
-        <button class="ide-tab" id="tabHtml" type="button" role="tab" aria-controls="panelHtml" aria-selected="true">index.html</button>
-        <button class="ide-tab" id="tabCss" type="button" role="tab" aria-controls="panelCss" aria-selected="false" tabindex="-1">style.css</button>
-        <button class="ide-tab" id="tabJs" type="button" role="tab" aria-controls="panelJs" aria-selected="false" tabindex="-1">script.js</button>
-        <button class="ide-tab" id="tabPython" type="button" role="tab" aria-controls="panelPython" aria-selected="false" tabindex="-1">python.py</button>
-      </div>
-      <p class="ide-files-hint">Your <strong>index.html</strong>, <strong>style.css</strong>, <strong>script.js</strong>, and <strong>python.py</strong> live here. Ask CodeUp Web to build a site, or switch to Python for spoken debugging and step-by-step learning.</p>
-      <div class="ide-panel" id="panelHtml" role="tabpanel" aria-labelledby="tabHtml">
-        <div id="editor" class="cu-editor" role="region" aria-label="HTML editor"></div>
-      </div>
-      <div class="ide-panel" id="panelCss" role="tabpanel" aria-labelledby="tabCss" hidden>
-        <div id="cssEditorHost" class="cu-editor" role="region" aria-label="CSS editor"></div>
-      </div>
-      <div class="ide-panel" id="panelJs" role="tabpanel" aria-labelledby="tabJs" hidden>
-        <div id="jsEditorHost" class="cu-editor" role="region" aria-label="JavaScript editor"></div>
-      </div>
-      <div class="ide-panel" id="panelPython" role="tabpanel" aria-labelledby="tabPython" hidden>
-        <div id="pythonEditorHost" class="cu-editor" role="region" aria-label="Python editor"></div>
-      </div>
+      <p class="ide-command-hint">Try: make a website for my school robotics club</p>
     </section>
 
-    <aside class="ide-side">
-      <section class="cu-panel ide-preview" aria-label="Live website preview">
-        <h2 class="ide-section-title">Live Preview</h2>
-        <div id="sitePreview" class="cu-site-preview"></div>
-      </section>
-
-      <section class="cu-panel ide-output" aria-label="Output and status">
-        <h2 class="ide-section-title">Output</h2>
-        <p id="outputEmpty" class="ide-output-empty">Ask me to <strong>build</strong>, <strong>explain</strong>, <strong>check</strong>, or <strong>export</strong> your website. I will answer here and read it aloud.</p>
-        <pre id="output" class="cu-output-box" tabindex="0" aria-live="polite"></pre>
-        <div id="tryNext" class="ide-trynext" role="group" aria-label="Suggested next commands" hidden></div>
-        <div class="cu-audit-actions" role="group" aria-label="Audit autofix actions">
-          <button id="auditFixOneBtn" class="cu-button" type="button" disabled>Fix First Issue</button>
-          <button id="auditFixAllBtn" class="cu-button" type="button" disabled>Apply Safe Fixes</button>
+    <section class="ide-workspace" aria-label="Editor and preview">
+      <section class="ide-editors" aria-label="Code editor">
+        <div class="ide-tabs" role="tablist" aria-label="Files">
+          <button class="ide-tab" id="tabHtml" type="button" role="tab" aria-controls="panelHtml" aria-selected="true" data-file="html">HTML</button>
+          <button class="ide-tab" id="tabCss" type="button" role="tab" aria-controls="panelCss" aria-selected="false" data-file="css">CSS</button>
+          <button class="ide-tab" id="tabJs" type="button" role="tab" aria-controls="panelJs" aria-selected="false" data-file="js">JavaScript</button>
+        </div>
+        <div class="ide-panel" id="panelHtml" role="tabpanel" aria-labelledby="tabHtml">
+          <textarea id="htmlEditor" class="cu-editor" spellcheck="false" aria-label="HTML editor"></textarea>
+        </div>
+        <div class="ide-panel" id="panelCss" role="tabpanel" aria-labelledby="tabCss" hidden>
+          <textarea id="cssEditor" class="cu-editor" spellcheck="false" aria-label="CSS editor"></textarea>
+        </div>
+        <div class="ide-panel" id="panelJs" role="tabpanel" aria-labelledby="tabJs" hidden>
+          <textarea id="jsEditor" class="cu-editor" spellcheck="false" aria-label="JavaScript editor"></textarea>
         </div>
       </section>
 
-      <section class="cu-panel ide-python-tools" aria-labelledby="pythonToolsTitle">
-        <h2 id="pythonToolsTitle" class="ide-section-title">Python Tools</h2>
-        <h3 class="ide-subsection-title">Examples</h3>
-        <div class="ide-python-example-buttons" role="group" aria-label="Python beginner examples">
-          <button id="pythonExampleVariablesBtn" class="ide-chip" type="button" aria-label="Load Python variables and print example">Variables</button>
-          <button id="pythonExampleLoopBtn" class="ide-chip" type="button" aria-label="Load Python loop with total example">Loop</button>
-          <button id="pythonExampleInputBtn" class="ide-chip" type="button" aria-label="Load Python input greeting example">Input</button>
-          <button id="pythonExampleFunctionBtn" class="ide-chip" type="button" aria-label="Load Python function add example">Function</button>
-          <button id="pythonExampleConditionBtn" class="ide-chip" type="button" aria-label="Load Python condition example">Condition</button>
-        </div>
-
-        <label class="cu-label" for="pythonInputValue">Queued input value</label>
-        <div class="ide-field-row">
-          <div class="ide-field">
-            <input id="pythonInputValue" class="cu-input" type="text" autocomplete="off"
-                   aria-describedby="pythonInputCount"
-                   placeholder="Example: Amit">
+      <section class="ide-preview" aria-label="Live preview">
+        <div class="ide-preview-head">
+          <h1 class="ide-section-title">Live Preview</h1>
+          <div class="ide-preview-controls" role="toolbar" aria-label="Preview controls">
+            <button id="previewDesktopBtn" class="ide-chip" type="button" aria-pressed="true">Desktop</button>
+            <button id="previewTabletBtn" class="ide-chip" type="button" aria-pressed="false">Tablet</button>
+            <button id="previewMobileBtn" class="ide-chip" type="button" aria-pressed="false">Mobile</button>
+            <button id="previewReloadBtn" class="ide-chip" type="button">Reload</button>
+            <button id="sitePreviewOpenBtn" class="ide-chip" type="button" disabled>Open preview</button>
           </div>
         </div>
-        <div class="ide-project-buttons" role="group" aria-label="Python input queue controls">
-          <button id="pythonAddInputBtn" class="cu-button" type="button" aria-label="Add this value to the Python input queue">Add Input</button>
-          <button id="pythonRunWithInputsBtn" class="cu-button" type="button" aria-label="Run Python using queued input values">Run with Inputs</button>
-          <button id="pythonClearInputsBtn" class="cu-button" type="button" aria-label="Clear queued Python input values">Clear Inputs</button>
-        </div>
-        <p id="pythonInputCount" class="ide-output-empty" aria-live="polite">No queued inputs.</p>
-        <ol id="pythonInputList" class="ide-python-list" aria-label="Queued Python input values"></ol>
-
-        <label class="cu-label" for="pythonBreakpointInput">Conditional audio breakpoint</label>
-        <input id="pythonBreakpointInput" class="cu-input" type="text" autocomplete="off"
-               placeholder="Example: total > 10"
-               aria-label="Conditional audio breakpoint, for example total greater than 10">
-        <div class="ide-project-buttons" role="group" aria-label="Python breakpoint controls">
-          <button id="pythonBreakpointBtn" class="cu-button" type="button" aria-label="Check a conditional audio breakpoint">Check Breakpoint</button>
-        </div>
-
-        <h3 class="ide-subsection-title">Step Watch</h3>
-        <div class="ide-project-buttons" role="group" aria-label="Python step navigation controls">
-          <button id="pythonPrevStepBtn" class="cu-button" type="button" aria-label="Previous Python execution step">Previous Step</button>
-          <button id="pythonNextStepBtn" class="cu-button" type="button" aria-label="Next Python execution step">Next Step</button>
-          <button id="pythonExplainStepBtn" class="cu-button" type="button" aria-label="Explain the current Python execution step">Explain Step</button>
-          <button id="pythonWhatChangedBtn" class="cu-button" type="button" aria-label="Explain what changed in the current Python step">What Changed?</button>
-          <button id="pythonWhereAmIBtn" class="cu-button" type="button" aria-label="Explain where I am in the Python program">Where Am I?</button>
-          <button id="pythonRepeatStepBtn" class="cu-button" type="button" aria-label="Repeat the current Python step">Repeat Step</button>
-          <button id="pythonExplainConditionBtn" class="cu-button" type="button" aria-label="Explain the nearest Python condition result">Explain Condition</button>
-        </div>
-
-        <h3 class="ide-subsection-title">Function Watch</h3>
-        <div class="ide-project-buttons" role="group" aria-label="Python function call controls">
-          <button id="pythonStepIntoBtn" class="cu-button" type="button" aria-label="Step into the next Python function call">Step Into</button>
-          <button id="pythonStepOutBtn" class="cu-button" type="button" aria-label="Step out to the current Python function return">Step Out</button>
-          <button id="pythonExplainFunctionBtn" class="cu-button" type="button" aria-label="Explain the current Python function call">Explain Function</button>
-          <button id="pythonFunctionArgsBtn" class="cu-button" type="button" aria-label="Explain Python function arguments">What Arguments?</button>
-          <button id="pythonFunctionReturnBtn" class="cu-button" type="button" aria-label="Explain what the Python function returned">What Returned?</button>
-          <button id="pythonFunctionBackBtn" class="cu-button" type="button" aria-label="Explain where Python goes after the function returns">Go Back Where?</button>
-        </div>
+        <div id="sitePreview" class="cu-site-preview" data-size="desktop"></div>
       </section>
+    </section>
 
-      <section id="pythonHistoryPanel" class="cu-panel ide-python-history" aria-labelledby="pythonHistoryTitle">
-        <h2 id="pythonHistoryTitle" class="ide-section-title">Python History</h2>
-        <ol id="pythonHistoryList" class="ide-python-history-list" aria-label="Python learning history"></ol>
-        <div class="ide-project-buttons" role="group" aria-label="Python history controls">
-          <button id="pythonHistoryBtn" class="cu-button" type="button" aria-label="Review Python learning history">Review History</button>
-          <button id="pythonClearHistoryBtn" class="cu-button" type="button" aria-label="Clear Python learning history">Clear History</button>
-        </div>
-      </section>
-
-      <section id="tutorialPanel" class="cu-panel ide-tutorial" role="complementary"
-               aria-labelledby="tutorialTitle" aria-live="polite">
-        <h2 id="tutorialTitle" class="ide-section-title">Guided Tutorial</h2>
-        <p id="tutorialStatus">Type <strong>start tutorial</strong> for an audio-first website-building lesson.</p>
-        <div class="ide-project-buttons" role="group" aria-label="Tutorial controls">
-          <button id="tutorialStartBtn" class="cu-button" type="button">Start Tutorial</button>
-          <button id="tutorialContinueBtn" class="cu-button" type="button">Continue</button>
-          <button id="tutorialHintBtn" class="cu-button" type="button">Hint</button>
-          <button id="tutorialExitBtn" class="cu-button" type="button">Exit</button>
-        </div>
-      </section>
-
-      <section class="cu-panel ide-snippets" aria-label="Snippet library">
-        <h2 class="ide-section-title">Snippets</h2>
-        <div class="ide-field-row">
-          <label class="ide-field">
-            <span>Snippet name</span>
-            <input id="snippetNameInput" type="text" placeholder="robotics demo" autocomplete="off">
-          </label>
-          <label class="ide-field">
-            <span>Saved snippets</span>
-            <select id="snippetSelect" aria-label="Saved snippets"><option value="">No snippets yet</option></select>
-          </label>
-        </div>
-        <div class="ide-project-buttons">
-          <button id="deleteSnippetBtn" class="cu-button" type="button" aria-label="Delete the selected snippet">Delete Snippet</button>
-        </div>
-      </section>
-
-      <section class="cu-panel ide-projects" aria-label="Project controls">
-        <h2 class="ide-section-title">Project</h2>
-        <div class="ide-field-row">
-          <label class="ide-field">
-            <span>Project name</span>
-            <input id="projectNameInput" type="text" value="Untitled Project" aria-label="Project name">
-          </label>
-          <label class="ide-field">
-            <span>Open project</span>
-            <select id="projectSelect" class="theme-selector" aria-label="Open saved project"></select>
-          </label>
-        </div>
-        <div class="ide-project-buttons">
-          <button id="projectSaveBtn" class="cu-button" type="button">Save / Rename</button>
-          <button id="projectNewBtn" class="cu-button" type="button">New Project</button>
-          <button id="projectDuplicateBtn" class="cu-button" type="button">Duplicate</button>
-          <button id="projectOpenBtn" class="cu-button" type="button">Open</button>
-        </div>
-      </section>
-    </aside>
+    <section class="ide-output" aria-label="Latest response">
+      <div class="ide-output-head">
+        <h1 class="ide-section-title">Latest Response</h1>
+        <button id="outputToggleBtn" class="ide-chip" type="button" aria-expanded="true" aria-controls="outputBody">Hide</button>
+      </div>
+      <div id="outputBody">
+        <p id="outputEmpty" class="ide-output-empty">Your latest result will appear here.</p>
+        <pre id="output" class="cu-output-box" tabindex="0" aria-live="polite"></pre>
+      </div>
+    </section>
   </main>
 
-  <script src="/static/vendor/monaco/vs/loader.js?v=0.56.0"></script>
-  <script src="/static/monaco-loader.js?v=1"></script>
+  <div id="moreOverlay" class="ide-overlay" hidden>
+    <div id="moreMenu" class="ide-menu" role="menu" aria-label="More actions" tabindex="-1">
+      <button type="button" role="menuitem" data-action="new-project">New project</button>
+      <button type="button" role="menuitem" data-action="open-project">Open project</button>
+      <button id="projectSaveBtn" type="button" role="menuitem" data-action="save-project">Save project</button>
+      <button id="exportBtn" type="button" role="menuitem" data-action="export-zip">Export ZIP</button>
+      <button type="button" role="menuitem" data-action="run-website">Run website</button>
+      <button type="button" role="menuitem" data-action="describe-preview">Describe preview</button>
+      <button type="button" role="menuitem" data-action="code-map">Code map</button>
+      <button id="auditBtn" type="button" role="menuitem" data-action="check-accessibility">Check accessibility</button>
+      <button id="auditFixAllBtn" type="button" role="menuitem" data-action="fix-accessibility">Fix accessibility</button>
+      <button type="button" role="menuitem" data-action="version-history">Version history</button>
+      <button type="button" role="menuitem" data-action="start-tutorial">Start tutorial</button>
+      <button type="button" role="menuitem" data-action="reset-workspace">Reset workspace</button>
+    </div>
+  </div>
+
+  <div id="settingsOverlay" class="ide-overlay" hidden>
+    <section id="settingsPanel" class="ide-dialog" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" tabindex="-1">
+      <div class="ide-dialog-head">
+        <h1 id="settingsTitle">Settings</h1>
+        <button id="closeSettingsBtn" class="cu-button" type="button">Close</button>
+      </div>
+      <label class="ide-field"><span>Color vision</span><select id="colorVisionMode"><option value="default">Standard colors</option><option value="protanopia">Protanopia</option><option value="deuteranopia">Deuteranopia</option><option value="tritanopia">Tritanopia</option><option value="high-contrast">High contrast</option></select></label>
+      <label class="ide-field"><span>Spoken language</span><select id="languageSelector"><option value="en">English</option><option value="hi">Hindi / Hinglish</option></select></label>
+      <label class="ide-check"><input id="dyslexiaToggle" type="checkbox"> Dyslexia-friendly mode</label>
+      <label class="ide-check"><input id="motionToggle" type="checkbox"> Reduce motion</label>
+      <label class="ide-check"><input id="nightToggle" type="checkbox"> Night mode</label>
+      <label class="ide-check"><input id="demoModeBtn" type="checkbox"> Demo mode</label>
+    </section>
+  </div>
+
+  <div id="helpOverlay" class="ide-overlay" hidden>
+    <section id="helpPanel" class="ide-dialog ide-help" role="dialog" aria-modal="true" aria-labelledby="helpTitle" tabindex="-1">
+      <div class="ide-dialog-head">
+        <h1 id="helpTitle">Commands</h1>
+        <button id="closeHelpBtn" class="cu-button" type="button">Close</button>
+      </div>
+      <label class="sr-only" for="helpSearch">Search commands</label>
+      <input id="helpSearch" class="ide-command-input" type="search" placeholder="Search commands" autocomplete="off">
+      <div id="helpCommandList" class="ide-help-groups"></div>
+    </section>
+  </div>
+
+  <div id="projectOverlay" class="ide-overlay" hidden>
+    <section id="projectPanel" class="ide-dialog" role="dialog" aria-modal="true" aria-labelledby="projectTitle" tabindex="-1">
+      <div class="ide-dialog-head">
+        <h1 id="projectTitle">Projects</h1>
+        <button id="closeProjectBtn" class="cu-button" type="button">Close</button>
+      </div>
+      <label class="ide-field"><span>Project name</span><input id="projectNameInput" type="text" value="Untitled Project"></label>
+      <label class="ide-field"><span>Open project</span><select id="projectSelect"></select></label>
+      <div class="ide-dialog-actions">
+        <button id="projectOpenBtn" class="cu-button" type="button">Open</button>
+        <button id="projectNewBtn" class="cu-button" type="button">New</button>
+      </div>
+    </section>
+  </div>
+
   <script src="/static/voice-memory-engine.js?v=1"></script>
-  <script src="/static/codeup-html.js?v=ide-6"></script>
+  <script src="/static/codeup-html.js?v=minimal-1"></script>
 </body>
 </html>

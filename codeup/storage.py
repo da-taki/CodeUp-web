@@ -155,13 +155,15 @@ def write_student_page(session_id: str, filename: str, content: str) -> None:
 
 
 def delete_stale_hosted_pages(session_id: str, intended_filenames: set[str]) -> None:
-    from codeup.services.html_utils import is_safe_hosted_html_page
+    from codeup.services.html_utils import is_safe_hosted_html_page, is_safe_hosted_source_asset
 
     site_dir = student_site_path(session_id)
     if not os.path.isdir(site_dir):
         return
     for existing in os.listdir(site_dir):
-        if existing in intended_filenames or not is_safe_hosted_html_page(existing):
+        if existing in intended_filenames:
+            continue
+        if not (is_safe_hosted_html_page(existing) or is_safe_hosted_source_asset(existing)):
             continue
         candidate = os.path.join(site_dir, existing)
         if os.path.isfile(candidate):

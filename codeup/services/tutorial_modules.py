@@ -521,7 +521,7 @@ GUIDED_PROJECTS = [
         "title": "Interactive quiz",
         "goal": "Create a quiz that checks answers, updates score, and explains feedback.",
         "skills": ["buttons", "events", "conditionals", "DOM updates"],
-        "starter_prompt": "make an interactive quiz about Python basics",
+        "starter_prompt": "make an interactive quiz about web accessibility",
     },
     {
         "slug": "local-storage-task-list",

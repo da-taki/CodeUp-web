@@ -149,6 +149,13 @@ def is_safe_hosted_html_page(filename: str) -> bool:
     return safe_name == filename and safe_name.endswith(".html") and safe_page_filename(safe_name[:-5]) == safe_name
 
 
+def is_safe_hosted_source_asset(filename: str) -> bool:
+    import os
+
+    safe_name = os.path.basename(filename)
+    return safe_name == filename and safe_name in {"style.css", "script.js"}
+
+
 def publish_page_plan(pages: dict[str, str]) -> tuple[list[tuple[str, str, str]], dict[str, list[str]]]:
     filenames: dict[str, list[str]] = {}
     plan: list[tuple[str, str, str]] = []

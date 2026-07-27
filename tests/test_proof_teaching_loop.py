@@ -26,7 +26,7 @@ def client(monkeypatch, tmp_path):
 
 
 ROBOTICS = generate_site_files("make a website for my school robotics club")
-QUIZ = generate_site_files("make a quiz app about Python basics")
+QUIZ = generate_site_files("make a quiz app about web accessibility basics")
 TYPO_JS = "var b = document.getElementById('joinBtn'); b.addEventListener('click', function(){});"
 TYPO_HTML = "<main><h1>Robotics Club</h1><button id='joinButton'>Join Team</button></main>"
 

@@ -31,7 +31,7 @@ def client(monkeypatch, tmp_path):
 
 
 ROBOTICS = generate_site_files("make a website for my school robotics club")
-QUIZ = generate_site_files("make a quiz app about Python basics")
+QUIZ = generate_site_files("make a quiz app about web accessibility basics")
 
 
 def _payload(files, **extra):

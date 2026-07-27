@@ -23,7 +23,7 @@ def client(monkeypatch, tmp_path):
 
 
 def test_project_type_router_uses_allowlist_and_safe_fallback(monkeypatch):
-    quiz = classify_project_type("make a quiz app about Python basics", use_ai=False)
+    quiz = classify_project_type("make a quiz app about web accessibility basics", use_ai=False)
     assert quiz.project_type == "quiz_app"
     assert quiz.project_type in ALLOWED_PROJECT_TYPES
 
@@ -47,7 +47,7 @@ def test_project_type_router_uses_allowlist_and_safe_fallback(monkeypatch):
 @pytest.mark.parametrize(
     ("prompt", "project_type", "needles"),
     [
-        ("make a quiz app about Python basics", "quiz_app", ("quiz-score", "addEventListener", "questions")),
+        ("make a quiz app about web accessibility basics", "quiz_app", ("quiz-score", "addEventListener", "questions")),
         ("make a calculator app", "calculator_app", ("Calculate", "Cannot divide by zero", "operation")),
         ("make a todo app for homework", "todo_app", ("task-list", "Clear completed", "addEventListener")),
         ("make flashcards for biology", "flashcard_app", ("show-answer", "Next card", "cards")),
@@ -75,9 +75,9 @@ def test_generated_project_app_templates_are_safe(prompt, project_type, needles,
 
 
 def test_project_explanation_routes_return_beginner_artifacts(client):
-    files = generate_site_files("make a quiz app about Python basics")
+    files = generate_site_files("make a quiz app about web accessibility basics")
     payload = {
-        "name": "Python Quiz",
+        "name": "Accessibility Quiz",
         "project_type": files["project_type"],
         "html": files["html"],
         "css": files["css"],
@@ -105,7 +105,7 @@ def test_project_explanation_routes_return_beginner_artifacts(client):
 
 def test_new_project_voice_commands_route(client):
     expected = {
-        "make a quiz app about Python basics": "build_site",
+        "make a quiz app about web accessibility basics": "build_site",
         "website map": "code_map",
         "what files are here": "code_map",
         "step narration": "step_narration",
@@ -152,7 +152,7 @@ def test_export_creates_explanation_artifacts_without_prior_generation(client):
 
 def test_score_tracking_edit_is_idempotent_for_quiz(monkeypatch):
     monkeypatch.setenv("AI_CLOUD_ENABLED", "0")
-    files = generate_site_files("make a quiz app about Python basics")
+    files = generate_site_files("make a quiz app about web accessibility basics")
     plan = plan_website_edit(
         current_html=files["html"],
         current_css=files["css"],

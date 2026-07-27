@@ -42,12 +42,11 @@ def test_readme_starts_with_project_name_without_bom():
 def test_readme_describes_project_purpose_and_workflows():
     text = README.read_text(encoding="utf-8")
     lower = text.lower()
-    assert "accessibility-first learning IDE" in text
-    assert "typed or spoken commands" in lower
+    assert "voice-first website-building IDE" in text
+    assert "type or speak" in lower
     assert "HTML, CSS, and JavaScript" in text
-    assert "Python workspace" in text
-    assert "make a website for my school robotics club" in text
-    assert 'print("Hello, CodeUp")' in text
+    assert "make a website for my school robotics club" not in text
+    assert "workspace" not in lower
 
 
 def test_readme_documents_local_setup_and_checks():
@@ -55,27 +54,20 @@ def test_readme_documents_local_setup_and_checks():
     for command in (
         "py -m venv .venv",
         "pip install -r requirements.txt",
+        "pip install -r requirements-dev.txt",
         "py app.py",
-        "py -m ruff check .",
-        "py -m ruff format --check codeup app.py tests",
-        "py -m compileall -q app.py codeup tests",
-        "node --check static/monaco-loader.js",
-        "py -m pytest tests --ignore=tests/test_e2e_browser.py -q",
-        "py -m pytest tests/test_e2e_browser.py -q",
     ):
         assert command in text, command
-    for setting in ("FLASK_TESTING=true", "GEMINI_ENABLED=0", "AI_CLOUD_ENABLED=0"):
-        assert setting in text, setting
+    assert "Render" in text
 
 
 def test_readme_documents_safety_boundary_and_security_policy():
     text = README.read_text(encoding="utf-8")
     lower = text.lower()
-    assert "learning starters, not production applications" in lower
-    for risk in ("remote scripts", "credential", "fake login", "unsafe javascript"):
-        assert risk in lower, risk
-    assert "[SECURITY.md](SECURITY.md)" in text
-    assert "Reporting a Vulnerability" not in text
+    assert "remote scripts" in lower
+    assert "remote stylesheets" in lower
+    assert "content security policy" in lower
+    assert "same-origin" in lower
 
 
 def test_readme_removes_old_publication_noise():
@@ -271,7 +263,7 @@ def _looks_like_code(text: str) -> bool:
 
 
 def test_screen_reader_summary_does_not_generate_code():
-    files = generate_site_files("make a quiz app about Python basics")
+    files = generate_site_files("make a quiz app about web accessibility basics")
     text = build_screen_reader_summary(
         files["html"], files["css"], files["js"], name="Quiz", project_type=files["project_type"]
     )
@@ -304,7 +296,7 @@ def test_learning_endpoints_do_not_mutate_website_files(client):
 
 
 def test_command_repair_does_not_alter_generated_code():
-    for prompt in ("make a quiz app about Python basics", "make a website for my school robotics club"):
+    for prompt in ("make a quiz app about web accessibility basics", "make a website for my school robotics club"):
         files = generate_site_files(prompt)
         assert repair_command(files["html"]) == files["html"], prompt
         assert repair_command(files["css"]) == files["css"], prompt
@@ -317,46 +309,27 @@ def test_big_help_panel_removed(client):
     assert 'id="helpPanelTitle"' not in html
 
 
-def test_command_palette_trigger_present(client):
+def test_help_control_present(client):
     html = client.get("/ide").get_data(as_text=True)
-    assert "Open command palette" in html
-    assert 'id="openPaletteBtn"' in html
-    assert 'aria-haspopup="dialog"' in html
-    assert 'aria-controls="commandPalette"' in html
-    assert 'aria-expanded="false"' in html
+    assert 'id="helpBtn"' in html
+    assert 'aria-controls="helpPanel"' in html
+    assert 'id="helpPanel"' in html
+    assert 'id="helpSearch"' in html
 
 
-def test_command_palette_is_collapsed_dialog_by_default(client):
+def test_more_menu_is_collapsed_by_default(client):
     html = client.get("/ide").get_data(as_text=True)
-    assert 'id="commandPalette"' in html
-    assert 'role="dialog"' in html
-    assert 'aria-modal="true"' in html
-    assert 'id="paletteOverlay" class="ide-palette-overlay" hidden' in html
-    assert 'id="closePaletteBtn"' in html
-    assert 'aria-label="Close command palette"' in html
+    assert 'id="moreOverlay" class="ide-overlay" hidden' in html
+    assert 'id="moreMenu"' in html
+    assert 'role="menu"' in html
 
 
-def test_command_palette_contains_grouped_commands_in_markup(client):
-    html = client.get("/ide").get_data(as_text=True)
-    for group in ("Create", "Edit", "Understand", "Accessibility", "Teach &amp; recap", "Export &amp; control"):
-        assert group in html, group
-    for command in (
-        "make a website for my school robotics club",
-        "code map",
-        "landmarks",
-        "check accessibility",
-        "make trainer notes",
-        "export website",
-    ):
-        assert command in html, command
-    assert 'data-cmd="code map"' in html
-    assert 'data-cmd="export website"' in html
-
-
-def test_idea_card_present(client):
-    html = client.get("/ide").get_data(as_text=True)
-    assert "Need an idea?" in html
-    assert 'data-cmd="what can I do here"' in html
+def test_help_contains_grouped_commands_in_script():
+    js = FRONTEND_JS.read_text(encoding="utf-8")
+    for group in ("Build", "Edit", "Understand", "Test and improve", "Project"):
+        assert group in js, group
+    for command in ("make a website for my robotics club", "code map", "check accessibility", "export website"):
+        assert command in js, command
 
 
 def test_command_input_and_voice_controls_present(client):
@@ -364,6 +337,7 @@ def test_command_input_and_voice_controls_present(client):
     assert 'id="commandInput"' in html
     assert 'id="voiceButton"' in html
     assert 'id="stopBtn"' in html
+    assert "Describe a website or ask for help" in html
 
 
 def test_live_regions_preserved(client):
@@ -376,38 +350,35 @@ def test_live_regions_preserved(client):
 def test_empty_states_present(client):
     html = client.get("/ide").get_data(as_text=True)
     assert 'id="outputEmpty"' in html
-    assert "Ask me to" in html
-    js = FRONTEND_JS.read_text(encoding="utf-8")
-    assert "Your website preview will appear here" in js
-    assert 'id="previewEmpty"' in js
+    assert "Your latest result will appear here" in html
+    assert 'id="sitePreview"' in html
 
 
-def test_palette_keyboard_and_focus_behavior_present():
+def test_help_keyboard_and_focus_behavior_present():
     js = FRONTEND_JS.read_text(encoding="utf-8")
-    assert "openCommandPalette" in js
-    assert "closeCommandPalette" in js
-    assert "paletteTrapFocus" in js
+    assert "renderHelp" in js
+    assert "closeOverlays" in js
     assert "Escape" in js
-    assert "paletteOpener" in js
+    assert "helpSearch" in js
 
 
 def test_focus_styles_present_in_css():
     css = IDE_CSS.read_text(encoding="utf-8")
     assert ":focus-visible" in css
-    assert ".ide-chip:focus" in css
+    assert ".ide-chip" in css
 
 
 def test_export_success_message_lists_key_files():
     js = FRONTEND_JS.read_text(encoding="utf-8")
-    assert "TRAINER_NOTES.txt" in js
-    assert "STUDENT_RECAP.txt" in js
-    assert "SCREEN_READER_SUMMARY.txt" in js
+    assert '"index.html": sourceHtml()' in js
+    assert '"style.css": state.files.css' in js
+    assert '"script.js": state.files.js' in js
 
 
 def test_output_includes_try_next_suggestions():
     js = FRONTEND_JS.read_text(encoding="utf-8")
-    assert "Try this next" in js
-    assert "suggestNext" in js
+    assert "Try:" in js
+    assert "writeOutput" in js
 
 
 def test_audit_issues_include_severity_and_suggested_fix(client):

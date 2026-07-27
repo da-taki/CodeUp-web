@@ -1,81 +1,31 @@
 # CodeUp Web
 
-[![CI](https://github.com/da-taki/CodeUp-web/actions/workflows/ci.yml/badge.svg)](https://github.com/da-taki/CodeUp-web/actions/workflows/ci.yml)
+CodeUp Web is a voice-first website-building IDE for learning HTML, CSS, and JavaScript. Students can type or speak what they want to build, edit the three source files, preview the website, ask for explanations, check accessibility, save projects, and export a ZIP.
 
-CodeUp Web is an accessibility-first learning IDE for beginners who want to build websites and explore starter Python programs. It accepts typed or spoken commands, keeps code editable, explains what changed, and works without cloud AI for deterministic classroom demos.
+## Requirements
+
+Use the backend runtime version pinned in the repository. Node.js is used for JavaScript syntax checks during validation. Chrome or Edge is recommended for browser and voice testing.
 
 ## Run Locally
-
-Requirements: Python 3.10 or newer and Node.js for JavaScript syntax checks. Chrome or Edge is recommended for speech and Monaco editor testing.
 
 ```powershell
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-$env:FLASK_TESTING="true"
-$env:GEMINI_ENABLED="0"
-$env:AI_CLOUD_ENABLED="0"
+pip install -r requirements-dev.txt
 py app.py
 ```
 
-Open:
+Open `http://127.0.0.1:5000/`.
 
-```text
-http://127.0.0.1:5000/
-http://127.0.0.1:5000/ide
-```
+## Render Deployment
 
-## Website Workflow
+The repository includes `render.yaml`. Render installs `requirements.txt` and starts the app with Gunicorn. Set AI provider keys in Render when cloud generation is needed; without keys, deterministic local fallbacks still keep the website builder usable.
 
-Create and revise a web project from the command box or microphone:
+## What Students Can Do
 
-```text
-make a website for my school robotics club
-code map
-step narration
-check accessibility
-fix accessibility issues
-export website
-```
-
-The website workspace includes HTML, CSS, and JavaScript editors, Monaco with a textarea fallback, live preview, save and reload, version history, undo, accessibility audits, safe accessibility fixes, guided projects, and ZIP export. Exports include `index.html`, `style.css`, `script.js`, `README.txt`, and learning reports generated from the current project state.
-
-## Python Workflow
-
-Use the Python workspace for beginner programs with input, output, variable state, functions, loops, and errors:
-
-```text
-print("Hello, CodeUp")
-```
-
-Python execution runs in a constrained process with timeout handling, limited imports, queued input, plain-language error explanations, audio code maps, step narration, state watches, and conditional breakpoints.
+Students can generate a site, edit `index.html`, `style.css`, and `script.js`, preview desktop/tablet/mobile layouts, ask for a code map, explain files, run/debug the website, check and fix accessibility, save/open projects, use a guided tutorial, and export their work.
 
 ## Safety
 
-Generated websites and Python runs are learning starters, not production applications. CodeUp Web blocks unsafe website patterns such as remote scripts, hidden data submission, credential harvesting, fake login flows, and unsafe JavaScript where the local validators can detect them. Python execution is bounded and intentionally limited for beginner practice.
-
-The full policy and vulnerability reporting details are in [SECURITY.md](SECURITY.md).
-
-## Tests
-
-Use these checks before submitting changes:
-
-```powershell
-py -m ruff check .
-py -m ruff format --check codeup app.py tests
-py -m compileall -q app.py codeup tests
-node --check static/codeup-html.js
-node --check static/monaco-loader.js
-node --check static/voice-memory-engine.js
-py -m pytest tests --ignore=tests/test_e2e_browser.py -q
-py -m pytest tests/test_e2e_browser.py -q
-git diff --check
-```
-
-Use these environment values for deterministic local checks:
-
-```text
-FLASK_TESTING=true
-GEMINI_ENABLED=0
-AI_CLOUD_ENABLED=0
-```
+Hosted student previews strip remote scripts and remote stylesheets, serve only safe local source files, and use a restrictive content security policy. The main app also enforces same-origin checks for write requests.
