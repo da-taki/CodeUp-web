@@ -53,6 +53,20 @@ class TestSecurityHeaders:
         csp = response.headers.get("Content-Security-Policy", "")
         assert "'self'" in csp.split("font-src")[1].split(";")[0]
 
+    def test_student_site_csp_allows_self_stylesheets(self, client):
+        pub = client.post("/publish-site", json={"html": "<h1>Test</h1>"})
+        url = pub.get_json()["url"]
+        response = client.get(url)
+        csp = response.headers.get("Content-Security-Policy", "")
+        assert "'self'" in csp.split("style-src")[1].split(";")[0]
+
+    def test_student_site_csp_allows_self_scripts(self, client):
+        pub = client.post("/publish-site", json={"html": "<h1>Test</h1>"})
+        url = pub.get_json()["url"]
+        response = client.get(url)
+        csp = response.headers.get("Content-Security-Policy", "")
+        assert "'self'" in csp.split("script-src")[1].split(";")[0]
+
     def test_referrer_policy_is_set(self, client):
         response = client.get("/")
         assert response.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"

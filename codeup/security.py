@@ -80,8 +80,8 @@ def register_security_middleware(app: Flask) -> None:
         if request.path.startswith("/student-site/"):
             response.headers["Content-Security-Policy"] = (
                 "default-src 'none'; "
-                "style-src 'unsafe-inline'; "
-                "script-src 'unsafe-inline'; "
+                "style-src 'self' 'unsafe-inline'; "
+                "script-src 'self' 'unsafe-inline'; "
                 "worker-src 'self'; "
                 "img-src 'self' data: blob:; "
                 "font-src 'self' data:; "
